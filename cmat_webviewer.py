@@ -251,9 +251,24 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     border-radius: 6px;
     position: relative;
     border: 1px solid #2a2a2a;
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
   }
-  #canvas2d { width: 100%; height: 100%; display: block; cursor: crosshair; }
+  #canvas2d { width: 100%; flex: 1; min-height: 0; display: block; cursor: crosshair; }
+  .panel-2d-footer {
+    height: 26px;
+    background: #141414;
+    border-top: 1px solid #282828;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 10px;
+    font-size: 0.74rem;
+    font-family: monospace;
+    color: #00e5ff;
+    flex-shrink: 0;
+  }
   .panel-1d {
     flex: 4.5;
     background: #181818;
@@ -266,20 +281,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   #canvas1d { width: 100%; flex: 1; background: #111; border-radius: 4px; cursor: crosshair; }
   .panel-1d-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
   .panel-1d-title { font-size: 0.82rem; font-weight: bold; color: #ff9800; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-
-  .overlay-status {
-    position: absolute;
-    bottom: 8px;
-    left: 60px;
-    background: rgba(18,18,18,0.85);
-    border: 1px solid #00e5ff;
-    padding: 4px 10px;
-    border-radius: 4px;
-    font-size: 0.78rem;
-    color: #00e5ff;
-    pointer-events: none;
-    font-family: monospace;
-  }
 
   .help-modal {
     position: fixed;
@@ -377,7 +378,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <div class="workspace">
     <div class="panel-2d">
       <canvas id="canvas2d" tabindex="0"></canvas>
-      <div class="overlay-status" id="overlayStatus">Limits: [L: - | R: - | D: - | U: -] -> Press 'E' to Expand, 'F' Full</div>
+      <div class="panel-2d-footer">
+        <span id="overlayStatus">Limits: [L: - | R: - | D: - | U: -] &nbsp;•&nbsp; 'E' Expand &nbsp;•&nbsp; 'F' Full View</span>
+        <span style="color: #777;">Click &amp; Drag to box-zoom</span>
+      </div>
     </div>
     <div class="panel-1d">
       <div class="panel-1d-header">
@@ -986,7 +990,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const r = markers.right !== null ? markers.right : '-';
     const d = markers.down !== null ? markers.down : '-';
     const u = markers.up !== null ? markers.up : '-';
-    document.getElementById('overlayStatus').innerText = `Limits: [L: ${l} | R: ${r} | D: ${d} | U: ${u}] -> Press 'E' to Expand, 'F' Full`;
+    document.getElementById('overlayStatus').innerHTML = `Limits: [L: <span style="color:#ffd600">${l}</span> | R: <span style="color:#ffd600">${r}</span> | D: <span style="color:#ffd600">${d}</span> | U: <span style="color:#ffd600">${u}</span>] &nbsp;•&nbsp; 'E' Expand &nbsp;•&nbsp; 'F' Full`;
   }
 
   function expandMarkers() {
@@ -1059,7 +1063,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   async function updateHoverHUD() {
     const res = await fetch(`/api/value?x=${cursorChannel.x}&y=${cursorChannel.y}`);
     const data = await res.json();
-    document.getElementById('hudCoords').innerText = `Det 1 (X): ch ${data.x} | Det 2 (Y): ch ${data.y} | Counts: ${data.value}`;
+    const isCal = metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0);
+    const ex = isCal ? ` (${chToEnergy(data.x).toFixed(1)} keV)` : '';
+    const ey = isCal ? ` (${chToEnergy(data.y).toFixed(1)} keV)` : '';
+    document.getElementById('hudCoords').innerText = `Det 1 (X): ch ${data.x}${ex} | Det 2 (Y): ch ${data.y}${ey} | Counts: ${data.value}`;
   }
 
   let hoverTimer = null;
@@ -1201,7 +1208,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       isBoxZooming = true;
     });
 
-    window.addEventListener('mousemove', (e) => {
+    canvas2d.addEventListener('mousemove', (e) => {
       const rect = canvas2d.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
@@ -1213,12 +1220,40 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         y: Math.max(0, Math.min(metadata.shape[1] - 1, Math.floor(ch.y)))
       };
 
+      // Synchronously highlight corresponding channel bin on 1D spectrum
+      if (currentProjSpec) {
+        const pr2D = getPlotRect2D();
+        if (mouseX >= pr2D.x && mouseX <= pr2D.x + pr2D.w && mouseY >= pr2D.y && mouseY <= pr2D.y + pr2D.h) {
+          const axis = parseInt(document.getElementById('projAxisSelect').value);
+          cursor1DChannel = (axis === 0) ? cursorChannel.x : cursorChannel.y;
+          render1DSpectrum();
+        } else if (!isBoxZooming) {
+          cursor1DChannel = null;
+          render1DSpectrum();
+        }
+      }
+
       if (isBoxZooming) {
         render2D();
       }
 
       clearTimeout(hoverTimer);
       hoverTimer = setTimeout(updateHoverHUD, 20);
+    });
+
+    canvas2d.addEventListener('mouseleave', () => {
+      if (!isBoxZooming) {
+        cursor1DChannel = null;
+        render1DSpectrum();
+      }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (isBoxZooming) {
+        const rect = canvas2d.getBoundingClientRect();
+        mouseCurrentPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+        render2D();
+      }
     });
 
     window.addEventListener('mouseup', async (e) => {
