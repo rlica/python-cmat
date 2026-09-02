@@ -130,3 +130,10 @@ Each sub-block is compressed using one of 5 algorithms:
 ## 📄 License
 
 MIT License. Developed for the gamma-ray spectroscopy community.
+
+---
+
+## 🤖 Acknowledgments & Disclaimer
+
+This project was developed with the assistance of **Antigravity**, an agentic AI coding assistant developed by Google DeepMind.
+
