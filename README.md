@@ -54,12 +54,12 @@ python3 cmat_webviewer.py GeE-symm.cmat --port 8080
 | Action | Shortcut / Gesture | Description |
 |---|---|---|
 | **Box Zoom** | `Ctrl + Drag` | Drag a rubberband rectangle on the 2D matrix to zoom in |
-| **Set Left Limit ($X_{\min}$)** | `Left Arrow (←)` | Set Left limit at cursor |
-| **Set Right Limit ($X_{\max}$)** | `Right Arrow (→)` | Set Right limit at cursor |
-| **Set Down Limit ($Y_{\min}$)** | `Down Arrow (↓)` | Set Down limit at cursor |
-| **Set Up Limit ($Y_{\max}$)** | `Up Arrow (↑)` | Set Up limit at cursor |
+| **Set Left Limit (Xmin)** | `Left Arrow (←)` | Set Left limit at cursor |
+| **Set Right Limit (Xmax)** | `Right Arrow (→)` | Set Right limit at cursor |
+| **Set Down Limit (Ymin)** | `Down Arrow (↓)` | Set Down limit at cursor |
+| **Set Up Limit (Ymax)** | `Up Arrow (↑)` | Set Up limit at cursor |
 | **Expand to Limits** | `E` or `e` | Zoom into the region bounded by limit markers |
-| **Full Matrix View** | `F` or `f` | Reset zoom to the full $4096 \times 4096$ matrix |
+| **Full Matrix View** | `F` or `f` | Reset zoom to the full 4096 × 4096 matrix |
 | **Shift / Pan** | `Ctrl + Arrows` | Pan visible viewport by half a screen |
 | **Center on Point** | `Ctrl + Click` or `M` | Center view on cursor coordinates |
 | **Toggle 1D Projection** | `P` (or `X` / `Y`) | Switch projected axis between Det 1 (X) and Det 2 (Y) |
@@ -116,7 +116,7 @@ reader.export_amat("output.amat", fmt="dense")
 
 ## 🔬 Decompression Algorithm Reference
 
-GASPware `.cmat` matrices are stored in an IVF container consisting of 512-byte blocks. Matrices are divided into $128 \times 128$ channel sub-matrices (for a symmetric $4096 \times 4096$ matrix, 528 lower-triangular blocks).
+GASPware `.cmat` matrices are stored in an IVF container consisting of 512-byte blocks. Matrices are divided into 128 × 128 channel sub-matrices (for a symmetric 4096 × 4096 matrix, 528 lower-triangular blocks).
 
 Each sub-block is compressed using one of 5 algorithms:
 - **Mode 0–32**: Fixed bit-width channel packing (`ccomp__0_decompress`).
