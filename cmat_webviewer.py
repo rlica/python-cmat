@@ -330,8 +330,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       <label style="margin-top: 6px;">1D Vertical Scale</label>
       <select id="projScaleSelect">
-        <option value="log" selected>Logarithmic</option>
-        <option value="linear">Linear</option>
+        <option value="linear" selected>Linear</option>
+        <option value="log">Logarithmic</option>
       </select>
     </div>
 
@@ -782,14 +782,36 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
     if (chEnd <= chStart) chEnd = chStart + 1;
 
-    // Find max value in visible range
-    let maxVal = 0;
+    // Find min and max value in visible range
+    let minVal = Infinity;
+    let maxVal = -Infinity;
     for (let i = chStart; i <= chEnd; i++) {
-      if (spec[i] > maxVal) maxVal = spec[i];
+      const v = spec[i];
+      if (v < minVal) minVal = v;
+      if (v > maxVal) maxVal = v;
     }
-    if (maxVal === 0) maxVal = 1;
+    if (minVal === Infinity) { minVal = 0; maxVal = 1; }
+    if (minVal === maxVal) { maxVal = minVal + 1; }
 
-    const logMax = Math.log10(Math.max(10, maxVal));
+    const range = maxVal - minVal;
+    let yMinDisplay, yMaxDisplay;
+
+    if (isLog) {
+      let logMinVal = Math.log10(Math.max(1, minVal > 0 ? minVal : 1));
+      let logMaxVal = Math.log10(Math.max(10, maxVal));
+      let logRange = logMaxVal - logMinVal;
+      if (logRange <= 0.1) logRange = 1;
+      yMinDisplay = Math.max(0, logMinVal - logRange * 0.06);
+      yMaxDisplay = logMaxVal + logRange * 0.08;
+    } else {
+      // Dynamic scaling: adapt to visible spectrum with headroom and floor room
+      yMinDisplay = Math.floor(minVal - range * 0.06);
+      yMaxDisplay = Math.ceil(maxVal + range * 0.08);
+      if (minVal >= 0 && minVal - range * 0.06 < 0) {
+        yMinDisplay = 0;
+      }
+    }
+    if (yMaxDisplay <= yMinDisplay) yMaxDisplay = yMinDisplay + 1;
 
     // Draw Plot Frame
     ctx1d.strokeStyle = '#444';
@@ -806,6 +828,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const strokeColor = (axis === 0) ? '#00e5ff' : '#ff9800';
     const fillColor = (axis === 0) ? 'rgba(0, 229, 255, 0.12)' : 'rgba(255, 152, 0, 0.12)';
 
+    // Function to calculate Y pixel from count value
+    function valToPx(val) {
+      let norm;
+      if (isLog) {
+        let lv = Math.log10(Math.max(1, val));
+        norm = (lv - yMinDisplay) / (yMaxDisplay - yMinDisplay);
+      } else {
+        norm = (val - yMinDisplay) / (yMaxDisplay - yMinDisplay);
+      }
+      norm = Math.max(0, Math.min(1, norm));
+      return pr.y + pr.h * (1 - norm);
+    }
+
     // 1. Draw Filled Stepped Histogram
     ctx1d.beginPath();
     ctx1d.moveTo(pr.x, pr.y + pr.h);
@@ -813,10 +848,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     for (let i = chStart; i <= chEnd; i++) {
       let xL = pr.x + ((i - chStart) / span) * pr.w;
       let xR = pr.x + ((i + 1 - chStart) / span) * pr.w;
-      let val = spec[i];
-      let yNorm = isLog ? (val > 0 ? Math.log10(val) / logMax : 0) : val / maxVal;
-      yNorm = Math.max(0, Math.min(1, yNorm));
-      let y = pr.y + pr.h * (1 - yNorm);
+      let y = valToPx(spec[i]);
 
       ctx1d.lineTo(xL, y);
       ctx1d.lineTo(xR, y);
@@ -828,19 +860,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     // 2. Draw Stepped Histogram Outline
     ctx1d.beginPath();
-    ctx1d.moveTo(pr.x, pr.y + pr.h);
     for (let i = chStart; i <= chEnd; i++) {
       let xL = pr.x + ((i - chStart) / span) * pr.w;
       let xR = pr.x + ((i + 1 - chStart) / span) * pr.w;
-      let val = spec[i];
-      let yNorm = isLog ? (val > 0 ? Math.log10(val) / logMax : 0) : val / maxVal;
-      yNorm = Math.max(0, Math.min(1, yNorm));
-      let y = pr.y + pr.h * (1 - yNorm);
+      let y = valToPx(spec[i]);
 
-      ctx1d.lineTo(xL, y);
+      if (i === chStart) {
+        ctx1d.moveTo(xL, y);
+      } else {
+        ctx1d.lineTo(xL, y);
+      }
       ctx1d.lineTo(xR, y);
     }
-    ctx1d.lineTo(pr.x + pr.w, pr.y + pr.h);
     ctx1d.strokeStyle = strokeColor;
     ctx1d.lineWidth = 1.2;
     ctx1d.stroke();
@@ -850,9 +881,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       let xL = pr.x + ((cursor1DChannel - chStart) / span) * pr.w;
       let xR = pr.x + ((cursor1DChannel + 1 - chStart) / span) * pr.w;
       let val = spec[cursor1DChannel] || 0;
-      let yNorm = isLog ? (val > 0 ? Math.log10(val) / logMax : 0) : val / maxVal;
-      yNorm = Math.max(0, Math.min(1, yNorm));
-      let y = pr.y + pr.h * (1 - yNorm);
+      let y = valToPx(val);
 
       // Highlight active bin bar
       ctx1d.fillStyle = 'rgba(255, 214, 0, 0.35)';
@@ -928,10 +957,28 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       : (isCal ? 'Det 2 Energy (keV) / Channel' : 'Det 2 Channel');
     ctx1d.fillText(xLabel, pr.x + pr.w / 2, pr.y + pr.h + 28);
 
-    // Ticks on Y
+    // 6. Dynamic Ticks on Y
     ctx1d.textAlign = 'right';
-    ctx1d.fillText(isLog ? 'log(N)' : maxVal.toString(), pr.x - 8, pr.y + 10);
-    ctx1d.fillText('0', pr.x - 8, pr.y + pr.h);
+    const numYTicks = 4;
+    for (let j = 0; j <= numYTicks; j++) {
+      const frac = j / numYTicks;
+      const py = pr.y + pr.h - frac * pr.h;
+      ctx1d.beginPath();
+      ctx1d.moveTo(pr.x, py);
+      ctx1d.lineTo(pr.x - 4, py);
+      ctx1d.stroke();
+
+      let labelVal;
+      if (isLog) {
+        let logV = yMinDisplay + frac * (yMaxDisplay - yMinDisplay);
+        let num = Math.round(Math.pow(10, logV));
+        labelVal = (num >= 10000) ? num.toExponential(1) : num.toString();
+      } else {
+        let v = yMinDisplay + frac * (yMaxDisplay - yMinDisplay);
+        labelVal = (range > 40) ? Math.round(v).toString() : v.toFixed(1);
+      }
+      ctx1d.fillText(labelVal, pr.x - 7, py + 3);
+    }
   }
 
   function updateMarkerStatus() {
