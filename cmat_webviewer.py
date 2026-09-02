@@ -21,7 +21,6 @@ Features:
       * Down / Up Arrow: Set Down (Ymin) and Up (Ymax) limit markers at cursor
       * E / e: Expand / Zoom into set limit markers
       * F / f: Full matrix view (reset zoom)
-      * Mouse Wheel: Smooth zoom centered at cursor
       * P / X / Y: Toggle 1D Projection Axis (Det 1 vs Det 2)
       * 1 / 2 / 4 (or L): Switch Linear, Sqrt, Log color scale
       * C / c: Cycle color gradients (Turbo, Viridis, Plasma, Inferno, Hot, Jet, Gray)
@@ -403,7 +402,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <tr><td>Up Arrow (↑)</td><td>Set Up limit (Ymax) at cursor</td></tr>
     <tr><td>E / e</td><td>Expand / Zoom into set limits</td></tr>
     <tr><td>F / f</td><td>Full matrix view (zoom out)</td></tr>
-    <tr><td>Mouse Wheel</td><td>Continuous zoom in / out centered at cursor</td></tr>
     <tr><td>P / X / Y</td><td>Toggle 1D Projection Axis (Det 1 vs Det 2)</td></tr>
     <tr><td>1 / 2 / 4 (or L)</td><td>Switch Linear, Sqrt, Log color scale</td></tr>
     <tr><td>C / c</td><td>Cycle colormaps</td></tr>
@@ -1026,39 +1024,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     fetch1DProjection();
   }
 
-  function shiftView(dir) {
-    const spanX = view.x1 - view.x0;
-    const spanY = view.y1 - view.y0;
-    const shiftX = Math.round(spanX * 0.4);
-    const shiftY = Math.round(spanY * 0.4);
 
-    if (dir === 'left') {
-      view.x0 = Math.max(0, view.x0 - shiftX);
-      view.x1 = view.x0 + spanX;
-    } else if (dir === 'right') {
-      view.x1 = Math.min(metadata.shape[0], view.x1 + shiftX);
-      view.x0 = view.x1 - spanX;
-    } else if (dir === 'down') {
-      view.y0 = Math.max(0, view.y0 - shiftY);
-      view.y1 = view.y0 + spanY;
-    } else if (dir === 'up') {
-      view.y1 = Math.min(metadata.shape[1], view.y1 + shiftY);
-      view.y0 = view.y1 - spanY;
-    }
-    fetchTileAndRender();
-    fetch1DProjection();
-  }
-
-  function centerOnCursor() {
-    const spanX = (view.x1 - view.x0) / 2;
-    const spanY = (view.y1 - view.y0) / 2;
-    view.x0 = Math.max(0, cursorChannel.x - spanX);
-    view.x1 = Math.min(metadata.shape[0], view.x0 + 2 * spanX);
-    view.y0 = Math.max(0, cursorChannel.y - spanY);
-    view.y1 = Math.min(metadata.shape[1], view.y0 + 2 * spanY);
-    fetchTileAndRender();
-    fetch1DProjection();
-  }
 
   async function updateHoverHUD() {
     const res = await fetch(`/api/value?x=${cursorChannel.x}&y=${cursorChannel.y}`);
@@ -1137,24 +1103,26 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
     // Keyboard Shortcuts (GASPware cmat controls)
     window.addEventListener('keydown', (e) => {
-      const isCtrl = e.ctrlKey || e.metaKey;
-
       if (e.key === 'ArrowLeft') {
         e.preventDefault();
-        if (isCtrl) shiftView('left');
-        else { markers.left = cursorChannel.x; updateMarkerStatus(); render2D(); }
+        markers.left = cursorChannel.x;
+        updateMarkerStatus();
+        render2D();
       } else if (e.key === 'ArrowRight') {
         e.preventDefault();
-        if (isCtrl) shiftView('right');
-        else { markers.right = cursorChannel.x; updateMarkerStatus(); render2D(); }
+        markers.right = cursorChannel.x;
+        updateMarkerStatus();
+        render2D();
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
-        if (isCtrl) shiftView('down');
-        else { markers.down = cursorChannel.y; updateMarkerStatus(); render2D(); }
+        markers.down = cursorChannel.y;
+        updateMarkerStatus();
+        render2D();
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
-        if (isCtrl) shiftView('up');
-        else { markers.up = cursorChannel.y; updateMarkerStatus(); render2D(); }
+        markers.up = cursorChannel.y;
+        updateMarkerStatus();
+        render2D();
       } else if (e.key === 'e' || e.key === 'E') {
         expandMarkers();
       } else if (e.key === 'f' || e.key === 'F') {
@@ -1183,8 +1151,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       } else if (e.key === '4' || e.key === 'l' || e.key === 'L') {
         document.getElementById('scaleSelect').value = 'log';
         render2D();
-      } else if (e.key === 'm' || e.key === 'M') {
-        centerOnCursor();
       } else if (e.key === '?' || e.key === 'h' || e.key === 'H') {
         const hm = document.getElementById('helpModal');
         hm.style.display = hm.style.display === 'block' ? 'none' : 'block';
@@ -1196,6 +1162,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     // Prevent context menu on canvases
     canvas2d.addEventListener('contextmenu', (e) => e.preventDefault());
     canvas1d.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    // Disable mousewheel / touchpad scrolling on canvases
+    canvas2d.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
+    canvas1d.addEventListener('wheel', (e) => e.preventDefault(), { passive: false });
 
     // Mouse Controls on 2D Matrix (Direct Left-Click Drag Box Zoom)
     canvas2d.addEventListener('mousedown', (e) => {
@@ -1278,29 +1248,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           render2D();
         }
       }
-    });
-
-    canvas2d.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      const zoomFactor = e.deltaY > 0 ? 1.25 : 0.8;
-      const rect = canvas2d.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
-
-      const ch = pxToCh2D(mouseX, mouseY);
-      const spanX = (view.x1 - view.x0) * zoomFactor;
-      const spanY = (view.y1 - view.y0) * zoomFactor;
-
-      view.x0 = Math.max(0, ch.x - (spanX * 0.5));
-      view.x1 = Math.min(metadata.shape[0], view.x0 + spanX);
-      view.y0 = Math.max(0, ch.y - (spanY * 0.5));
-      view.y1 = Math.min(metadata.shape[1], view.y0 + spanY);
-
-      clearTimeout(tileFetchDebounce);
-      clearTimeout(projFetchDebounce);
-      render2D();
-      tileFetchDebounce = setTimeout(fetchTileAndRender, 40);
-      projFetchDebounce = setTimeout(fetch1DProjection, 60);
     });
 
     // 1D Spectrum Real-time Hover Inspector & Position Readout

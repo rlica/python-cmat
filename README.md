@@ -60,7 +60,6 @@ python3 cmat_webviewer.py GeE-symm.cmat --port 8080
 | **Set Up Limit (Ymax)** | `Up Arrow (↑)` | Set Up limit at cursor |
 | **Expand to Limits** | `E` or `e` | Zoom into the region bounded by limit markers |
 | **Full Matrix View** | `F` or `f` | Reset zoom to the full 4096 × 4096 matrix |
-| **Wheel Zoom** | `Mouse Wheel` | Smooth zoom in / out centered at cursor |
 | **Toggle 1D Projection** | `P` (or `X` / `Y`) | Switch projected axis between Det 1 (X) and Det 2 (Y) |
 | **Color Scale** | `1` (Linear), `2` (Sqrt), `4`/`L` (Log) | Switch 2D intensity scaling mode |
 | **Cycle Colormap** | `C` or `c` | Cycle through Turbo, Viridis, Plasma, Inferno, Hot, Jet, Gray |
