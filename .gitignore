@@ -1,0 +1,18 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# OS artifacts
+.DS_Store
+Thumbs.db
+
+# Large generated exports (generate with python3 cmat2amat.py)
+*.amat
+*.dat
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
