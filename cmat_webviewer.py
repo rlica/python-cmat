@@ -16,13 +16,12 @@ Features:
     and 1:1 single-channel binning when zoomed in.
   - Ultra-Fast 32-bit Uint32 Color LUT rendering (<0.5 ms).
   - Full GASPware cmat Navigation:
-      * CTRL + Left Drag: Box zoom into rectangle
+      * Left-Click Drag: Direct box zoom into rectangle (no Ctrl required)
       * Left / Right Arrow: Set Left (Xmin) and Right (Xmax) limit markers at cursor
       * Down / Up Arrow: Set Down (Ymin) and Up (Ymax) limit markers at cursor
       * E / e: Expand / Zoom into set limit markers
       * F / f: Full matrix view (reset zoom)
-      * CTRL + Arrows: Shift / Pan viewport
-      * CTRL + Click / M: Center viewport on cursor
+      * Mouse Wheel: Smooth zoom centered at cursor
       * P / X / Y: Toggle 1D Projection Axis (Det 1 vs Det 2)
       * 1 / 2 / 4 (or L): Switch Linear, Sqrt, Log color scale
       * C / c: Cycle color gradients (Turbo, Viridis, Plasma, Inferno, Hot, Jet, Gray)
@@ -393,16 +392,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <div class="help-modal" id="helpModal">
   <h2>GASPware cmat Navigation Shortcuts</h2>
   <table>
-    <tr><td>Ctrl + Drag</td><td>Box Zoom into rectangle</td></tr>
+    <tr><td>Click & Drag</td><td>Box Zoom into rectangle</td></tr>
     <tr><td>Left Arrow (←)</td><td>Set Left limit (Xmin) at cursor</td></tr>
     <tr><td>Right Arrow (→)</td><td>Set Right limit (Xmax) at cursor</td></tr>
     <tr><td>Down Arrow (↓)</td><td>Set Down limit (Ymin) at cursor</td></tr>
     <tr><td>Up Arrow (↑)</td><td>Set Up limit (Ymax) at cursor</td></tr>
     <tr><td>E / e</td><td>Expand / Zoom into set limits</td></tr>
     <tr><td>F / f</td><td>Full matrix view (zoom out)</td></tr>
+    <tr><td>Mouse Wheel</td><td>Continuous zoom in / out centered at cursor</td></tr>
     <tr><td>P / X / Y</td><td>Toggle 1D Projection Axis (Det 1 vs Det 2)</td></tr>
-    <tr><td>Ctrl + Arrows</td><td>Shift / Pan viewport</td></tr>
-    <tr><td>Ctrl + Click / M</td><td>Center view on cursor point</td></tr>
     <tr><td>1 / 2 / 4 (or L)</td><td>Switch Linear, Sqrt, Log color scale</td></tr>
     <tr><td>C / c</td><td>Cycle colormaps</td></tr>
     <tr><td>Esc / ?</td><td>Close Help</td></tr>
@@ -1141,19 +1139,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       }
     });
 
-    // Mouse Controls on 2D Matrix
+    // Prevent context menu on canvases
+    canvas2d.addEventListener('contextmenu', (e) => e.preventDefault());
+    canvas1d.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    // Mouse Controls on 2D Matrix (Direct Left-Click Drag Box Zoom)
     canvas2d.addEventListener('mousedown', (e) => {
+      if (e.button !== 0) return; // Left mouse button only
       const rect = canvas2d.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
       dragStartPos = { x: mouseX, y: mouseY };
       mouseCurrentPos = { x: mouseX, y: mouseY };
-
-      if (e.ctrlKey || e.metaKey) {
-        isBoxZooming = true;
-      } else {
-        isPanning = true;
-      }
+      isBoxZooming = true;
     });
 
     window.addEventListener('mousemove', (e) => {
@@ -1168,15 +1166,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         y: Math.max(0, Math.min(metadata.shape[1] - 1, Math.floor(ch.y)))
       };
 
-      if (isPanning) {
-        const pr = getPlotRect2D();
-        const dx = (mouseX - dragStartPos.x) * ((view.x1 - view.x0) / pr.w);
-        const dy = (mouseY - dragStartPos.y) * ((view.y1 - view.y0) / pr.h);
-        view.x0 -= dx; view.x1 -= dx;
-        view.y0 += dy; view.y1 += dy;
-        dragStartPos = { x: mouseX, y: mouseY };
-        render2D();
-      } else if (isBoxZooming) {
+      if (isBoxZooming) {
         render2D();
       }
 
@@ -1192,7 +1182,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         const yStart = Math.min(dragStartPos.y, mouseCurrentPos.y);
         const yEnd = Math.max(dragStartPos.y, mouseCurrentPos.y);
 
-        if (xEnd - xStart > 5 && yEnd - yStart > 5) {
+        if (xEnd - xStart > 4 && yEnd - yStart > 4) {
           const ch0 = pxToCh2D(xStart, yEnd);
           const ch1 = pxToCh2D(xEnd, yStart);
 
@@ -1205,10 +1195,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         } else {
           render2D();
         }
-      } else if (isPanning) {
-        isPanning = false;
-        fetchTileAndRender();
-        fetch1DProjection();
       }
     });
 

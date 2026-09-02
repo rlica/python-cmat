@@ -53,15 +53,14 @@ python3 cmat_webviewer.py GeE-symm.cmat --port 8080
 
 | Action | Shortcut / Gesture | Description |
 |---|---|---|
-| **Box Zoom** | `Ctrl + Drag` | Drag a rubberband rectangle on the 2D matrix to zoom in |
+| **Box Zoom** | `Click + Drag` | Drag a rubberband rectangle directly on the 2D matrix to zoom in |
 | **Set Left Limit (Xmin)** | `Left Arrow (←)` | Set Left limit at cursor |
 | **Set Right Limit (Xmax)** | `Right Arrow (→)` | Set Right limit at cursor |
 | **Set Down Limit (Ymin)** | `Down Arrow (↓)` | Set Down limit at cursor |
 | **Set Up Limit (Ymax)** | `Up Arrow (↑)` | Set Up limit at cursor |
 | **Expand to Limits** | `E` or `e` | Zoom into the region bounded by limit markers |
 | **Full Matrix View** | `F` or `f` | Reset zoom to the full 4096 × 4096 matrix |
-| **Shift / Pan** | `Ctrl + Arrows` | Pan visible viewport by half a screen |
-| **Center on Point** | `Ctrl + Click` or `M` | Center view on cursor coordinates |
+| **Wheel Zoom** | `Mouse Wheel` | Smooth zoom in / out centered at cursor |
 | **Toggle 1D Projection** | `P` (or `X` / `Y`) | Switch projected axis between Det 1 (X) and Det 2 (Y) |
 | **Color Scale** | `1` (Linear), `2` (Sqrt), `4`/`L` (Log) | Switch 2D intensity scaling mode |
 | **Cycle Colormap** | `C` or `c` | Cycle through Turbo, Viridis, Plasma, Inferno, Hot, Jet, Gray |
