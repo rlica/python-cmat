@@ -349,14 +349,16 @@ def print_fit_terminal_report(res, det_name, filename, is_cal):
 
 def fit_2d_gaussian_peak(
     matrix, x_center, y_center, fit_type="gaussian", cal=[0.0, 1.0, 0.0], roi_half_width=16,
-    slice_x0=None, slice_x1=None, slice_y0=None, slice_y1=None
+    sub_random=True, random_fraction=0.05, proj_x=None, proj_y=None, total_counts=None
 ):
     """
-    Fits a 2D coincidence peak (Symmetric Gaussian or Gaussian with Left Tail) with nuclear background decomposition:
-    - True 2D coincidence peak: H_xy * G_x(x) * G_y(y)
-    - Vertical coincidence ridge along Y (Det 1 peak in coincidence with Det 2 Compton): R_x * G_x(x)
-    - Horizontal coincidence ridge along X (Det 2 peak in coincidence with Det 1 Compton): R_y * G_y(y)
-    - Smooth 2D Compton continuum: B_0 + B_x*(x - x_center) + B_y*(y - y_center)
+    Fits a true 2D coincidence peak (Symmetric Gaussian or HPGe Gaussian with Left Tail)
+    on the 2D gamma-gamma coincidence matrix with complete background decomposition:
+    - Random (accidental) gamma-gamma coincidences: B_rand(x, y) = f_rand * (P_x * P_y) / T_tot
+    - Vertical coincidence ridge along Y (Det 1 peak with Det 2 Compton): R_x * G_x(x)
+    - Horizontal coincidence ridge along X (Det 2 peak with Det 1 Compton): R_y * G_y(y)
+    - Smooth 2D Compton continuum: b0 + bx*(x - x_center) + by*(y - y_center)
+    - True 2D coincidence peak: H * G_x(x) * G_y(y)
     """
     mat = np.asarray(matrix, dtype=np.float64)
     H_mat, W_mat = mat.shape
@@ -369,12 +371,13 @@ def fit_2d_gaussian_peak(
     y_min = max(0, iy - roi_half_width)
     y_max = min(H_mat - 1, iy + roi_half_width)
 
-    if (x_max - x_min < 5) or (y_max - y_min < 5):
-        raise ValueError("2D ROI window too small for fitting.")
+    if (x_max - x_min < 4) or (y_max - y_min < 4):
+        raise ValueError("2D ROI window too small for fitting (minimum 5x5 channels required).")
 
-    roi_data = mat[y_min:y_max+1, x_min:x_max+1]
-    Ny, Nx = roi_data.shape
+    roi_raw = mat[y_min:y_max+1, x_min:x_max+1]
+    Ny, Nx = roi_raw.shape
     N_pixels = Ny * Nx
+    gross_counts = float(np.sum(roi_raw))
 
     xs = np.arange(x_min, x_max + 1, dtype=np.float64)
     ys = np.arange(y_min, y_max + 1, dtype=np.float64)
@@ -382,23 +385,46 @@ def fit_2d_gaussian_peak(
 
     x_flat = X_grid.ravel()
     y_flat = Y_grid.ravel()
-    z_flat = roi_data.ravel()
+    z_raw_flat = roi_raw.ravel()
 
-    # Estimate continuum from corners
-    corners = [roi_data[0, 0], roi_data[0, -1], roi_data[-1, 0], roi_data[-1, -1]]
-    b0_init = float(np.mean(corners))
+    # Calculate Random Coincidence Background in ROI from singles projections
+    if proj_x is None:
+        proj_x = np.sum(mat, axis=0, dtype=np.float64)
+    if proj_y is None:
+        proj_y = np.sum(mat, axis=1, dtype=np.float64)
+    if total_counts is None or total_counts <= 0:
+        total_counts = float(np.sum(proj_x))
+
+    T_tot = max(1.0, float(total_counts))
+    px_roi = proj_x[x_min:x_max+1]
+    py_roi = proj_y[y_min:y_max+1]
+
+    # Random coincidence matrix template: P_x(x) * P_y(y) / T_tot
+    rand_template_2d = np.outer(py_roi, px_roi) / T_tot
+    f_rand = max(0.0, float(random_fraction)) if sub_random else 0.0
+    b_rand_2d = f_rand * rand_template_2d
+    rand_counts = float(np.sum(b_rand_2d))
+    b_rand_flat = b_rand_2d.ravel()
+
+    # Data to fit with peak + continuum + ridges (random coincidences subtracted)
+    z_corr_flat = z_raw_flat - b_rand_flat
+    roi_corr = roi_raw - b_rand_2d
+
+    # Estimate continuum from corners of random-corrected ROI
+    corners = [roi_corr[0, 0], roi_corr[0, -1], roi_corr[-1, 0], roi_corr[-1, -1]]
+    b0_init = max(0.0, float(np.mean(corners)))
     bx_init = 0.0
     by_init = 0.0
 
     # Estimate ridges from borders (subtracting continuum)
-    border_y = (roi_data[:, 0] + roi_data[:, -1]) / 2.0
+    border_y = (roi_corr[:, 0] + roi_corr[:, -1]) / 2.0
     ry_init = max(0.0, float(np.max(border_y) - b0_init))
 
-    border_x = (roi_data[0, :] + roi_data[-1, :]) / 2.0
+    border_x = (roi_corr[0, :] + roi_corr[-1, :]) / 2.0
     rx_init = max(0.0, float(np.max(border_x) - b0_init))
 
     # Initial centroid estimates via smoothed apex
-    pad = np.pad(roi_data, 1, mode='edge')
+    pad = np.pad(np.maximum(0.0, roi_corr), 1, mode='edge')
     smooth = (pad[:-2, :-2] + pad[:-2, 1:-1] + pad[:-2, 2:] +
               pad[1:-1, :-2] + pad[1:-1, 1:-1] + pad[1:-1, 2:] +
               pad[2:, :-2] + pad[2:, 1:-1] + pad[2:, 2:]) / 9.0
@@ -406,9 +432,9 @@ def fit_2d_gaussian_peak(
     mu_x_init = float(xs[apex_idx[1]])
     mu_y_init = float(ys[apex_idx[0]])
 
-    sig_x_init = 1.3
-    sig_y_init = 1.3
-    h_init = max(1.0, float(np.max(roi_data)) - b0_init - rx_init - ry_init)
+    sig_x_init = 1.4
+    sig_y_init = 1.4
+    h_init = max(1.0, float(np.max(roi_corr)) - b0_init - rx_init - ry_init)
 
     is_tail = (fit_type == "gaussian_tail")
     if is_tail:
@@ -418,7 +444,8 @@ def fit_2d_gaussian_peak(
         n_params = 10
         theta = np.array([b0_init, bx_init, by_init, rx_init, ry_init, h_init, mu_x_init, mu_y_init, sig_x_init, sig_y_init], dtype=np.float64)
 
-    sigma_z = np.sqrt(np.maximum(1.0, z_flat))
+    # Weights governed by Poisson counting statistics of observed raw counts
+    sigma_z = np.sqrt(np.maximum(1.0, z_raw_flat))
     weights = 1.0 / sigma_z
 
     def calc_residuals_and_jacobian(p):
@@ -458,7 +485,7 @@ def fit_2d_gaussian_peak(
 
         bg_cont = b0 + bx * dxc + by * dyc
         model = bg_cont + rx * gx + ry * gy + H * g2d
-        r = (model - z_flat) * weights
+        r = (model - z_corr_flat) * weights
 
         J = np.zeros((N_pixels, n_params), dtype=np.float64)
         J[:, 0] = weights
@@ -558,7 +585,8 @@ def fit_2d_gaussian_peak(
         grad_vol[9] = dvol_dsy
         vol_err = float(np.sqrt(np.maximum(0.0, grad_vol @ cov @ grad_vol)))
         ax_val, ay_val = round(float(ax), 3), round(float(ay), 3)
-        ax_err, ay_err = round(float(param_errors[10]), 3), round(float(param_errors[11]), 3)
+        ax_err = round(float(param_errors[10]), 3) if param_errors[10] < 1000.0 else None
+        ay_err = round(float(param_errors[11]), 3) if param_errors[11] < 1000.0 else None
     else:
         b0, bx, by, rx, ry, H, mx, my, sx, sy = theta
         sx, sy = abs(sx), abs(sy)
@@ -595,65 +623,26 @@ def fit_2d_gaussian_peak(
     ndf = max(1, N_pixels - n_params)
     red_chi2 = chi2 / ndf
 
-    # Generate 1D projected curves for Det 1 (X) matching active slice Y
-    sy0 = int(round(slice_y0)) if slice_y0 is not None else y_min
-    sy1 = int(round(slice_y1)) if slice_y1 is not None else y_max
-    sy0_eff = max(0, min(H_mat - 1, sy0))
-    sy1_eff = max(sy0_eff, min(H_mat - 1, sy1))
-    ny_slice = sy1_eff - sy0_eff + 1
-
-    y_grid_slice = np.arange(sy0_eff, sy1_eff + 1, dtype=np.float64)
-    zy_slice = (y_grid_slice - my) / sy
+    # Background decomposition counts in ROI
+    dx = x_flat - mx
+    dy = y_flat - my
+    dxc = x_flat - ix
+    dyc = y_flat - iy
+    zx = dx / sx
+    zy = dy / sy
     if is_tail:
-        gy_slice = np.where(zy_slice >= -ay, np.exp(-0.5 * zy_slice**2), np.exp(np.clip(0.5 * ay**2 + ay * zy_slice, -50.0, 50.0)))
+        gx_val = np.where(zx >= -ax, np.exp(-0.5 * zx**2), np.exp(np.clip(0.5 * ax**2 + ax * zx, -50.0, 50.0)))
+        gy_val = np.where(zy >= -ay, np.exp(-0.5 * zy**2), np.exp(np.clip(0.5 * ay**2 + ay * zy, -50.0, 50.0)))
     else:
-        gy_slice = np.exp(-0.5 * zy_slice**2)
-    sum_gy = float(np.sum(gy_slice))
+        gx_val = np.exp(-0.5 * zx**2)
+        gy_val = np.exp(-0.5 * zy**2)
 
-    x_dense = np.linspace(xs[0], xs[-1], 200)
-    dx_d = x_dense - mx
-    dxc_d = x_dense - ix
-    zx_d = dx_d / sx
-    if is_tail:
-        gx_dense = np.where(zx_d >= -ax, np.exp(-0.5 * zx_d**2), np.exp(np.clip(0.5 * ax**2 + ax * zx_d, -50.0, 50.0)))
-    else:
-        gx_dense = np.exp(-0.5 * zx_d**2)
-
-    y_mean_offset = ((sy0_eff + sy1_eff) / 2.0) - iy
-    bg_cont_x = ny_slice * (b0 + bx * dxc_d + by * y_mean_offset)
-    bg1d_x = bg_cont_x + ry * sum_gy
-    peak1d_x = (rx * ny_slice + H * sum_gy) * gx_dense
-    fit1d_x = bg1d_x + peak1d_x
-
-    # Generate 1D projected curves for Det 2 (Y) matching active slice X
-    sx0 = int(round(slice_x0)) if slice_x0 is not None else x_min
-    sx1 = int(round(slice_x1)) if slice_x1 is not None else x_max
-    sx0_eff = max(0, min(W_mat - 1, sx0))
-    sx1_eff = max(sx0_eff, min(W_mat - 1, sx1))
-    nx_slice = sx1_eff - sx0_eff + 1
-
-    x_grid_slice = np.arange(sx0_eff, sx1_eff + 1, dtype=np.float64)
-    zx_slice = (x_grid_slice - mx) / sx
-    if is_tail:
-        gx_slice = np.where(zx_slice >= -ax, np.exp(-0.5 * zx_slice**2), np.exp(np.clip(0.5 * ax**2 + ax * zx_slice, -50.0, 50.0)))
-    else:
-        gx_slice = np.exp(-0.5 * zx_slice**2)
-    sum_gx = float(np.sum(gx_slice))
-
-    y_dense = np.linspace(ys[0], ys[-1], 200)
-    dy_d = y_dense - my
-    dyc_d = y_dense - iy
-    zy_d = dy_d / sy
-    if is_tail:
-        gy_dense = np.where(zy_d >= -ay, np.exp(-0.5 * zy_d**2), np.exp(np.clip(0.5 * ay**2 + ay * zy_d, -50.0, 50.0)))
-    else:
-        gy_dense = np.exp(-0.5 * zy_d**2)
-
-    x_mean_offset = ((sx0_eff + sx1_eff) / 2.0) - ix
-    bg_cont_y = nx_slice * (b0 + bx * x_mean_offset + by * dyc_d)
-    bg1d_y = bg_cont_y + rx * sum_gx
-    peak1d_y = (ry * nx_slice + H * sum_gx) * gy_dense
-    fit1d_y = bg1d_y + peak1d_y
+    cont_counts = float(np.sum(b0 + bx * dxc + by * dyc))
+    gx_2d = np.tile(gx_val[:Nx], Ny)
+    gy_2d = np.repeat(gy_val[::Nx], Nx)
+    ridge_x_counts = float(rx * np.sum(gx_2d))
+    ridge_y_counts = float(ry * np.sum(gy_2d))
+    total_bg_counts = rand_counts + cont_counts + ridge_x_counts + ridge_y_counts
 
     return {
         "success": True,
@@ -683,6 +672,14 @@ def fit_2d_gaussian_peak(
         "alpha_x_err": ax_err,
         "alpha_y": ay_val,
         "alpha_y_err": ay_err,
+        "gross_counts": round(gross_counts, 1),
+        "total_bg_counts": round(total_bg_counts, 1),
+        "rand_counts": round(rand_counts, 1),
+        "cont_counts": round(cont_counts, 1),
+        "ridge_x_counts": round(ridge_x_counts, 1),
+        "ridge_y_counts": round(ridge_y_counts, 1),
+        "sub_random": sub_random,
+        "random_fraction": round(float(f_rand), 4),
         "ridge_x": round(float(rx), 1),
         "ridge_x_err": round(float(param_errors[3]), 1),
         "ridge_y": round(float(ry), 1),
@@ -696,27 +693,7 @@ def fit_2d_gaussian_peak(
         "roi_x_min": int(x_min),
         "roi_x_max": int(x_max),
         "roi_y_min": int(y_min),
-        "roi_y_max": int(y_max),
-        "proj_x": {
-            "success": True,
-            "curve_x": [round(float(v), 2) for v in x_dense],
-            "curve_fit": [round(float(v), 2) for v in fit1d_x],
-            "curve_bg": [round(float(v), 2) for v in bg1d_x],
-            "centroid_ch": round(float(mx), 3),
-            "centroid_e": round(float(e_x), 2),
-            "roi_ch_min": int(x_min),
-            "roi_ch_max": int(x_max),
-        },
-        "proj_y": {
-            "success": True,
-            "curve_x": [round(float(v), 2) for v in y_dense],
-            "curve_fit": [round(float(v), 2) for v in fit1d_y],
-            "curve_bg": [round(float(v), 2) for v in bg1d_y],
-            "centroid_ch": round(float(my), 3),
-            "centroid_e": round(float(e_y), 2),
-            "roi_ch_min": int(y_min),
-            "roi_ch_max": int(y_max),
-        }
+        "roi_y_max": int(y_max)
     }
 
 
@@ -728,49 +705,29 @@ def print_fit_2d_terminal_report(res, filename, is_cal):
     print(f"⚛ GASPware 2D Coincidence Peak Fit - {filename} ({model_name})")
     print(subbar)
     if is_cal:
-        print(f"  Centroid (Energy): ({res['centroid_x_e']:.2f} ± {res['centroid_x_e_err']:.2f}, {res['centroid_y_e']:.2f} ± {res['centroid_y_e_err']:.2f}) keV")
-        print(f"  Centroid (ch)    : ({res['centroid_x_ch']:.3f} ± {res['centroid_x_ch_err']:.3f}, {res['centroid_y_ch']:.3f} ± {res['centroid_y_ch_err']:.3f}) ch")
-        print(f"  FWHM (Energy)    : FWHM_X = {res['fwhm_x_e']:.2f} ± {res['fwhm_x_e_err']:.2f} keV | FWHM_Y = {res['fwhm_y_e']:.2f} ± {res['fwhm_y_e_err']:.2f} keV")
-        print(f"  FWHM (ch)        : FWHM_X = {res['fwhm_x_ch']:.3f} ± {res['fwhm_x_ch_err']:.3f} ch  | FWHM_Y = {res['fwhm_y_ch']:.3f} ± {res['fwhm_y_ch_err']:.3f} ch")
+        print(f"  2D Centroid (Energy): ({res['centroid_x_e']:.2f} ± {res['centroid_x_e_err']:.2f}, {res['centroid_y_e']:.2f} ± {res['centroid_y_e_err']:.2f}) keV")
+        print(f"  2D Centroid (ch)    : ({res['centroid_x_ch']:.3f} ± {res['centroid_x_ch_err']:.3f}, {res['centroid_y_ch']:.3f} ± {res['centroid_y_ch_err']:.3f}) ch")
+        print(f"  FWHM (Energy)       : Det 1 (X) = {res['fwhm_x_e']:.2f} ± {res['fwhm_x_e_err']:.2f} keV | Det 2 (Y) = {res['fwhm_y_e']:.2f} ± {res['fwhm_y_e_err']:.2f} keV")
+        print(f"  FWHM (ch)           : Det 1 (X) = {res['fwhm_x_ch']:.3f} ± {res['fwhm_x_ch_err']:.3f} ch  | Det 2 (Y) = {res['fwhm_y_ch']:.3f} ± {res['fwhm_y_ch_err']:.3f} ch")
     else:
-        print(f"  Centroid (ch)    : ({res['centroid_x_ch']:.3f} ± {res['centroid_x_ch_err']:.3f}, {res['centroid_y_ch']:.3f} ± {res['centroid_y_ch_err']:.3f}) ch")
-        print(f"  FWHM (ch)        : FWHM_X = {res['fwhm_x_ch']:.3f} ± {res['fwhm_x_ch_err']:.3f} ch | FWHM_Y = {res['fwhm_y_ch']:.3f} ± {res['fwhm_y_ch_err']:.3f} ch")
-    print(f"  True 2D Volume   : {res['volume']:10.1f} ± {res['volume_err']:<6.1f} counts  (Net Coincidence Area)")
-    print(f"  Peak Amplitude(H): {res['amplitude']:10.1f} ± {res['amplitude_err']:<6.1f} counts")
-    print(f"  Cross-Ridges     : Det 1 Ridge (Rx) = {res['ridge_x']:.1f} ± {res['ridge_x_err']:.1f}, Det 2 Ridge (Ry) = {res['ridge_y']:.1f} ± {res['ridge_y_err']:.1f}")
-    print(f"  2D Continuum BG  : b0 = {res['bg_b0']:.2f}, bx = {res['bg_bx']:.4f}, by = {res['bg_by']:.4f}")
+        print(f"  2D Centroid (ch)    : ({res['centroid_x_ch']:.3f} ± {res['centroid_x_ch_err']:.3f}, {res['centroid_y_ch']:.3f} ± {res['centroid_y_ch_err']:.3f}) ch")
+        print(f"  FWHM (ch)           : Det 1 (X) = {res['fwhm_x_ch']:.3f} ± {res['fwhm_x_ch_err']:.3f} ch | Det 2 (Y) = {res['fwhm_y_ch']:.3f} ± {res['fwhm_y_ch_err']:.3f} ch")
+    print(f"  True 2D Volume      : {res['volume']:10.1f} ± {res['volume_err']:<6.1f} counts  (Net Coincidence Area)")
+    print(f"  Peak Amplitude (H)  : {res['amplitude']:10.1f} ± {res['amplitude_err']:<6.1f} counts")
     if res.get("alpha_x") is not None:
-        print(f"  Left Tail Joins  : α_X = {res['alpha_x']:.2f} ± {res.get('alpha_x_err', 0.0):.2f}, α_Y = {res['alpha_y']:.2f} ± {res.get('alpha_y_err', 0.0):.2f}")
-    print(f"  2D Fit ROI Window: Det 1 (X)=[ch {res['roi_x_min']}..{res['roi_x_max']}], Det 2 (Y)=[ch {res['roi_y_min']}..{res['roi_y_max']}]")
-    print(f"  Reduced Chi2/NDF : {res['red_chi2']:.3f} (Chi2 = {res['chi2']:.1f}, NDF = {res['ndf']})")
-    print(f"{bar}\n", flush=True)
-
-
-def print_coincidence_pair_terminal_report(res_x, res_y, filename, is_cal):
-    bar = "═" * 80
-    subbar = "─" * 80
-    model_name = "Gaussian with Left Tail (HPGe)" if res_x.get("fit_type") == "gaussian_tail" else "Standard Symmetric Gaussian"
-    print(f"\n{bar}")
-    print(f"⚛ GASPware 2D Coincidence Peak Fit (Dual 1D) - {filename} ({model_name})")
-    print(subbar)
-    if is_cal:
-        print(f"  2D Centroid (Energy): ({res_x['centroid_e']:.2f} ± {res_x['centroid_e_err']:.2f}, {res_y['centroid_e']:.2f} ± {res_y['centroid_e_err']:.2f}) keV")
-        print(f"  2D Centroid (ch)    : ({res_x['centroid_ch']:.3f} ± {res_x['centroid_ch_err']:.3f}, {res_y['centroid_ch']:.3f} ± {res_y['centroid_ch_err']:.3f}) ch")
-        print(f"  FWHM (Energy)       : Det 1 (X) = {res_x['fwhm_e']:.2f} ± {res_x['fwhm_e_err']:.2f} keV | Det 2 (Y) = {res_y['fwhm_e']:.2f} ± {res_y['fwhm_e_err']:.2f} keV")
-        print(f"  FWHM (ch)           : Det 1 (X) = {res_x['fwhm_ch']:.3f} ± {res_x['fwhm_ch_err']:.3f} ch  | Det 2 (Y) = {res_y['fwhm_ch']:.3f} ± {res_y['fwhm_ch_err']:.3f} ch")
-    else:
-        print(f"  2D Centroid (ch)    : ({res_x['centroid_ch']:.3f} ± {res_x['centroid_ch_err']:.3f}, {res_y['centroid_ch']:.3f} ± {res_y['centroid_ch_err']:.3f}) ch")
-        print(f"  FWHM (ch)           : Det 1 (X) = {res_x['fwhm_ch']:.3f} ± {res_x['fwhm_ch_err']:.3f} ch | Det 2 (Y) = {res_y['fwhm_ch']:.3f} ± {res_y['fwhm_ch_err']:.3f} ch")
-    print(f"  Net Peak Area (X)   : {res_x['area']:10.1f} ± {res_x['area_err']:<6.1f} counts (Det 1, Sliced Y)")
-    print(f"  Net Peak Area (Y)   : {res_y['area']:10.1f} ± {res_y['area_err']:<6.1f} counts (Det 2, Sliced X)")
-    print(f"  Peak Amplitude (H)  : Det 1 = {res_x['amplitude']:.1f} ± {res_x['amplitude_err']:.1f} cts | Det 2 = {res_y['amplitude']:.1f} ± {res_y['amplitude_err']:.1f} cts")
-    if res_x.get("alpha") is not None or res_y.get("alpha") is not None:
-        ax_str = f"{res_x['alpha']:.3f} ± {res_x['alpha_err']:.3f}" if res_x.get("alpha") else "N/A"
-        ay_str = f"{res_y['alpha']:.3f} ± {res_y['alpha_err']:.3f}" if res_y.get("alpha") else "N/A"
+        ax_str = f"{res['alpha_x']:.3f}" + (f" ± {res['alpha_x_err']:.3f}" if res.get('alpha_x_err') else "")
+        ay_str = f"{res['alpha_y']:.3f}" + (f" ± {res['alpha_y_err']:.3f}" if res.get('alpha_y_err') else "")
         print(f"  Left Tail Joins (α) : α_X = {ax_str} | α_Y = {ay_str}")
-    print(f"  Gross / Background  : Det 1: {res_x['gross_counts']:.0f} / {res_x['bg_counts']:.0f} | Det 2: {res_y['gross_counts']:.0f} / {res_y['bg_counts']:.0f} counts")
-    print(f"  Reduced Chi2 / NDF  : Det 1 = {res_x['red_chi2']:.3f} (NDF={res_x['ndf']}) | Det 2 = {res_y['red_chi2']:.3f} (NDF={res_y['ndf']})")
-    print(f"  Fit ROI Windows     : Det 1 [ch {res_x['roi_ch_min']}..{res_x['roi_ch_max']}], Det 2 [ch {res_y['roi_ch_min']}..{res_y['roi_ch_max']}]")
+    print(subbar)
+    print(f"  Background Decomposition:")
+    rand_status = f"Subtracted ({res['random_fraction']*100:.1f}%)" if res.get('sub_random') else "Disabled"
+    print(f"    • Random γ-γ Coinc. : {res.get('rand_counts', 0.0):10.1f} counts [{rand_status}]")
+    print(f"    • 2D Continuum BG   : {res.get('cont_counts', 0.0):10.1f} counts (b0={res['bg_b0']:.2f}, bx={res['bg_bx']:.4f}, by={res['bg_by']:.4f})")
+    print(f"    • Cross-Ridge Det 1 : {res.get('ridge_x_counts', 0.0):10.1f} counts (Rx={res['ridge_x']:.1f} ± {res['ridge_x_err']:.1f})")
+    print(f"    • Cross-Ridge Det 2 : {res.get('ridge_y_counts', 0.0):10.1f} counts (Ry={res['ridge_y']:.1f} ± {res['ridge_y_err']:.1f})")
+    print(f"    • Total Background  : {res.get('total_bg_counts', 0.0):10.1f} counts | Gross in ROI: {res.get('gross_counts', 0.0):10.1f} counts")
+    print(f"  2D Fit ROI Window   : Det 1 (X)=[ch {res['roi_x_min']}..{res['roi_x_max']}], Det 2 (Y)=[ch {res['roi_y_min']}..{res['roi_y_max']}]")
+    print(f"  Reduced Chi2 / NDF  : {res['red_chi2']:.3f} (Chi2 = {res['chi2']:.1f}, NDF = {res['ndf']})")
     print(f"{bar}\n", flush=True)
 
 
@@ -911,20 +868,38 @@ def generate_pdf_2d(matrix, x0, x1, y0, y1, cmap_name="turbo", scale_mode="log",
     cbar.set_label("Counts", fontsize=11, labelpad=6)
     cbar.ax.tick_params(labelsize=9)
 
-    # Draw 2D fit crosshair and ellipse if active
+    # Draw 2D fit crosshair, ellipse and ROI box if active
     if fit_2d_res and fit_2d_res.get("success"):
         cx = fit_2d_res.get("centroid_x_ch", 0) + 0.5
         cy = fit_2d_res.get("centroid_y_ch", 0) + 0.5
         fwhm_x = fit_2d_res.get("fwhm_x_ch", 4.0)
         fwhm_y = fit_2d_res.get("fwhm_y_ch", 4.0)
 
+        # ROI box
+        rx0 = fit_2d_res.get("roi_x_min", cx - 8)
+        rx1 = fit_2d_res.get("roi_x_max", cx + 8) + 1
+        ry0 = fit_2d_res.get("roi_y_min", cy - 8)
+        ry1 = fit_2d_res.get("roi_y_max", cy + 8) + 1
+        import matplotlib.patches as patches
+        rect = patches.Rectangle((rx0, ry0), rx1 - rx0, ry1 - ry0, linewidth=1.0, edgecolor="#ffd600", facecolor="none", linestyle="--", alpha=0.7)
+        ax.add_patch(rect)
+
         # Crosshair
         ax.plot([cx - 4, cx + 4], [cy, cy], color="#ff0066", linewidth=1.2)
         ax.plot([cx, cx], [cy - 4, cy + 4], color="#ff0066", linewidth=1.2)
 
         # Ellipse
-        ell = Ellipse((cx, cy), width=fwhm_x, height=fwhm_y, angle=0, edgecolor="#ffd600", facecolor="none", linewidth=1.5)
+        ell = Ellipse((cx, cy), width=fwhm_x, height=fwhm_y, angle=0, edgecolor="#ffd600", facecolor="none", linewidth=1.6)
         ax.add_patch(ell)
+
+        # Text annotation with Net Volume and Centroid
+        vol_val = fit_2d_res.get("volume", 0)
+        vol_err = fit_2d_res.get("volume_err", 0)
+        vol_str = f"Net Vol: {vol_val:,.0f} ± {vol_err:,.0f} cts" if vol_err else f"Net Vol: {vol_val:,.0f} cts"
+        ax.text(0.02, 0.98, f"2D Coincidence Peak\nCentroid: ({cx-0.5:.1f}, {cy-0.5:.1f})\n{vol_str}",
+                transform=ax.transAxes, verticalalignment="top", fontsize=9,
+                bbox=dict(boxstyle="round,pad=0.4", facecolor="#191c20", edgecolor="#ffd600", alpha=0.85),
+                color="#ffffff", fontfamily="monospace")
 
     fig.tight_layout()
     buf = io.BytesIO()
@@ -974,40 +949,24 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             query = parse_qs(urlparse(self.path).query)
             x = float(query.get("x", [0])[0])
             y = float(query.get("y", [0])[0])
-            fit_type = query.get("fit_type", ["gaussian_tail"])[0]
-            fwhm_mult = float(query.get("fwhm_mult", [4.0])[0])
-            x0 = max(0, min(self.matrix.shape[1] - 1, int(float(query.get("x0", [0])[0]))))
-            x1 = max(x0 + 1, min(self.matrix.shape[1], int(float(query.get("x1", [self.matrix.shape[1]])[0]))))
-            y0 = max(0, min(self.matrix.shape[0] - 1, int(float(query.get("y0", [0])[0]))))
-            y1 = max(y0 + 1, min(self.matrix.shape[0], int(float(query.get("y1", [self.matrix.shape[0]])[0]))))
-
-            if y0 == 0 and y1 >= self.matrix.shape[0]:
-                spec_x = self.proj
-            else:
-                spec_x = np.sum(self.matrix[y0:y1, :], axis=0, dtype=np.float64)
-
-            if x0 == 0 and x1 >= self.matrix.shape[1]:
-                spec_y = np.sum(self.matrix, axis=1, dtype=np.float64)
-            else:
-                spec_y = np.sum(self.matrix[:, x0:x1], axis=1, dtype=np.float64)
+            fit_type = query.get("fit_type", ["gaussian"])[0]
+            roi_half_width = int(float(query.get("roi_half_width", [query.get("roi_width", [16])[0]])[0]))
+            sub_random = query.get("sub_random", ["true"])[0].lower() in ("true", "1", "yes")
+            random_frac = float(query.get("random_frac", [0.05])[0])
 
             is_cal = self.cal and (self.cal[0] != 0.0 or self.cal[1] != 1.0 or self.cal[2] != 0.0)
+            proj_y = self.proj if (self.reader and self.reader.is_symmetric) else np.sum(self.matrix, axis=1, dtype=np.float64)
+            tot_counts = float(np.sum(self.proj))
             try:
-                fit_x = fit_gaussian_peak(np.arange(len(spec_x)), spec_x, x, fit_type=fit_type, fwhm_mult=fwhm_mult, cal=self.cal)
-                fit_y = fit_gaussian_peak(np.arange(len(spec_y)), spec_y, y, fit_type=fit_type, fwhm_mult=fwhm_mult, cal=self.cal)
-                fit_x["axis"] = 0
-                fit_y["axis"] = 1
-                res = {
-                    "success": True,
-                    "is_2d": True,
-                    "fit_type": fit_type,
-                    "fit_x": fit_x,
-                    "fit_y": fit_y,
-                }
-                print_coincidence_pair_terminal_report(fit_x, fit_y, self.reader.filename.name, is_cal)
+                res = fit_2d_gaussian_peak(
+                    self.matrix, x, y, fit_type=fit_type, cal=self.cal, roi_half_width=roi_half_width,
+                    sub_random=sub_random, random_fraction=random_frac,
+                    proj_x=self.proj, proj_y=proj_y, total_counts=tot_counts
+                )
+                print_fit_2d_terminal_report(res, self.reader.filename.name, is_cal)
             except Exception as e:
                 res = {"success": False, "error": str(e), "is_2d": True}
-                print(f"[!] Coincidence peak fit error at ({x:.1f}, {y:.1f}): {e}", file=sys.stderr)
+                print(f"[!] 2D coincidence peak fit error at ({x:.1f}, {y:.1f}): {e}", file=sys.stderr)
 
             self.send_response(200)
             self.send_header("Content-type", "application/json")
@@ -1157,7 +1116,7 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             zoom_y = float(query.get("zoom_y", [1.0])[0])
             has_fit = int(query.get("has_fit", [0])[0]) == 1
             fit_ch = float(query.get("fit_ch", [0])[0]) if has_fit else None
-            fit_type = query.get("fit_type", ["gaussian_tail"])[0]
+            fit_type = query.get("fit_type", ["gaussian"])[0]
             fwhm_mult = float(query.get("fwhm_mult", [4.0])[0])
 
             if axis == 0:
@@ -1211,23 +1170,18 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             has_fit = int(query.get("has_fit", [0])[0]) == 1
             fit_x = float(query.get("fit_x", [0])[0]) if has_fit else None
             fit_y = float(query.get("fit_y", [0])[0]) if has_fit else None
-            fit_type = query.get("fit_type", ["gaussian_tail"])[0]
+            fit_type = query.get("fit_type", ["gaussian"])[0]
             fwhm_mult = float(query.get("fwhm_mult", [4.0])[0])
 
             fit_2d_res = None
             if has_fit and fit_x is not None and fit_y is not None:
                 try:
-                    spec_x = np.sum(self.matrix[y0:y1, :], axis=0, dtype=np.float64) if not (y0 == 0 and y1 >= self.matrix.shape[0]) else self.proj
-                    spec_y = np.sum(self.matrix[:, x0:x1], axis=1, dtype=np.float64) if not (x0 == 0 and x1 >= self.matrix.shape[1]) else np.sum(self.matrix, axis=1, dtype=np.float64)
-                    fit_res_x = fit_gaussian_peak(np.arange(len(spec_x)), spec_x, fit_x, fit_type=fit_type, fwhm_mult=fwhm_mult, cal=self.cal)
-                    fit_res_y = fit_gaussian_peak(np.arange(len(spec_y)), spec_y, fit_y, fit_type=fit_type, fwhm_mult=fwhm_mult, cal=self.cal)
-                    fit_2d_res = {
-                        "success": True,
-                        "centroid_x_ch": fit_res_x.get("centroid_ch", fit_x),
-                        "centroid_y_ch": fit_res_y.get("centroid_ch", fit_y),
-                        "fwhm_x_ch": fit_res_x.get("fwhm_ch", 4.0),
-                        "fwhm_y_ch": fit_res_y.get("fwhm_ch", 4.0),
-                    }
+                    proj_y = self.proj if (self.reader and self.reader.is_symmetric) else np.sum(self.matrix, axis=1, dtype=np.float64)
+                    fit_2d_res = fit_2d_gaussian_peak(
+                        self.matrix, fit_x, fit_y, fit_type=fit_type, cal=self.cal, roi_half_width=16,
+                        sub_random=True, random_fraction=0.05,
+                        proj_x=self.proj, proj_y=proj_y, total_counts=float(np.sum(self.proj))
+                    )
                 except Exception:
                     fit_2d_res = None
 
@@ -1374,20 +1328,26 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
   .fit-results-card {
     background: #191c20;
-    border: 1px solid #ffd600;
     border-radius: 6px;
-    padding: 6px 10px;
+    padding: 7px 10px;
     font-size: 0.74rem;
     font-family: monospace;
     flex-shrink: 0;
     display: none;
     box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    margin-top: 6px;
+  }
+  .fit-card-1d {
+    border: 1px solid #00e5ff;
+  }
+  .fit-card-2d {
+    border: 1px solid #ffd600;
   }
   .fit-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 4px;
+    margin-bottom: 5px;
     font-weight: bold;
     color: #ffd600;
   }
@@ -1454,23 +1414,49 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <button id="btnQuit" class="secondary" style="background:#b71c1c; margin-top:5px;">Quit Viewer [Q]</button>
     </div>
 
-    <!-- 2. Peak Fitting (Second) -->
+    <!-- 2. 1D Spectrum Fitting -->
     <div class="control-group">
-      <h3>Peak Fitting</h3>
-      <label>Peak Function</label>
-      <select id="fitTypeSelect">
-        <option value="gaussian_tail" selected>Gaussian + Left Tail (HPGe)</option>
-        <option value="gaussian">Gaussian (Symmetric)</option>
+      <h3 style="color: #00e5ff;">1D Histogram Peak Fit</h3>
+      <label>1D Peak Function</label>
+      <select id="fitTypeSelect1D">
+        <option value="gaussian" selected>Gaussian (Symmetric)</option>
+        <option value="gaussian_tail">Gaussian + Left Tail (HPGe)</option>
       </select>
 
-      <label style="margin-top: 6px;">Fit Region <span class="range-val" id="fwhmMultLabel">4.0× FWHM</span></label>
-      <input type="range" id="fwhmMultSlider" min="1.0" max="10.0" step="0.5" value="4.0">
+      <label style="margin-top: 6px;">1D Fit Region <span class="range-val" id="fwhmMultLabel1D">4.0× FWHM</span></label>
+      <input type="range" id="fwhmMultSlider1D" min="1.0" max="10.0" step="0.5" value="4.0">
       <small style="color: #888; font-size: 0.68rem; display: block; margin-top: 3px;">
-        ROI window in units of peak FWHM (1x-3x for multiplets, 5x-10x for isolated peaks).
+        Fits 1D histogram peaks on Det 1 or Det 2 (Ctrl+Click on spectrum or [G]).
       </small>
     </div>
 
-    <!-- 3. Color & 1D Projections (Merged) -->
+    <!-- 3. 2D Coincidence Fitting -->
+    <div class="control-group">
+      <h3 style="color: #ffd600;">2D Coincidence Peak Fit</h3>
+      <label>2D Peak Function</label>
+      <select id="fitTypeSelect2D">
+        <option value="gaussian" selected>Gaussian (Symmetric)</option>
+        <option value="gaussian_tail">Gaussian + Left Tail (HPGe)</option>
+      </select>
+
+      <label style="margin-top: 6px;">2D ROI Half-Width <span class="range-val" id="roiWidthLabel2D">±16 ch</span></label>
+      <input type="range" id="roiWidthSlider2D" min="6" max="36" step="2" value="16">
+
+      <div style="margin-top: 8px; padding-top: 6px; border-top: 1px solid #333;">
+        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: #eee; font-size: 0.74rem;">
+          <input type="checkbox" id="subRandomCheck2D" checked style="width: auto; margin: 0; cursor: pointer;">
+          <span>Subtract Random Coincidences</span>
+        </label>
+
+        <label style="margin-top: 6px;">Random Fraction (<span style="font-family: monospace;">f<sub>rand</sub></span>) <span class="range-val" id="randFracLabel2D">5.0%</span></label>
+        <input type="range" id="randFracSlider2D" min="0" max="30" step="0.5" value="5.0">
+        <small style="color: #888; font-size: 0.68rem; display: block; margin-top: 3px;">
+          B<sub>rand</sub> = f<sub>rand</sub> · [P<sub>x</sub>·P<sub>y</sub> / T<sub>tot</sub>] (Ctrl+Click on 2D or [G]).
+        </small>
+      </div>
+    </div>
+
+    <!-- 4. Color & 1D Projections -->
     <div class="control-group">
       <h3>Color &amp; Projections</h3>
       <label>Colormap [C]</label>
@@ -1504,7 +1490,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       </select>
     </div>
 
-    <!-- 4. Contrast / Cutoffs -->
+    <!-- 5. Contrast / Cutoffs -->
     <div class="control-group">
       <h3>Contrast / Cutoffs</h3>
       <label>Max Contrast <span class="range-val" id="vmaxLabel">1000</span></label>
@@ -1547,19 +1533,41 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         </div>
         <canvas id="canvas1dY"></canvas>
       </div>
-      <div class="fit-results-card" id="fitCard">
-        <div class="fit-header">
-          <span id="fitTitle">⚛ Peak Fit Results</span>
-          <button class="fit-btn-close" id="btnCloseFit">✕ Clear Fit [=]</button>
+
+      <!-- 1D Fit Results Card -->
+      <div class="fit-results-card fit-card-1d" id="fitCard1D">
+        <div class="fit-header" style="color: #00e5ff;">
+          <span id="fitTitle1D">⚛ 1D Peak Fit Results</span>
+          <button class="fit-btn-close" id="btnCloseFit1D">✕ Clear 1D Fit</button>
         </div>
         <div class="fit-grid">
-          <div class="fit-item"><span class="lbl">Centroid:</span><span class="val" id="fitCentroid">-</span></div>
-          <div class="fit-item"><span class="lbl" id="fitAreaLbl">Peak Area:</span><span class="val" id="fitArea">-</span></div>
-          <div class="fit-item"><span class="lbl">FWHM:</span><span class="val" id="fitFWHM">-</span></div>
-          <div class="fit-item"><span class="lbl">Amplitude:</span><span class="val" id="fitAmp">-</span></div>
-          <div class="fit-item" id="fitTailItem"><span class="lbl" id="fitTailLbl">Left Tail (α):</span><span class="val" id="fitTail">-</span></div>
-          <div class="fit-item"><span class="lbl" id="fitBgLbl">Background:</span><span class="val" id="fitGrossBg">-</span></div>
-          <div class="fit-item"><span class="lbl">Reduced χ²:</span><span class="val" id="fitChi2">-</span></div>
+          <div class="fit-item"><span class="lbl">Centroid:</span><span class="val" id="fitCentroid1D">-</span></div>
+          <div class="fit-item"><span class="lbl">Peak Area:</span><span class="val" id="fitArea1D">-</span></div>
+          <div class="fit-item"><span class="lbl">FWHM:</span><span class="val" id="fitFWHM1D">-</span></div>
+          <div class="fit-item"><span class="lbl">Amplitude:</span><span class="val" id="fitAmp1D">-</span></div>
+          <div class="fit-item" id="fitTailItem1D"><span class="lbl">Left Tail (α):</span><span class="val" id="fitTail1D">-</span></div>
+          <div class="fit-item"><span class="lbl">Gross / Bg:</span><span class="val" id="fitGrossBg1D">-</span></div>
+          <div class="fit-item"><span class="lbl">Reduced χ²:</span><span class="val" id="fitChi21D">-</span></div>
+        </div>
+      </div>
+
+      <!-- 2D Coincidence Fit Results Card -->
+      <div class="fit-results-card fit-card-2d" id="fitCard2D">
+        <div class="fit-header" style="color: #ffd600;">
+          <span id="fitTitle2D">⚛ 2D Coincidence Peak Fit</span>
+          <button class="fit-btn-close" id="btnCloseFit2D">✕ Clear 2D Fit</button>
+        </div>
+        <div class="fit-grid">
+          <div class="fit-item"><span class="lbl">2D Centroid:</span><span class="val" id="fitCentroid2D">-</span></div>
+          <div class="fit-item"><span class="lbl">Net 2D Volume:</span><span class="val" id="fitVolume2D" style="color: #4caf50;">-</span></div>
+          <div class="fit-item"><span class="lbl">FWHM (X / Y):</span><span class="val" id="fitFWHM2D">-</span></div>
+          <div class="fit-item"><span class="lbl">Amplitude (H):</span><span class="val" id="fitAmp2D">-</span></div>
+          <div class="fit-item" id="fitTailItem2D"><span class="lbl">Left Tails (α):</span><span class="val" id="fitTail2D">-</span></div>
+          <div class="fit-item"><span class="lbl">Random BG Sub:</span><span class="val" id="fitRandBg2D" style="color: #ff80ab;">-</span></div>
+          <div class="fit-item"><span class="lbl">Continuum BG:</span><span class="val" id="fitContBg2D">-</span></div>
+          <div class="fit-item"><span class="lbl">Cross-Ridges:</span><span class="val" id="fitRidges2D">-</span></div>
+          <div class="fit-item"><span class="lbl">Gross / Total BG:</span><span class="val" id="fitGrossBg2D">-</span></div>
+          <div class="fit-item"><span class="lbl">Reduced χ² / NDF:</span><span class="val" id="fitChi22D">-</span></div>
         </div>
       </div>
     </div>
@@ -1574,10 +1582,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <tr><td>Mouse Wheel (2D)</td><td>Zoom In / Out centered on current view in equal steps</td></tr>
     <tr><td>Mouse Wheel (1D)</td><td>Zoom In / Out on Y-axis (fixed Ymin, adjusts Ymax)</td></tr>
     <tr><td>Double Click (1D)</td><td>Reset 1D Y-axis scale to default auto-scale</td></tr>
-    <tr><td>Ctrl / Cmd + Click (2D)</td><td>2D Coincidence Peak Fit (Dual 1D Fits)</td></tr>
-    <tr><td>Ctrl / Cmd + Click (1D)</td><td>1D Peak Fit + Linear Background</td></tr>
-    <tr><td>G / g</td><td>Fit peak at current cursor position (2D or 1D)</td></tr>
-    <tr><td>= (Equals) / +</td><td>Clear active peak fit from spectra and 2D matrix</td></tr>
+    <tr><td>Ctrl / Cmd + Click (2D)</td><td>2D Coincidence Peak Fit (Gaussian/HPGe + BG &amp; Random Subtraction)</td></tr>
+    <tr><td>Ctrl / Cmd + Click (1D)</td><td>1D Histogram Peak Fit + Linear Background (Det 1 or Det 2)</td></tr>
+    <tr><td>G / g</td><td>Fit peak at current cursor position (2D coincidence or 1D histogram)</td></tr>
+    <tr><td>= (Equals) / +</td><td>Clear active peak fits (1D and 2D)</td></tr>
     <tr><td>Shift + Arrows (←, →, ↓, ↑)</td><td>Pan 2D matrix view in steps (uses Scroll Sensitivity)</td></tr>
     <tr><td>Left Arrow (←)</td><td>Set Left limit (Xmin) at cursor</td></tr>
     <tr><td>Right Arrow (→)</td><td>Set Right limit (Xmax) at cursor</td></tr>
@@ -1925,8 +1933,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }
 
     // 5. Draw 2D Coincidence Peak Fit Indicator & FWHM Ellipse
-    if (activeFitResult2D && activeFitResult2D.success) {
-      const f2d = activeFitResult2D;
+    if (activeFit2D && activeFit2D.success) {
+      const f2d = activeFit2D;
       const ptC = chToPx2D(f2d.centroid_x_ch + 0.5, f2d.centroid_y_ch + 0.5);
       const ptL = chToPx2D(f2d.roi_x_min, f2d.roi_y_max + 1);
       const ptR = chToPx2D(f2d.roi_x_max + 1, f2d.roi_y_min);
@@ -1934,9 +1942,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       // A. ROI box
       ctx2d.fillStyle = 'rgba(255, 214, 0, 0.08)';
       ctx2d.fillRect(Math.min(ptL.x, ptR.x), Math.min(ptL.y, ptR.y), Math.abs(ptR.x - ptL.x), Math.abs(ptR.y - ptL.y));
-      ctx2d.strokeStyle = 'rgba(255, 214, 0, 0.5)';
+      ctx2d.strokeStyle = 'rgba(255, 214, 0, 0.6)';
       ctx2d.lineWidth = 1;
-      ctx2d.setLineDash([3, 3]);
+      ctx2d.setLineDash([4, 4]);
       ctx2d.strokeRect(Math.min(ptL.x, ptR.x), Math.min(ptL.y, ptR.y), Math.abs(ptR.x - ptL.x), Math.abs(ptR.y - ptL.y));
       ctx2d.setLineDash([]);
 
@@ -1953,104 +1961,94 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       ctx2d.stroke();
 
       // C. Crosshair at Centroid
-      ctx2d.strokeStyle = '#ff4081';
-      ctx2d.lineWidth = 1.4;
+      ctx2d.strokeStyle = '#ff007f';
+      ctx2d.lineWidth = 1.6;
       ctx2d.beginPath();
-      ctx2d.moveTo(ptC.x - 7, ptC.y); ctx2d.lineTo(ptC.x + 7, ptC.y);
-      ctx2d.moveTo(ptC.x, ptC.y - 7); ctx2d.lineTo(ptC.x, ptC.y + 7);
+      ctx2d.moveTo(ptC.x - 8, ptC.y); ctx2d.lineTo(ptC.x + 8, ptC.y);
+      ctx2d.moveTo(ptC.x, ptC.y - 8); ctx2d.lineTo(ptC.x, ptC.y + 8);
       ctx2d.stroke();
 
-      // D. Callout badge
+      // D. Callout badge with Centroid & Volume
       const isCal = metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0);
-      const lbl = isCal
+      const posStr = isCal
         ? `(${f2d.centroid_x_e}, ${f2d.centroid_y_e}) keV`
         : `(${f2d.centroid_x_ch}, ${f2d.centroid_y_ch}) ch`;
+      const lbl = `⚛ ${posStr} | Vol: ${f2d.volume.toLocaleString()} cts`;
       ctx2d.font = 'bold 9px monospace';
       const tW = ctx2d.measureText(lbl).width;
-      ctx2d.fillStyle = 'rgba(20, 20, 20, 0.88)';
-      ctx2d.fillRect(ptC.x + 8, ptC.y - 15, tW + 6, 14);
+      ctx2d.fillStyle = 'rgba(15, 18, 24, 0.92)';
+      ctx2d.fillRect(ptC.x + 8, ptC.y - 17, tW + 8, 16);
       ctx2d.strokeStyle = '#ffd600';
-      ctx2d.strokeRect(ptC.x + 8, ptC.y - 15, tW + 6, 14);
+      ctx2d.lineWidth = 1;
+      ctx2d.strokeRect(ptC.x + 8, ptC.y - 17, tW + 8, 16);
       ctx2d.fillStyle = '#ffd600';
       ctx2d.textAlign = 'left';
-      ctx2d.fillText(lbl, ptC.x + 11, ptC.y - 4);
+      ctx2d.fillText(lbl, ptC.x + 12, ptC.y - 5);
     }
     updateMarkerStatus();
   }
 
-  let activeFitResult = { 0: null, 1: null };
-  let activeFitResult2D = null;
+  let activeFit1D = { 0: null, 1: null };
+  let activeFit2D = null;
 
   async function requestPeakFit2D(x, y) {
-    const x0 = Math.floor(Math.max(0, view.x0));
-    const x1 = Math.ceil(Math.min(metadata.shape[0], view.x1));
-    const y0 = Math.floor(Math.max(0, view.y0));
-    const y1 = Math.ceil(Math.min(metadata.shape[1], view.y1));
-    const fitType = document.getElementById('fitTypeSelect') ? document.getElementById('fitTypeSelect').value : 'gaussian_tail';
-    const fwhmMult = document.getElementById('fwhmMultSlider') ? document.getElementById('fwhmMultSlider').value : '4.0';
+    const fitType = document.getElementById('fitTypeSelect2D') ? document.getElementById('fitTypeSelect2D').value : 'gaussian';
+    const roiHW = document.getElementById('roiWidthSlider2D') ? parseInt(document.getElementById('roiWidthSlider2D').value, 10) : 16;
+    const subRand = document.getElementById('subRandomCheck2D') ? document.getElementById('subRandomCheck2D').checked : true;
+    const randFracPercent = document.getElementById('randFracSlider2D') ? parseFloat(document.getElementById('randFracSlider2D').value) : 5.0;
+    const randFrac = (randFracPercent / 100.0).toFixed(4);
 
-    const res = await fetch(`/api/fit_peak_2d?x=${x}&y=${y}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}&fit_type=${fitType}&fwhm_mult=${fwhmMult}`);
+    const res = await fetch(`/api/fit_peak_2d?x=${x}&y=${y}&fit_type=${fitType}&roi_half_width=${roiHW}&sub_random=${subRand}&random_frac=${randFrac}`);
     const data = await res.json();
     if (data.success) {
-      activeFitResult[0] = data.fit_x;
-      activeFitResult[1] = data.fit_y;
-      activeFitResult2D = {
-        success: true,
-        centroid_x_ch: data.fit_x.centroid_ch,
-        centroid_y_ch: data.fit_y.centroid_ch,
-        centroid_x_e: data.fit_x.centroid_e,
-        centroid_y_e: data.fit_y.centroid_e,
-        fwhm_x_ch: data.fit_x.fwhm_ch,
-        fwhm_y_ch: data.fit_y.fwhm_ch,
-        roi_x_min: data.fit_x.roi_ch_min,
-        roi_x_max: data.fit_x.roi_ch_max,
-        roi_y_min: data.fit_y.roi_ch_min,
-        roi_y_max: data.fit_y.roi_ch_max,
-      };
+      activeFit2D = data;
 
       const isCal = metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0);
-      const modelTag = (data.fit_type === 'gaussian_tail') ? '2D Peak Fit (Left-Tail)' : '2D Gaussian Fit';
+      const modelTag = (data.fit_type === 'gaussian_tail') ? '2D Peak Fit (Left-Tail HPGe)' : '2D Gaussian Fit (Symmetric)';
       const posTag = isCal
-        ? `(${data.fit_x.centroid_e}, ${data.fit_y.centroid_e}) keV`
-        : `(${data.fit_x.centroid_ch}, ${data.fit_y.centroid_ch}) ch`;
+        ? `(${data.centroid_x_e}, ${data.centroid_y_e}) keV`
+        : `(${data.centroid_x_ch}, ${data.centroid_y_ch}) ch`;
 
-      document.getElementById('fitTitle').innerText = `⚛ ${modelTag}: ${posTag}`;
+      document.getElementById('fitTitle2D').innerText = `⚛ ${modelTag}: ${posTag}`;
 
-      document.getElementById('fitCentroid').innerText = isCal
-        ? `(${data.fit_x.centroid_e} ± ${data.fit_x.centroid_e_err}, ${data.fit_y.centroid_e} ± ${data.fit_y.centroid_e_err}) keV`
-        : `(${data.fit_x.centroid_ch} ± ${data.fit_x.centroid_ch_err}, ${data.fit_y.centroid_ch} ± ${data.fit_y.centroid_ch_err}) ch`;
+      document.getElementById('fitCentroid2D').innerText = isCal
+        ? `(${data.centroid_x_e} ± ${data.centroid_x_e_err}, ${data.centroid_y_e} ± ${data.centroid_y_e_err}) keV [ch (${data.centroid_x_ch}, ${data.centroid_y_ch})]`
+        : `(${data.centroid_x_ch} ± ${data.centroid_x_ch_err}, ${data.centroid_y_ch} ± ${data.centroid_y_ch_err}) ch`;
 
-      document.getElementById('fitAreaLbl').innerText = 'Net Areas (X / Y):';
-      document.getElementById('fitArea').innerText = `X: ${data.fit_x.area.toLocaleString()} ± ${data.fit_x.area_err.toLocaleString()} | Y: ${data.fit_y.area.toLocaleString()} ± ${data.fit_y.area_err.toLocaleString()} cts`;
+      document.getElementById('fitVolume2D').innerText = `${data.volume.toLocaleString()} ± ${data.volume_err.toLocaleString()} counts`;
 
-      document.getElementById('fitFWHM').innerText = isCal
-        ? `X: ${data.fit_x.fwhm_e} ± ${data.fit_x.fwhm_e_err} | Y: ${data.fit_y.fwhm_e} ± ${data.fit_y.fwhm_e_err} keV`
-        : `X: ${data.fit_x.fwhm_ch} ± ${data.fit_x.fwhm_ch_err} | Y: ${data.fit_y.fwhm_ch} ± ${data.fit_y.fwhm_ch_err} ch`;
+      document.getElementById('fitFWHM2D').innerText = isCal
+        ? `X: ${data.fwhm_x_e} ± ${data.fwhm_x_e_err} | Y: ${data.fwhm_y_e} ± ${data.fwhm_y_e_err} keV`
+        : `X: ${data.fwhm_x_ch} ± ${data.fwhm_x_ch_err} | Y: ${data.fwhm_y_ch} ± ${data.fwhm_y_ch_err} ch`;
 
-      document.getElementById('fitAmp').innerText = `X: ${data.fit_x.amplitude.toLocaleString()} | Y: ${data.fit_y.amplitude.toLocaleString()} cts`;
+      document.getElementById('fitAmp2D').innerText = `${data.amplitude.toLocaleString()} ± ${data.amplitude_err.toLocaleString()} counts`;
 
-      const tailItem = document.getElementById('fitTailItem');
+      const tailItem = document.getElementById('fitTailItem2D');
       if (tailItem) {
-        if (data.fit_type === 'gaussian_tail' && data.fit_x.alpha !== null && data.fit_y.alpha !== null) {
+        if (data.fit_type === 'gaussian_tail' && data.alpha_x !== null && data.alpha_y !== null) {
           tailItem.style.display = 'flex';
-          document.getElementById('fitTailLbl').innerText = 'Left Tails (α):';
-          document.getElementById('fitTail').innerText = `αX = ${data.fit_x.alpha} | αY = ${data.fit_y.alpha}`;
+          const axStr = data.alpha_x_err ? `${data.alpha_x} ± ${data.alpha_x_err}` : `${data.alpha_x}`;
+          const ayStr = data.alpha_y_err ? `${data.alpha_y} ± ${data.alpha_y_err}` : `${data.alpha_y}`;
+          document.getElementById('fitTail2D').innerText = `αX = ${axStr} | αY = ${ayStr}`;
         } else {
           tailItem.style.display = 'none';
         }
       }
 
-      document.getElementById('fitBgLbl').innerText = 'Gross / Bg Counts:';
-      document.getElementById('fitGrossBg').innerText = `X: ${data.fit_x.gross_counts.toLocaleString()} / ${data.fit_x.bg_counts.toLocaleString()} | Y: ${data.fit_y.gross_counts.toLocaleString()} / ${data.fit_y.bg_counts.toLocaleString()}`;
-      document.getElementById('fitChi2').innerText = `X: ${data.fit_x.red_chi2} (NDF=${data.fit_x.ndf}) | Y: ${data.fit_y.red_chi2} (NDF=${data.fit_y.ndf})`;
-      document.getElementById('fitCard').style.display = 'block';
+      const randSubStatus = data.sub_random ? `Subtracted (${(data.random_fraction * 100).toFixed(1)}%)` : 'Disabled';
+      document.getElementById('fitRandBg2D').innerText = `${data.rand_counts.toLocaleString()} counts [${randSubStatus}]`;
+      document.getElementById('fitContBg2D').innerText = `${data.cont_counts.toLocaleString()} counts (b0=${data.bg_b0}, bx=${data.bg_bx}, by=${data.bg_by})`;
+      document.getElementById('fitRidges2D').innerText = `Rx: ${data.ridge_x} ± ${data.ridge_x_err} (${data.ridge_x_counts} cts) | Ry: ${data.ridge_y} ± ${data.ridge_y_err} (${data.ridge_y_counts} cts)`;
+      document.getElementById('fitGrossBg2D').innerText = `${data.gross_counts.toLocaleString()} gross / ${data.total_bg_counts.toLocaleString()} bg counts`;
+      document.getElementById('fitChi22D').innerText = `${data.red_chi2} (χ²=${data.chi2}, NDF=${data.ndf})`;
 
-      document.getElementById('hudCoords').innerText = `2D Fit: Centroid = ${posTag} | Area (X/Y) = (${data.fit_x.area} / ${data.fit_y.area}) | FWHMs = (${isCal ? data.fit_x.fwhm_e + ', ' + data.fit_y.fwhm_e + ' keV' : data.fit_x.fwhm_ch + ', ' + data.fit_y.fwhm_ch + ' ch'})`;
+      document.getElementById('fitCard2D').style.display = 'block';
+
+      document.getElementById('hudCoords').innerText = `2D Fit: Centroid = ${posTag} | Net Volume = ${data.volume} ± ${data.volume_err} | FWHMs = (${isCal ? data.fwhm_x_e + ', ' + data.fwhm_y_e + ' keV' : data.fwhm_x_ch + ', ' + data.fwhm_y_ch + ' ch'})`;
     } else {
       console.warn("2D Peak fit failed:", data.error);
     }
     render2D();
-    renderBoth1DSpectra();
   }
 
   async function requestPeakFit(axis, ch) {
@@ -2058,46 +2056,42 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const x1 = Math.ceil(Math.min(metadata.shape[0], view.x1));
     const y0 = Math.floor(Math.max(0, view.y0));
     const y1 = Math.ceil(Math.min(metadata.shape[1], view.y1));
-    const fitType = document.getElementById('fitTypeSelect') ? document.getElementById('fitTypeSelect').value : 'gaussian_tail';
-    const fwhmMult = document.getElementById('fwhmMultSlider') ? document.getElementById('fwhmMultSlider').value : '4.0';
+    const fitType = document.getElementById('fitTypeSelect1D') ? document.getElementById('fitTypeSelect1D').value : 'gaussian';
+    const fwhmMult = document.getElementById('fwhmMultSlider1D') ? document.getElementById('fwhmMultSlider1D').value : '4.0';
 
     const res = await fetch(`/api/fit_peak?axis=${axis}&channel=${ch}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}&fit_type=${fitType}&fwhm_mult=${fwhmMult}`);
     const data = await res.json();
     if (data.success) {
-      activeFitResult[axis] = data;
-      activeFitResult2D = null;
+      activeFit1D[axis] = data;
       const isCal = metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0);
       const detLabel = (axis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
       const modelTag = (data.fit_type === 'gaussian_tail') ? '1D Peak Fit (Left-Tail)' : '1D Gaussian Fit';
-      document.getElementById('fitTitle').innerText = `⚛ ${modelTag} [${detLabel}]: ${isCal ? data.centroid_e + ' keV' : 'ch ' + data.centroid_ch}`;
-      document.getElementById('fitCentroid').innerText = isCal
+      document.getElementById('fitTitle1D').innerText = `⚛ ${modelTag} [${detLabel}]: ${isCal ? data.centroid_e + ' keV' : 'ch ' + data.centroid_ch}`;
+      document.getElementById('fitCentroid1D').innerText = isCal
         ? `${data.centroid_e} ± ${data.centroid_e_err} keV (${data.centroid_ch} ± ${data.centroid_ch_err} ch)`
         : `${data.centroid_ch} ± ${data.centroid_ch_err} ch`;
-      document.getElementById('fitAreaLbl').innerText = 'Net Area:';
-      document.getElementById('fitArea').innerText = `${data.area.toLocaleString()} ± ${data.area_err.toLocaleString()} counts`;
-      document.getElementById('fitFWHM').innerText = isCal
+      document.getElementById('fitArea1D').innerText = `${data.area.toLocaleString()} ± ${data.area_err.toLocaleString()} counts`;
+      document.getElementById('fitFWHM1D').innerText = isCal
         ? `${data.fwhm_e} ± ${data.fwhm_e_err} keV (${data.fwhm_ch} ± ${data.fwhm_ch_err} ch)`
         : `${data.fwhm_ch} ± ${data.fwhm_ch_err} ch`;
-      document.getElementById('fitAmp').innerText = `${data.amplitude.toLocaleString()} ± ${data.amplitude_err.toLocaleString()} cts`;
+      document.getElementById('fitAmp1D').innerText = `${data.amplitude.toLocaleString()} ± ${data.amplitude_err.toLocaleString()} cts`;
 
-      const tailItem = document.getElementById('fitTailItem');
+      const tailItem = document.getElementById('fitTailItem1D');
       if (tailItem) {
         if (data.fit_type === 'gaussian_tail' && data.alpha !== null) {
           tailItem.style.display = 'flex';
-          document.getElementById('fitTailLbl').innerText = 'Left Tail (α):';
-          document.getElementById('fitTail').innerText = `${data.alpha} ± ${data.alpha_err}`;
+          document.getElementById('fitTail1D').innerText = `${data.alpha} ± ${data.alpha_err}`;
         } else {
           tailItem.style.display = 'none';
         }
       }
 
-      document.getElementById('fitBgLbl').innerText = 'Gross / Bg:';
-      document.getElementById('fitGrossBg').innerText = `${data.gross_counts.toLocaleString()} / ${data.bg_counts.toLocaleString()}`;
-      document.getElementById('fitChi2').innerText = `${data.red_chi2} (NDF=${data.ndf})`;
-      document.getElementById('fitCard').style.display = 'block';
+      document.getElementById('fitGrossBg1D').innerText = `${data.gross_counts.toLocaleString()} / ${data.bg_counts.toLocaleString()}`;
+      document.getElementById('fitChi21D').innerText = `${data.red_chi2} (NDF=${data.ndf})`;
+      document.getElementById('fitCard1D').style.display = 'block';
 
       const hudEnergy = isCal ? ` (${data.centroid_e} keV)` : '';
-      document.getElementById('hudCoords').innerText = `Fit [${detLabel}]: Centroid = ${data.centroid_ch}${hudEnergy} | Area = ${data.area} ± ${data.area_err} | FWHM = ${isCal ? data.fwhm_e + ' keV' : data.fwhm_ch + ' ch'}`;
+      document.getElementById('hudCoords').innerText = `1D Fit [${detLabel}]: Centroid = ${data.centroid_ch}${hudEnergy} | Area = ${data.area} ± ${data.area_err} | FWHM = ${isCal ? data.fwhm_e + ' keV' : data.fwhm_ch + ' ch'}`;
     } else {
       console.warn("Peak fit failed:", data.error);
     }
@@ -2208,7 +2202,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     ctx.stroke();
 
     // B. Fitted Peak & Baseline Background Curves
-    const fit = activeFitResult[axis];
+    const fit = activeFit1D[axis];
     if (fit && fit.curve_x && fit.curve_x.length > 0) {
       if (fit.roi_ch_max >= chStart && fit.roi_ch_min <= chEnd) {
         // ROI Shading
@@ -2534,9 +2528,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const y0 = Math.floor(Math.max(0, view.y0));
     const y1 = Math.ceil(Math.min(metadata.shape[1], view.y1));
     const zoomY = zoom1DY[axis] || 1.0;
-    const fit = activeFitResult[axis];
-    const fitType = document.getElementById('fitTypeSelect') ? document.getElementById('fitTypeSelect').value : 'gaussian_tail';
-    const fwhmMult = document.getElementById('fwhmMultSlider') ? document.getElementById('fwhmMultSlider').value : '4.0';
+    const fit = activeFit1D[axis];
+    const fitType = document.getElementById('fitTypeSelect1D') ? document.getElementById('fitTypeSelect1D').value : 'gaussian';
+    const fwhmMult = document.getElementById('fwhmMultSlider1D') ? document.getElementById('fwhmMultSlider1D').value : '4.0';
 
     let url = `/api/export_pdf_1d?axis=${axis}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}&is_synced=${isSynced ? 1 : 0}&is_log=${isLog}&zoom_y=${zoomY}`;
     if (fit && fit.centroid_ch !== undefined) {
@@ -2554,13 +2548,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const scale = document.getElementById('scaleSelect').value;
     const vmin = document.getElementById('vminSlider').value;
     const vmax = document.getElementById('vmaxSlider').value;
-    const f2d = activeFitResult2D;
-    const fitType = document.getElementById('fitTypeSelect') ? document.getElementById('fitTypeSelect').value : 'gaussian_tail';
-    const fwhmMult = document.getElementById('fwhmMultSlider') ? document.getElementById('fwhmMultSlider').value : '4.0';
+    const f2d = activeFit2D;
+    const fitType = document.getElementById('fitTypeSelect2D') ? document.getElementById('fitTypeSelect2D').value : 'gaussian';
 
     let url = `/api/export_pdf_2d?x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}&cmap=${cmap}&scale=${scale}&vmin=${vmin}&vmax=${vmax}`;
     if (f2d && f2d.centroid_x_ch !== undefined) {
-      url += `&has_fit=1&fit_x=${f2d.centroid_x_ch}&fit_y=${f2d.centroid_y_ch}&fit_type=${fitType}&fwhm_mult=${fwhmMult}`;
+      url += `&has_fit=1&fit_x=${f2d.centroid_x_ch}&fit_y=${f2d.centroid_y_ch}&fit_type=${fitType}`;
     }
     window.open(url, '_blank');
   }
@@ -2576,6 +2569,24 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       </div>
     `;
     window.close();
+  }
+
+  function clearFit1D() {
+    activeFit1D[0] = null;
+    activeFit1D[1] = null;
+    document.getElementById('fitCard1D').style.display = 'none';
+    renderBoth1DSpectra();
+  }
+
+  function clearFit2D() {
+    activeFit2D = null;
+    document.getElementById('fitCard2D').style.display = 'none';
+    render2D();
+  }
+
+  function clearAllFits() {
+    clearFit1D();
+    clearFit2D();
   }
 
   function setupEvents() {
@@ -2607,19 +2618,18 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     document.getElementById('btnPrintPDF1DX').addEventListener('click', () => printPDF1D(0));
     document.getElementById('btnPrintPDF1DY').addEventListener('click', () => printPDF1D(1));
     document.getElementById('btnPrintPDF2D').addEventListener('click', printPDF2D);
-    function clearFit() {
-      activeFitResult2D = null;
-      activeFitResult[0] = null;
-      activeFitResult[1] = null;
-      document.getElementById('fitCard').style.display = 'none';
-      render2D();
-      renderBoth1DSpectra();
-    }
 
-    document.getElementById('fwhmMultSlider').addEventListener('input', (e) => {
-      document.getElementById('fwhmMultLabel').innerText = parseFloat(e.target.value).toFixed(1) + '× FWHM';
+    document.getElementById('fwhmMultSlider1D').addEventListener('input', (e) => {
+      document.getElementById('fwhmMultLabel1D').innerText = parseFloat(e.target.value).toFixed(1) + '× FWHM';
     });
-    document.getElementById('btnCloseFit').addEventListener('click', clearFit);
+    document.getElementById('roiWidthSlider2D').addEventListener('input', (e) => {
+      document.getElementById('roiWidthLabel2D').innerText = '±' + e.target.value + ' ch';
+    });
+    document.getElementById('randFracSlider2D').addEventListener('input', (e) => {
+      document.getElementById('randFracLabel2D').innerText = parseFloat(e.target.value).toFixed(1) + '%';
+    });
+    document.getElementById('btnCloseFit1D').addEventListener('click', clearFit1D);
+    document.getElementById('btnCloseFit2D').addEventListener('click', clearFit2D);
 
     document.getElementById('btnHelp').addEventListener('click', () => { document.getElementById('helpModal').style.display = 'block'; });
 
@@ -2647,7 +2657,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       else if (e.key === 'e' || e.key === 'E') expandMarkers();
       else if (e.key === 'f' || e.key === 'F') zoomFull();
       else if (e.key === 'q' || e.key === 'Q') quitViewer();
-      else if (e.key === '=' || e.key === '+') clearFit();
+      else if (e.key === '=' || e.key === '+') clearAllFits();
       else if (e.key === 'g' || e.key === 'G') {
         if (isMouseOver2D) requestPeakFit2D(cursorChannel.x, cursorChannel.y);
         else if (cursor1DChannelX !== null) requestPeakFit(0, cursor1DChannelX);

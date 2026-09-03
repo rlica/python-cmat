@@ -17,8 +17,10 @@
   - **Full [GASPware](https://github.com/csteke/GASPware) `cmat` Controls**: Box zoom (`Click+Drag`), marker limits (`Arrow keys`), expand (`E`), and full view (`F`).
   - **Simultaneous Dual 1D Projections**: Stacked top/bottom 1D histograms displaying Det 1 (X projection sliced over visible Y) and Det 2 (Y projection sliced over visible X) simultaneously.
   - **Classic Binned Histograms**: Nuclear physics stepped staircase histograms with dynamic auto-scaling, synchronized real-time cursor highlighting across 2D and 1D views, calibrated energy readouts (keV), and ASCII `.dat` export.
-  - **1D Gaussian Peak Fitting (`xtrackn AG`)**: Automatic nonlinear least-squares Gaussian fit with linear background subtraction (`Ctrl+Click` or `G` on any 1D peak). Automatically calculates centroid, net area, FWHM, and amplitude with statistical uncertainties (via parameter covariance propagation), printed directly to the terminal and rendered on the interactive canvas.
-  - **2D Gaussian Coincidence Peak Fitting**: Full 2D nonlinear least-squares Levenberg-Marquardt fitting of 2D $\gamma$-$\gamma$ coincidence peaks with a 2D planar background (`Ctrl+Click` or `G` on the 2D matrix). Extracts 2D coincidence centroids as $(X, Y) \pm (\Delta X, \Delta Y)$, 2D integrated peak volume (Area), $\text{FWHM}_X, \text{FWHM}_Y$, and amplitude with complete statistical covariance error propagation. Renders 2D FWHM ellipse & crosshair on the 2D matrix and projects corresponding Gaussian curves across both Det 1 and Det 2 spectra simultaneously.
+    - **1D Histogram Peak Fitting (`xtrackn AG`)**: Dedicated 1D nonlinear least-squares peak fitting with linear background subtraction (`Ctrl+Click` or `G` on any 1D projection spectrum). Fits either a standard Gaussian or an HPGe Gaussian with an exponential left tail. Calculates centroid, net area, FWHM, and amplitude with complete statistical covariance error propagation, printed directly to the terminal and rendered with fitted curves on the 1D spectrum canvas.
+    - **True 2D Coincidence Peak Fitting with Random Subtraction**: Dedicated 2D nonlinear least-squares Levenberg-Marquardt fitting directly on the 2D coincidence matrix (`Ctrl+Click` or `G` on the 2D matrix). Features full accidental/random $\gamma$-$\gamma$ coincidence background subtraction based on singles projection templates:
+      $$B_{\text{rand}}(x, y) = f_{\text{rand}} \cdot \frac{P_x(x) \cdot P_y(y)}{T_{\text{total}}}$$
+      along with 2D planar continuum ($b_0 + b_x \Delta x + b_y \Delta y$) and orthogonal Compton cross-ridges ($R_x G_x + R_y G_y$). Fully decomposes gross counts into net coincidence volume, random coincidences, continuum background, and ridges. Displays a distinct 2D coincidence results card and renders 2D FWHM ellipse, crosshair, and ROI boundaries on the 2D matrix without interfering with 1D histogram fits.
 
 ---
 
@@ -60,9 +62,9 @@ python3 cmat_webviewer.py GeE-symm.cmat --port 8080
 | **2D Wheel Zoom** | `Mouse Wheel` (2D) | Zoom In / Out centered on current view in equal small steps |
 | **1D Y-Axis Zoom** | `Mouse Wheel` (1D) | Zoom In / Out on Y axis (fixed Ymin, dynamic Ymax for low/high peaks) |
 | **Reset 1D Y-Scale** | `Double Click` (1D) | Reset 1D histogram Y-axis scale to default auto-scale |
-| **2D Coincidence Peak Fit** | `Ctrl / Cmd + Click` (2D) or `G` | Dual 1D peak fits on Det 1 & Det 2 with 2D crosshair & FWHM ellipse |
-| **1D Peak Fit** | `Ctrl / Cmd + Click` (1D) or `G` | Fit 1D peak (Gaussian or Left-Tailed HPGe) + linear background on Det 1 or Det 2 |
-| **Clear Peak Fit** | `=` (Equals) or `+` | Clear active peak fit curves and markers from spectra & matrix |
+| **2D Coincidence Peak Fit** | `Ctrl / Cmd + Click` (2D) or `G` | True 2D coincidence peak fit (Gaussian/HPGe) with accidental & continuum BG subtraction |
+| **1D Histogram Peak Fit** | `Ctrl / Cmd + Click` (1D) or `G` | Fit 1D histogram peak (Gaussian or Left-Tailed HPGe) + linear BG on Det 1 or Det 2 |
+| **Clear Peak Fits** | `=` (Equals) or `+` | Clear active peak fit curves and markers from 1D spectra and 2D matrix |
 | **Pan 2D View** | `Shift + Arrow Keys` (`←`, `→`, `↓`, `↑`) | Pan visible 2D matrix view in steps (uses Scroll Sensitivity) |
 | **Set Left Limit (Xmin)** | `Left Arrow (←)` | Set Left limit at cursor |
 | **Set Right Limit (Xmax)** | `Right Arrow (→)` | Set Right limit at cursor |
@@ -134,6 +136,37 @@ Each sub-block is compressed using one of 5 algorithms:
 - **Mode 34**: 32-bit longword sparse channel list (`ccomp__1_decompressLW`).
 - **Mode 37**: Variable-length tagged token bit-stream (`ccomp__2_decompress`).
 - **Mode 41**: Bit-shift-map (BSM) unary run-length compression (`ccomp__3_decompress`).
+
+---
+
+## 📚 Scientific References & Peak Fitting Physics
+
+The peak fitting models and background decomposition methods implemented in `python-cmat` follow established physics formalisms in high-resolution semiconductor $\gamma$-ray spectroscopy:
+
+### 1. HPGe Peak Shapes & Left-Hand Exponential Tails
+While symmetric Gaussians model ideal electronic and Fano-factor carrier statistics, real HPGe and Ge(Li) detector peaks exhibit an asymmetric low-energy tailing caused by:
+- **Incomplete charge collection & hole trapping**: Lower hole mobility and radiation-induced defect traps (e.g. from fast neutrons) attenuate the collected charge pulse.
+- **Ballistic deficit**: Charge collection times exceeding the amplifier shaping time.
+- **Small-angle Compton scattering**: Interactions in detector dead layers, cryostat windows, and target chambers.
+
+Our continuous $C^1$ Left-Tailed Gaussian matches both function values and first derivatives at $x_{\text{join}} = x_0 - \alpha\sigma$:
+$$T(x) = \begin{cases} 
+\exp\left(-\dfrac{(x - x_0)^2}{2\sigma^2}\right), & x \ge x_0 - \alpha\sigma \\[8pt]
+\exp\left(\dfrac{\alpha^2}{2}\right) \exp\left(\dfrac{\alpha(x - x_0)}{\sigma}\right), & x < x_0 - \alpha\sigma 
+\end{cases}$$
+
+### 2. Accidental $\gamma$-$\gamma$ Coincidence Subtraction
+In 2D coincidence matrices, uncorrelated random coincidences between independent $\gamma$-rays are subtracted using the outer product of the singles projections:
+$$B_{\text{rand}}(x, y) = f_{\text{rand}} \cdot \frac{P_x(x) \cdot P_y(y)}{T_{\text{total}}}$$
+
+### 3. Key References
+1. **Radford, D. C.** (1995). *"ESCL8R and LEVIT8R: Software for interactive analysis of HPGe coincidence data sets"*. *Nuclear Instruments and Methods in Physics Research Section A*, 361(1-2), 297–305. [DOI: 10.1016/0168-9002(95)00183-4](https://doi.org/10.1016/0168-9002(95)00183-4).
+   *(Foundational reference for the RadWare analysis package and the `gf3` peak fitting algorithms used throughout modern nuclear structure coincidence analysis).*
+2. **Knoll, G. F.** (2010). *"Radiation Detection and Measurement"*, 4th Edition, John Wiley & Sons, New York. ISBN: 978-0-470-13148-0.
+   *(Chapters 12 & 18: Germanium gamma-ray detectors, pulse height defect, hole trapping, and peak shape asymmetry).*
+3. **Routti, J. T., & Prussin, S. G.** (1969). *"Photopeak method for the computer analysis of gamma-ray spectra from semiconductor detectors"*. *Nuclear Instruments and Methods*, 72(2), 125–142. [DOI: 10.1016/0029-554X(69)90148-7](https://doi.org/10.1016/0029-554X(69)90148-7).
+   *(Original formulation of the Gaussian peak with continuous exponential tails in the SAMPO program).*
+4. **Helmer, R. G., & Lee, M. A.** (1980). *"Analytical functions for fitting peaks from Ge semiconductor detectors"*. *Nuclear Instruments and Methods*, 178(2-3), 499–512. [DOI: 10.1016/0029-554X(80)90757-0](https://doi.org/10.1016/0029-554X(80)90757-0).
 
 ---
 
