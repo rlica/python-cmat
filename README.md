@@ -160,13 +160,13 @@ In 2D coincidence matrices, uncorrelated random coincidences between independent
 $$B_{\text{rand}}(x, y) = f_{\text{rand}} \cdot \frac{P_x(x) \cdot P_y(y)}{T_{\text{total}}}$$
 
 ### 3. Key References
-1. **Radford, D. C.** (1995). *"ESCL8R and LEVIT8R: Software for interactive analysis of HPGe coincidence data sets"*. *Nuclear Instruments and Methods in Physics Research Section A*, 361(1-2), 297–305. [DOI: 10.1016/0168-9002(95)00183-4](https://doi.org/10.1016/0168-9002(95)00183-4).
+1. **Radford, D. C.** (1995). *"ESCL8R and LEVIT8R: Software for interactive analysis of HPGe coincidence data sets"*. *Nuclear Instruments and Methods in Physics Research Section A*, 361(1-2), 297–305. [link](https://www.sciencedirect.com/science/article/abs/pii/0168900295001832).
    *(Foundational reference for the RadWare analysis package and the `gf3` peak fitting algorithms used throughout modern nuclear structure coincidence analysis).*
 2. **Knoll, G. F.** (2010). *"Radiation Detection and Measurement"*, 4th Edition, John Wiley & Sons, New York. ISBN: 978-0-470-13148-0.
    *(Chapters 12 & 18: Germanium gamma-ray detectors, pulse height defect, hole trapping, and peak shape asymmetry).*
-3. **Routti, J. T., & Prussin, S. G.** (1969). *"Photopeak method for the computer analysis of gamma-ray spectra from semiconductor detectors"*. *Nuclear Instruments and Methods*, 72(2), 125–142. [DOI: 10.1016/0029-554X(69)90148-7](https://doi.org/10.1016/0029-554X(69)90148-7).
+3. **Routti, J. T., & Prussin, S. G.** (1969). *"Photopeak method for the computer analysis of gamma-ray spectra from semiconductor detectors"*. *Nuclear Instruments and Methods*, 72(2), 125–142. [link](https://doi.org/10.1016/0029-554X(69)90148-7).
    *(Original formulation of the Gaussian peak with continuous exponential tails in the SAMPO program).*
-4. **Helmer, R. G., & Lee, M. A.** (1980). *"Analytical functions for fitting peaks from Ge semiconductor detectors"*. *Nuclear Instruments and Methods*, 178(2-3), 499–512. [DOI: 10.1016/0029-554X(80)90757-0](https://doi.org/10.1016/0029-554X(80)90757-0).
+4. **Helmer, R. G., & Lee, M. A.** (1980). *"Analytical functions for fitting peaks from Ge semiconductor detectors"*. *Nuclear Instruments and Methods*, 178(2-3), 499–512. [link](https://www.sciencedirect.com/science/article/abs/pii/0029554X80908307).
 
 ---
 
