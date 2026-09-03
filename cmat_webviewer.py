@@ -1540,6 +1540,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <option value="linear">Linear</option>
       </select>
 
+      <label style="margin-top: 6px;">Max Contrast <span class="range-val" id="vmaxLabel">500</span></label>
+      <input type="range" id="vmaxSlider" min="0" max="1000" step="1" value="500">
+
       <label style="margin-top: 6px;">Min Threshold <span class="range-val" id="vminLabel">1</span></label>
       <input type="range" id="vminSlider" min="0" max="50" value="1">
 
@@ -1714,7 +1717,29 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   // Tile Data & Shape
   let currentTileData = null;
   let currentTileMax = 100;
+  let currentVmax = 500;
+  let maxCountGlobal = 50000;
   let tileW = 0, tileH = 0;
+
+  function vmaxSliderToValue(sliderVal) {
+    const minVal = 2;
+    const maxVal = Math.max(minVal + 1, maxCountGlobal);
+    const logMin = Math.log10(minVal);
+    const logMax = Math.log10(maxVal);
+    const frac = Math.max(0, Math.min(1000, sliderVal)) / 1000.0;
+    const val = Math.round(Math.pow(10, logMin + frac * (logMax - logMin)));
+    return Math.max(minVal, Math.min(maxVal, val));
+  }
+
+  function valueToVmaxSlider(val) {
+    const minVal = 2;
+    const maxVal = Math.max(minVal + 1, maxCountGlobal);
+    const logMin = Math.log10(minVal);
+    const logMax = Math.log10(maxVal);
+    const clamped = Math.max(minVal, Math.min(maxVal, val));
+    const frac = (Math.log10(clamped) - logMin) / (logMax - logMin);
+    return Math.round(Math.max(0, Math.min(1, frac)) * 1000);
+  }
 
   // Plot Margins
   const margin2D = { left: 55, bottom: 40, top: 12, right: 15 };
@@ -1850,6 +1875,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     document.getElementById('matInfo').innerText = `${metadata.filename} (${metadata.shape[0]}×${metadata.shape[1]})`;
     view = { x0: 0, x1: metadata.shape[0], y0: 0, y1: metadata.shape[1] };
 
+    maxCountGlobal = Math.max(100, metadata.max_count || 1000);
+    currentVmax = Math.min(800, maxCountGlobal);
+    const vmaxSlider = document.getElementById('vmaxSlider');
+    if (vmaxSlider) {
+      vmaxSlider.min = "0";
+      vmaxSlider.max = "1000";
+      vmaxSlider.step = "1";
+      vmaxSlider.value = valueToVmaxSlider(currentVmax);
+      document.getElementById('vmaxLabel').innerText = currentVmax;
+    }
+
     setupEvents();
     await fetchTileAndRender();
     await fetch1DProjection();
@@ -1913,7 +1949,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const buf32 = new Uint32Array(imgData.data.buffer);
 
       const vmin = parseInt(document.getElementById('vminSlider').value) || 0;
-      let vmax = currentTileMax;
+      let vmax = currentVmax || 100;
       if (vmax <= vmin) vmax = vmin + 1;
       const scaleMode = document.getElementById('scaleSelect').value;
 
@@ -2647,7 +2683,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const cmap = document.getElementById('cmapSelect').value;
     const scale = document.getElementById('scaleSelect').value;
     const vmin = document.getElementById('vminSlider').value;
-    const vmax = currentTileMax;
+    const vmax = currentVmax || 100;
     const f2d = activeFit2D;
     const fitType = document.getElementById('fitTypeSelect2D') ? document.getElementById('fitTypeSelect2D').value : 'gaussian';
 
@@ -2707,6 +2743,28 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   function setupEvents() {
     document.getElementById('cmapSelect').addEventListener('change', () => { updateColorLUT(); render2D(); });
     document.getElementById('scaleSelect').addEventListener('change', render2D);
+    const vmaxSlider = document.getElementById('vmaxSlider');
+    if (vmaxSlider) {
+      vmaxSlider.addEventListener('input', (e) => {
+        currentVmax = vmaxSliderToValue(parseFloat(e.target.value));
+        document.getElementById('vmaxLabel').innerText = currentVmax;
+        render2D();
+      });
+    }
+    const vmaxLbl = document.getElementById('vmaxLabel');
+    if (vmaxLbl) {
+      vmaxLbl.title = "Double-click to auto-optimize to visible max";
+      vmaxLbl.style.cursor = "pointer";
+      vmaxLbl.addEventListener('dblclick', () => {
+        if (currentTileMax && vmaxSlider) {
+          if (currentTileMax > maxCountGlobal) maxCountGlobal = currentTileMax;
+          currentVmax = currentTileMax;
+          vmaxSlider.value = valueToVmaxSlider(currentVmax);
+          vmaxLbl.innerText = currentVmax;
+          render2D();
+        }
+      });
+    }
     document.getElementById('vminSlider').addEventListener('input', (e) => { document.getElementById('vminLabel').innerText = e.target.value; render2D(); });
     document.getElementById('scrollSensSlider').addEventListener('input', (e) => {
       const val = parseInt(e.target.value, 10);
