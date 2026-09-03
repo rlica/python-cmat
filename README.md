@@ -18,7 +18,7 @@
   - **Simultaneous Dual 1D Projections**: Stacked top/bottom 1D histograms displaying Det 1 (X projection sliced over visible Y) and Det 2 (Y projection sliced over visible X) simultaneously.
   - **Classic Binned Histograms**: Nuclear physics stepped staircase histograms with dynamic auto-scaling, synchronized real-time cursor highlighting across 2D and 1D views, calibrated energy readouts (keV), and ASCII `.dat` export.
     - **1D Histogram Peak Fitting (`xtrackn AG`)**: Dedicated 1D nonlinear least-squares peak fitting with linear background subtraction (`Ctrl+Click` or `G` on any 1D projection spectrum). Fits either a standard Gaussian or an HPGe Gaussian with an exponential left tail. Calculates centroid, net area, FWHM, and amplitude with complete statistical covariance error propagation, printed directly to the terminal and rendered with fitted curves on the 1D spectrum canvas.
-    - **True 2D Coincidence Peak Fitting with Random Subtraction**: Dedicated 2D nonlinear least-squares Levenberg-Marquardt fitting directly on the 2D coincidence matrix (`Ctrl+Click` or `G` on the 2D matrix). Features full accidental/random γ-γ coincidence background subtraction based on singles projection templates: $B_{\text{rand}}(x, y) = f_{\text{rand}} \cdot [P_x(x) \cdot P_y(y)] / T_{\text{total}}$, along with 2D planar continuum ($b_0 + b_x \Delta x + b_y \Delta y$) and orthogonal Compton cross-ridges ($R_x G_x + R_y G_y$). Fully decomposes gross counts into net coincidence volume, random coincidences, continuum background, and ridges. Displays a distinct 2D coincidence results card and renders 2D FWHM ellipse, crosshair, and ROI boundaries on the 2D matrix without interfering with 1D histogram fits.
+    - **True 2D Coincidence Peak Fitting with Random Subtraction**: Dedicated 2D nonlinear least-squares Levenberg-Marquardt fitting directly on the 2D coincidence matrix (`Ctrl+Click` or `G` on the 2D matrix). Decomposes gross counts in the region of interest into true net coincidence volume, accidental (random) coincidence background, underlying Compton continuum, and orthogonal coincidence cross-ridges. Displays a dedicated 2D coincidence results card and renders the 2D FWHM ellipse, crosshair, and ROI boundaries on the 2D matrix without interfering with 1D histogram fits.
 
 ---
 
@@ -137,32 +137,20 @@ Each sub-block is compressed using one of 5 algorithms:
 
 ---
 
-## 📚 Scientific References & Peak Fitting Physics
+## 📚 Scientific References & Peak Fitting
 
-The peak fitting models and background decomposition methods implemented in `python-cmat` follow established physics formalisms in high-resolution semiconductor $\gamma$-ray spectroscopy:
+The peak fitting algorithms and background models implemented in `python-cmat` follow established physics methodologies in semiconductor $\gamma$-ray spectroscopy:
 
 ### 1. HPGe Peak Shapes & Left-Hand Exponential Tails
-While symmetric Gaussians model ideal electronic and Fano-factor carrier statistics, real HPGe and Ge(Li) detector peaks exhibit an asymmetric low-energy tailing caused by:
+While symmetric Gaussians model ideal electronic noise and carrier statistics, real High-Purity Germanium (HPGe) and Ge(Li) detector photopeaks exhibit an asymmetric low-energy tailing caused by:
 - **Incomplete charge collection & hole trapping**: Lower hole mobility and radiation-induced defect traps (e.g. from fast neutrons) attenuate the collected charge pulse.
 - **Ballistic deficit**: Charge collection times exceeding the amplifier shaping time.
 - **Small-angle Compton scattering**: Interactions in detector dead layers, cryostat windows, and target chambers.
 
-Our continuous $C^1$ Left-Tailed Gaussian matches both function values and first derivatives at $x_{\text{join}} = x_0 - \alpha\sigma$:
+To model this accurately, the viewer provides an optional Gaussian with an exponential left tail that joins smoothly with continuous amplitude and slope.
 
-$$
-T(x) = \begin{cases} 
-\exp\left(-\frac{(x - x_0)^2}{2\sigma^2}\right), & x \ge x_0 - \alpha\sigma \\
-\exp\left(\frac{\alpha^2}{2}\right) \exp\left(\frac{\alpha(x - x_0)}{\sigma}\right), & x < x_0 - \alpha\sigma 
-\end{cases}
-$$
-
-### 2. Accidental γ-γ Coincidence Subtraction
-
-In 2D coincidence matrices, uncorrelated random coincidences between independent $\gamma$-rays are subtracted using the outer product of the singles projections:
-
-$$
-B_{\text{rand}}(x, y) = f_{\text{rand}} \cdot \frac{P_x(x) \cdot P_y(y)}{T_{\text{total}}}
-$$
+### 2. Accidental (Random) γ-γ Coincidence Subtraction
+In 2D coincidence matrices, time-uncorrelated coincidences between independent $\gamma$-rays form an underlying background proportional to the product of the two singles projections. The 2D fitting engine models and subtracts this accidental coincidence distribution alongside the local Compton continuum and peak-continuum coincidence cross-ridges.
 
 ### 3. Key References
 1. **Radford, D. C.** (1995). *"ESCL8R and LEVIT8R: Software for interactive analysis of HPGe coincidence data sets"*. *Nuclear Instruments and Methods in Physics Research Section A*, 361(1-2), 297–305. [link](https://www.sciencedirect.com/science/article/abs/pii/0168900295001832).
