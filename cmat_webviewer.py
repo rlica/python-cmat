@@ -324,7 +324,14 @@ def fit_gaussian_peak(x, y, x_center, fit_type="gaussian", fwhm_mult=4.0, cal=[0
     }
 
 
-def print_fit_terminal_report(res, det_name, filename, is_cal):
+def print_fit_terminal_report(res, det_name, filename, is_cal, verbosity="compact"):
+    if verbosity == "compact":
+        if is_cal:
+            print(f"⚛ 1D Fit [{det_name}]: Centroid: {res['centroid_e']:.2f}({res['centroid_e_err']:.2f}) keV   Area: {res['area']:.1f}({res['area_err']:.1f}) counts   FWHM: {res['fwhm_e']:.2f}({res['fwhm_e_err']:.2f}) keV", flush=True)
+        else:
+            print(f"⚛ 1D Fit [{det_name}]: Centroid: {res['centroid_ch']:.3f}({res['centroid_ch_err']:.3f}) ch   Area: {res['area']:.1f}({res['area_err']:.1f}) counts   FWHM: {res['fwhm_ch']:.3f}({res['fwhm_ch_err']:.3f}) ch", flush=True)
+        return
+
     bar = "═" * 80
     subbar = "─" * 80
     model_name = "Gaussian with Left Tail (HPGe)" if res.get("fit_type") == "gaussian_tail" else "Standard Symmetric Gaussian"
@@ -697,7 +704,18 @@ def fit_2d_gaussian_peak(
     }
 
 
-def print_fit_2d_terminal_report(res, filename, is_cal):
+def print_fit_2d_terminal_report(res, filename, is_cal, verbosity="compact"):
+    if verbosity == "compact":
+        if is_cal:
+            print(f"⚛ 2D Fit [{filename}]:", flush=True)
+            print(f"  Det 1 (X): Centroid: {res['centroid_x_e']:.2f}({res['centroid_x_e_err']:.2f}) keV   Area: {res['volume']:.1f}({res['volume_err']:.1f}) counts   FWHM: {res['fwhm_x_e']:.2f}({res['fwhm_x_e_err']:.2f}) keV", flush=True)
+            print(f"  Det 2 (Y): Centroid: {res['centroid_y_e']:.2f}({res['centroid_y_e_err']:.2f}) keV   Area: {res['volume']:.1f}({res['volume_err']:.1f}) counts   FWHM: {res['fwhm_y_e']:.2f}({res['fwhm_y_e_err']:.2f}) keV\n", flush=True)
+        else:
+            print(f"⚛ 2D Fit [{filename}]:", flush=True)
+            print(f"  Det 1 (X): Centroid: {res['centroid_x_ch']:.3f}({res['centroid_x_ch_err']:.3f}) ch   Area: {res['volume']:.1f}({res['volume_err']:.1f}) counts   FWHM: {res['fwhm_x_ch']:.3f}({res['fwhm_x_ch_err']:.3f}) ch", flush=True)
+            print(f"  Det 2 (Y): Centroid: {res['centroid_y_ch']:.3f}({res['centroid_y_ch_err']:.3f}) ch   Area: {res['volume']:.1f}({res['volume_err']:.1f}) counts   FWHM: {res['fwhm_y_ch']:.3f}({res['fwhm_y_ch_err']:.3f}) ch\n", flush=True)
+        return
+
     bar = "═" * 80
     subbar = "─" * 80
     model_name = "Gaussian with Left Tail (HPGe)" if res.get("fit_type") == "gaussian_tail" else "Standard Symmetric Gaussian"
@@ -953,6 +971,7 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             roi_half_width = int(float(query.get("roi_half_width", [query.get("roi_width", [16])[0]])[0]))
             sub_random = query.get("sub_random", ["true"])[0].lower() in ("true", "1", "yes")
             random_frac = float(query.get("random_frac", [0.05])[0])
+            verbosity = query.get("verbosity", ["compact"])[0].lower()
 
             is_cal = self.cal and (self.cal[0] != 0.0 or self.cal[1] != 1.0 or self.cal[2] != 0.0)
             proj_y = self.proj if (self.reader and self.reader.is_symmetric) else np.sum(self.matrix, axis=1, dtype=np.float64)
@@ -963,7 +982,7 @@ class CMATWebHandler(BaseHTTPRequestHandler):
                     sub_random=sub_random, random_fraction=random_frac,
                     proj_x=self.proj, proj_y=proj_y, total_counts=tot_counts
                 )
-                print_fit_2d_terminal_report(res, self.reader.filename.name, is_cal)
+                print_fit_2d_terminal_report(res, self.reader.filename.name, is_cal, verbosity=verbosity)
             except Exception as e:
                 res = {"success": False, "error": str(e), "is_2d": True}
                 print(f"[!] 2D coincidence peak fit error at ({x:.1f}, {y:.1f}): {e}", file=sys.stderr)
@@ -980,6 +999,7 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             channel = float(query.get("channel", [0])[0])
             fit_type = query.get("fit_type", ["gaussian"])[0]
             fwhm_mult = float(query.get("fwhm_mult", [4.0])[0])
+            verbosity = query.get("verbosity", ["compact"])[0].lower()
             x0 = max(0, min(self.matrix.shape[1] - 1, int(float(query.get("x0", [0])[0]))))
             x1 = max(x0 + 1, min(self.matrix.shape[1], int(float(query.get("x1", [self.matrix.shape[1]])[0]))))
             y0 = max(0, min(self.matrix.shape[0] - 1, int(float(query.get("y0", [0])[0]))))
@@ -1002,7 +1022,7 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             try:
                 res = fit_gaussian_peak(np.arange(len(spec)), spec, channel, fit_type=fit_type, fwhm_mult=fwhm_mult, cal=self.cal)
                 res["axis"] = axis
-                print_fit_terminal_report(res, det_name, self.reader.filename.name, is_cal)
+                print_fit_terminal_report(res, det_name, self.reader.filename.name, is_cal, verbosity=verbosity)
             except Exception as e:
                 res = {"success": False, "error": str(e), "axis": axis}
                 print(f"[!] Peak fit error at channel {channel:.1f}: {e}", file=sys.stderr)
@@ -1371,6 +1391,35 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     margin-top: 0;
   }
   .fit-btn-close:hover { background: #333; color: #fff; }
+  .fit-btn-toggle {
+    background: transparent;
+    border: 1px solid #444;
+    color: #aaa;
+    padding: 1px 6px;
+    font-size: 0.68rem;
+    border-radius: 3px;
+    cursor: pointer;
+    width: auto;
+    margin-top: 0;
+  }
+  .fit-btn-toggle:hover { background: #333; color: #fff; }
+  .fit-compact-box {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 2px 0;
+  }
+  .fit-compact-line {
+    font-family: monospace;
+    font-size: 0.74rem;
+    color: #eee;
+    white-space: normal;
+    word-break: break-word;
+    line-height: 1.4;
+  }
+  .fit-compact-line strong {
+    color: #ffd600;
+  }
 
   .help-modal {
     position: fixed;
@@ -1452,6 +1501,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <input type="range" id="randFracSlider2D" min="0" max="30" step="0.5" value="5.0">
         <small style="color: #888; font-size: 0.68rem; display: block; margin-top: 3px;">
           B<sub>rand</sub> = f<sub>rand</sub> · [P<sub>x</sub>·P<sub>y</sub> / T<sub>tot</sub>] (Ctrl+Click on 2D or [G]).
+        </small>
+      </div>
+
+      <div style="margin-top: 8px; padding-top: 6px; border-top: 1px solid #333;">
+        <label>Results Verbosity</label>
+        <select id="fitVerbositySelect">
+          <option value="compact" selected>Compact (1 line / axis)</option>
+          <option value="detailed">Detailed (Full breakdown)</option>
+        </select>
+        <small style="color: #888; font-size: 0.68rem; display: block; margin-top: 3px;">
+          Format: centroid(err) &nbsp; area(err) &nbsp; fwhm(err).
         </small>
       </div>
     </div>
@@ -1538,9 +1598,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <div class="fit-results-card fit-card-1d" id="fitCard1D">
         <div class="fit-header" style="color: #00e5ff;">
           <span id="fitTitle1D">⚛ 1D Peak Fit Results</span>
-          <button class="fit-btn-close" id="btnCloseFit1D">✕ Clear 1D Fit</button>
+          <div style="display: flex; gap: 6px;">
+            <button class="fit-btn-toggle" id="btnToggleDetails1D">▾ Details</button>
+            <button class="fit-btn-close" id="btnCloseFit1D">✕ Clear 1D Fit</button>
+          </div>
         </div>
-        <div class="fit-grid">
+        <div class="fit-compact-box" id="fitCompactBox1D">
+          <div class="fit-compact-line" id="fitCompactLine1D">-</div>
+        </div>
+        <div class="fit-grid" id="fitGrid1D" style="display: none; margin-top: 6px; padding-top: 6px; border-top: 1px solid #333;">
           <div class="fit-item"><span class="lbl">Centroid:</span><span class="val" id="fitCentroid1D">-</span></div>
           <div class="fit-item"><span class="lbl">Peak Area:</span><span class="val" id="fitArea1D">-</span></div>
           <div class="fit-item"><span class="lbl">FWHM:</span><span class="val" id="fitFWHM1D">-</span></div>
@@ -1555,9 +1621,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <div class="fit-results-card fit-card-2d" id="fitCard2D">
         <div class="fit-header" style="color: #ffd600;">
           <span id="fitTitle2D">⚛ 2D Coincidence Peak Fit</span>
-          <button class="fit-btn-close" id="btnCloseFit2D">✕ Clear 2D Fit</button>
+          <div style="display: flex; gap: 6px;">
+            <button class="fit-btn-toggle" id="btnToggleDetails2D">▾ Details</button>
+            <button class="fit-btn-close" id="btnCloseFit2D">✕ Clear 2D Fit</button>
+          </div>
         </div>
-        <div class="fit-grid">
+        <div class="fit-compact-box" id="fitCompactBox2D">
+          <div class="fit-compact-line" id="fitCompactLine2D_X">-</div>
+          <div class="fit-compact-line" id="fitCompactLine2D_Y">-</div>
+        </div>
+        <div class="fit-grid" id="fitGrid2D" style="display: none; margin-top: 6px; padding-top: 6px; border-top: 1px solid #333;">
           <div class="fit-item"><span class="lbl">2D Centroid:</span><span class="val" id="fitCentroid2D">-</span></div>
           <div class="fit-item"><span class="lbl">Net 2D Volume:</span><span class="val" id="fitVolume2D" style="color: #4caf50;">-</span></div>
           <div class="fit-item"><span class="lbl">FWHM (X / Y):</span><span class="val" id="fitFWHM2D">-</span></div>
@@ -1997,8 +2070,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const subRand = document.getElementById('subRandomCheck2D') ? document.getElementById('subRandomCheck2D').checked : true;
     const randFracPercent = document.getElementById('randFracSlider2D') ? parseFloat(document.getElementById('randFracSlider2D').value) : 5.0;
     const randFrac = (randFracPercent / 100.0).toFixed(4);
+    const verbosity = document.getElementById('fitVerbositySelect') ? document.getElementById('fitVerbositySelect').value : 'compact';
 
-    const res = await fetch(`/api/fit_peak_2d?x=${x}&y=${y}&fit_type=${fitType}&roi_half_width=${roiHW}&sub_random=${subRand}&random_frac=${randFrac}`);
+    const res = await fetch(`/api/fit_peak_2d?x=${x}&y=${y}&fit_type=${fitType}&roi_half_width=${roiHW}&sub_random=${subRand}&random_frac=${randFrac}&verbosity=${verbosity}`);
     const data = await res.json();
     if (data.success) {
       activeFit2D = data;
@@ -2011,6 +2085,19 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       document.getElementById('fitTitle2D').innerText = `⚛ ${modelTag}: ${posTag}`;
 
+      // Compact format (one simple line for each axis: centroid(err)   area(err)   fwhm(err))
+      const volStr = `${data.volume.toLocaleString()}(${data.volume_err.toLocaleString()})`;
+      const lineX = isCal
+        ? `<strong>Det 1 (X):</strong> Centroid: ${data.centroid_x_e}(${data.centroid_x_e_err}) keV &nbsp;&nbsp; Area: ${volStr} counts &nbsp;&nbsp; FWHM: ${data.fwhm_x_e}(${data.fwhm_x_e_err}) keV`
+        : `<strong>Det 1 (X):</strong> Centroid: ${data.centroid_x_ch}(${data.centroid_x_ch_err}) ch &nbsp;&nbsp; Area: ${volStr} counts &nbsp;&nbsp; FWHM: ${data.fwhm_x_ch}(${data.fwhm_x_ch_err}) ch`;
+      const lineY = isCal
+        ? `<strong>Det 2 (Y):</strong> Centroid: ${data.centroid_y_e}(${data.centroid_y_e_err}) keV &nbsp;&nbsp; Area: ${volStr} counts &nbsp;&nbsp; FWHM: ${data.fwhm_y_e}(${data.fwhm_y_e_err}) keV`
+        : `<strong>Det 2 (Y):</strong> Centroid: ${data.centroid_y_ch}(${data.centroid_y_ch_err}) ch &nbsp;&nbsp; Area: ${volStr} counts &nbsp;&nbsp; FWHM: ${data.fwhm_y_ch}(${data.fwhm_y_ch_err}) ch`;
+
+      document.getElementById('fitCompactLine2D_X').innerHTML = lineX;
+      document.getElementById('fitCompactLine2D_Y').innerHTML = lineY;
+
+      // Detailed parameters grid
       document.getElementById('fitCentroid2D').innerText = isCal
         ? `(${data.centroid_x_e} ± ${data.centroid_x_e_err}, ${data.centroid_y_e} ± ${data.centroid_y_e_err}) keV [ch (${data.centroid_x_ch}, ${data.centroid_y_ch})]`
         : `(${data.centroid_x_ch} ± ${data.centroid_x_ch_err}, ${data.centroid_y_ch} ± ${data.centroid_y_ch_err}) ch`;
@@ -2042,6 +2129,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       document.getElementById('fitGrossBg2D').innerText = `${data.gross_counts.toLocaleString()} gross / ${data.total_bg_counts.toLocaleString()} bg counts`;
       document.getElementById('fitChi22D').innerText = `${data.red_chi2} (χ²=${data.chi2}, NDF=${data.ndf})`;
 
+      updateFitCardsVerbosity();
       document.getElementById('fitCard2D').style.display = 'block';
 
       document.getElementById('hudCoords').innerText = `2D Fit: Centroid = ${posTag} | Net Volume = ${data.volume} ± ${data.volume_err} | FWHMs = (${isCal ? data.fwhm_x_e + ', ' + data.fwhm_y_e + ' keV' : data.fwhm_x_ch + ', ' + data.fwhm_y_ch + ' ch'})`;
@@ -2058,8 +2146,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const y1 = Math.ceil(Math.min(metadata.shape[1], view.y1));
     const fitType = document.getElementById('fitTypeSelect1D') ? document.getElementById('fitTypeSelect1D').value : 'gaussian';
     const fwhmMult = document.getElementById('fwhmMultSlider1D') ? document.getElementById('fwhmMultSlider1D').value : '4.0';
+    const verbosity = document.getElementById('fitVerbositySelect') ? document.getElementById('fitVerbositySelect').value : 'compact';
 
-    const res = await fetch(`/api/fit_peak?axis=${axis}&channel=${ch}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}&fit_type=${fitType}&fwhm_mult=${fwhmMult}`);
+    const res = await fetch(`/api/fit_peak?axis=${axis}&channel=${ch}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}&fit_type=${fitType}&fwhm_mult=${fwhmMult}&verbosity=${verbosity}`);
     const data = await res.json();
     if (data.success) {
       activeFit1D[axis] = data;
@@ -2067,6 +2156,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const detLabel = (axis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
       const modelTag = (data.fit_type === 'gaussian_tail') ? '1D Peak Fit (Left-Tail)' : '1D Gaussian Fit';
       document.getElementById('fitTitle1D').innerText = `⚛ ${modelTag} [${detLabel}]: ${isCal ? data.centroid_e + ' keV' : 'ch ' + data.centroid_ch}`;
+
+      // Compact line in format: centroid(err)   area(err)   fwhm(err)
+      const areaStr = `${data.area.toLocaleString()}(${data.area_err.toLocaleString()})`;
+      const compact1D = isCal
+        ? `Centroid: ${data.centroid_e}(${data.centroid_e_err}) keV &nbsp;&nbsp; Area: ${areaStr} counts &nbsp;&nbsp; FWHM: ${data.fwhm_e}(${data.fwhm_e_err}) keV`
+        : `Centroid: ${data.centroid_ch}(${data.centroid_ch_err}) ch &nbsp;&nbsp; Area: ${areaStr} counts &nbsp;&nbsp; FWHM: ${data.fwhm_ch}(${data.fwhm_ch_err}) ch`;
+      document.getElementById('fitCompactLine1D').innerHTML = compact1D;
+
+      // Detailed parameters grid
       document.getElementById('fitCentroid1D').innerText = isCal
         ? `${data.centroid_e} ± ${data.centroid_e_err} keV (${data.centroid_ch} ± ${data.centroid_ch_err} ch)`
         : `${data.centroid_ch} ± ${data.centroid_ch_err} ch`;
@@ -2088,6 +2186,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       document.getElementById('fitGrossBg1D').innerText = `${data.gross_counts.toLocaleString()} / ${data.bg_counts.toLocaleString()}`;
       document.getElementById('fitChi21D').innerText = `${data.red_chi2} (NDF=${data.ndf})`;
+
+      updateFitCardsVerbosity();
       document.getElementById('fitCard1D').style.display = 'block';
 
       const hudEnergy = isCal ? ` (${data.centroid_e} keV)` : '';
@@ -2589,6 +2689,21 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     clearFit2D();
   }
 
+  function updateFitCardsVerbosity() {
+    const verbosity = document.getElementById('fitVerbositySelect') ? document.getElementById('fitVerbositySelect').value : 'compact';
+    const isDetailed = (verbosity === 'detailed');
+
+    const g1D = document.getElementById('fitGrid1D');
+    const b1D = document.getElementById('btnToggleDetails1D');
+    if (g1D) g1D.style.display = isDetailed ? 'grid' : 'none';
+    if (b1D) b1D.innerText = isDetailed ? '▴ Compact' : '▾ Details';
+
+    const g2D = document.getElementById('fitGrid2D');
+    const b2D = document.getElementById('btnToggleDetails2D');
+    if (g2D) g2D.style.display = isDetailed ? 'grid' : 'none';
+    if (b2D) b2D.innerText = isDetailed ? '▴ Compact' : '▾ Details';
+  }
+
   function setupEvents() {
     document.getElementById('cmapSelect').addEventListener('change', () => { updateColorLUT(); render2D(); });
     document.getElementById('scaleSelect').addEventListener('change', render2D);
@@ -2628,6 +2743,27 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     document.getElementById('randFracSlider2D').addEventListener('input', (e) => {
       document.getElementById('randFracLabel2D').innerText = parseFloat(e.target.value).toFixed(1) + '%';
     });
+    const selVerb = document.getElementById('fitVerbositySelect');
+    if (selVerb) selVerb.addEventListener('change', updateFitCardsVerbosity);
+
+    const btnTog1 = document.getElementById('btnToggleDetails1D');
+    if (btnTog1) btnTog1.addEventListener('click', () => {
+      const sel = document.getElementById('fitVerbositySelect');
+      if (sel) {
+        sel.value = (sel.value === 'detailed') ? 'compact' : 'detailed';
+        updateFitCardsVerbosity();
+      }
+    });
+
+    const btnTog2 = document.getElementById('btnToggleDetails2D');
+    if (btnTog2) btnTog2.addEventListener('click', () => {
+      const sel = document.getElementById('fitVerbositySelect');
+      if (sel) {
+        sel.value = (sel.value === 'detailed') ? 'compact' : 'detailed';
+        updateFitCardsVerbosity();
+      }
+    });
+
     document.getElementById('btnCloseFit1D').addEventListener('click', clearFit1D);
     document.getElementById('btnCloseFit2D').addEventListener('click', clearFit2D);
 
