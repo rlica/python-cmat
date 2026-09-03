@@ -57,7 +57,7 @@ python3 cmat_webviewer.py GeE-symm.cmat --port 8080
 |---|---|---|
 | **2D Box Zoom** | `Click + Drag` (2D) | Drag a rubberband rectangle directly on the 2D matrix to zoom in |
 | **1D Box Zoom** | `Click + Drag` (1D) | Drag a range across the 1D spectrum to zoom along the X axis and sync both 2D and 1D views |
-| **2D Wheel Zoom** | `Mouse Wheel` (2D) | Zoom In / Out centered on current view in equal small steps |
+| **2D Wheel Zoom** | `Mouse Wheel` (2D) | Zoom In / Out centered on crosshair in equal small steps |
 | **1D Y-Axis Zoom** | `Mouse Wheel` (1D) | Zoom In / Out on Y axis (fixed Ymin, dynamic Ymax for low/high peaks) |
 | **Reset 1D Y-Scale** | `Double Click` (1D) | Reset 1D histogram Y-axis scale to default auto-scale |
 | **2D Coincidence Peak Fit** | `Ctrl / Cmd + Click` (2D) or `G` | True 2D coincidence peak fit (Gaussian/HPGe) with accidental & continuum BG subtraction |

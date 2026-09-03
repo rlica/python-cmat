@@ -1186,7 +1186,10 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             cmap = query.get("cmap", ["turbo"])[0]
             scale = query.get("scale", ["log"])[0]
             vmin = int(query.get("vmin", [1])[0])
-            vmax = int(query.get("vmax", [100])[0])
+            vmax = int(query.get("vmax", [0])[0])
+            if vmax <= 0:
+                sub = self.matrix[y0:y1, x0:x1]
+                vmax = int(np.max(sub)) if sub.size > 0 else 100
             has_fit = int(query.get("has_fit", [0])[0]) == 1
             fit_x = float(query.get("fit_x", [0])[0]) if has_fit else None
             fit_y = float(query.get("fit_y", [0])[0]) if has_fit else None
@@ -1537,6 +1540,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <option value="linear">Linear</option>
       </select>
 
+      <label style="margin-top: 6px;">Min Threshold <span class="range-val" id="vminLabel">1</span></label>
+      <input type="range" id="vminSlider" min="0" max="50" value="1">
+
       <label style="margin-top: 6px;">1D Energy / Channel Range</label>
       <select id="projRangeSelect">
         <option value="synced" selected>Synced with 2D Window Zoom</option>
@@ -1548,16 +1554,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <option value="linear" selected>Linear</option>
         <option value="log">Logarithmic</option>
       </select>
-    </div>
-
-    <!-- 5. Contrast / Cutoffs -->
-    <div class="control-group">
-      <h3>Contrast / Cutoffs</h3>
-      <label>Max Contrast <span class="range-val" id="vmaxLabel">1000</span></label>
-      <input type="range" id="vmaxSlider" min="1" max="10000" value="500">
-
-      <label style="margin-top: 6px;">Min Threshold <span class="range-val" id="vminLabel">1</span></label>
-      <input type="range" id="vminSlider" min="0" max="50" value="1">
     </div>
   </aside>
 
@@ -1652,7 +1648,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   <table>
     <tr><td>Click & Drag (2D)</td><td>Box Zoom into 2D rectangle</td></tr>
     <tr><td>Click & Drag (1D)</td><td>Box Zoom on 1D spectrum X-axis (syncs 2D &amp; other 1D spectrum)</td></tr>
-    <tr><td>Mouse Wheel (2D)</td><td>Zoom In / Out centered on current view in equal steps</td></tr>
+    <tr><td>Mouse Wheel (2D)</td><td>Zoom In / Out centered on crosshair in equal steps</td></tr>
     <tr><td>Mouse Wheel (1D)</td><td>Zoom In / Out on Y-axis (fixed Ymin, adjusts Ymax)</td></tr>
     <tr><td>Double Click (1D)</td><td>Reset 1D Y-axis scale to default auto-scale</td></tr>
     <tr><td>Ctrl / Cmd + Click (2D)</td><td>2D Coincidence Peak Fit (Gaussian/HPGe + BG &amp; Random Subtraction)</td></tr>
@@ -1717,6 +1713,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
   // Tile Data & Shape
   let currentTileData = null;
+  let currentTileMax = 100;
   let tileW = 0, tileH = 0;
 
   // Plot Margins
@@ -1853,10 +1850,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     document.getElementById('matInfo').innerText = `${metadata.filename} (${metadata.shape[0]}×${metadata.shape[1]})`;
     view = { x0: 0, x1: metadata.shape[0], y0: 0, y1: metadata.shape[1] };
 
-    document.getElementById('vmaxSlider').max = Math.max(100, Math.min(50000, metadata.max_count));
-    document.getElementById('vmaxSlider').value = Math.min(800, metadata.max_count);
-    document.getElementById('vmaxLabel').innerText = document.getElementById('vmaxSlider').value;
-
     setupEvents();
     await fetchTileAndRender();
     await fetch1DProjection();
@@ -1874,6 +1867,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const buf = await res.arrayBuffer();
 
     currentTileData = new Int32Array(buf);
+    let maxVal = 0;
+    for (let i = 0; i < currentTileData.length; i++) {
+      if (currentTileData[i] > maxVal) maxVal = currentTileData[i];
+    }
+    currentTileMax = Math.max(2, maxVal);
+
     render2D();
   }
 
@@ -1914,7 +1913,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const buf32 = new Uint32Array(imgData.data.buffer);
 
       const vmin = parseInt(document.getElementById('vminSlider').value) || 0;
-      const vmax = parseInt(document.getElementById('vmaxSlider').value) || 100;
+      let vmax = currentTileMax;
+      if (vmax <= vmin) vmax = vmin + 1;
       const scaleMode = document.getElementById('scaleSelect').value;
 
       const isLog = (scaleMode === 'log');
@@ -2647,7 +2647,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const cmap = document.getElementById('cmapSelect').value;
     const scale = document.getElementById('scaleSelect').value;
     const vmin = document.getElementById('vminSlider').value;
-    const vmax = document.getElementById('vmaxSlider').value;
+    const vmax = currentTileMax;
     const f2d = activeFit2D;
     const fitType = document.getElementById('fitTypeSelect2D') ? document.getElementById('fitTypeSelect2D').value : 'gaussian';
 
@@ -2707,7 +2707,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   function setupEvents() {
     document.getElementById('cmapSelect').addEventListener('change', () => { updateColorLUT(); render2D(); });
     document.getElementById('scaleSelect').addEventListener('change', render2D);
-    document.getElementById('vmaxSlider').addEventListener('input', (e) => { document.getElementById('vmaxLabel').innerText = e.target.value; render2D(); });
     document.getElementById('vminSlider').addEventListener('input', (e) => { document.getElementById('vminLabel').innerText = e.target.value; render2D(); });
     document.getElementById('scrollSensSlider').addEventListener('input', (e) => {
       const val = parseInt(e.target.value, 10);
@@ -2820,13 +2819,32 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     canvas1dX.addEventListener('contextmenu', (e) => e.preventDefault());
     canvas1dY.addEventListener('contextmenu', (e) => e.preventDefault());
 
-    // 2D Mouse Wheel: Centered zoom in equal small steps
+    // 2D Mouse Wheel: Centered zoom on where the crosshair is placed
     let wheel2DTimer = null;
+    let wheelCenterCh = null;
     canvas2d.addEventListener('wheel', (e) => {
       e.preventDefault();
       const factor = e.deltaY < 0 ? (1.0 - scrollSensitivity) : (1.0 / (1.0 - scrollSensitivity));
-      const cx = (view.x0 + view.x1) / 2.0;
-      const cy = (view.y0 + view.y1) / 2.0;
+
+      // Always center the view to where the crosshair is placed in 2D
+      if (!wheelCenterCh) {
+        const rect = canvas2d.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+        const pr = getPlotRect2D();
+
+        if (mouseX >= pr.x && mouseX <= pr.x + pr.w && mouseY >= pr.y && mouseY <= pr.y + pr.h) {
+          const ch = pxToCh2D(mouseX, mouseY);
+          wheelCenterCh = { x: ch.x, y: ch.y };
+        } else if (cursorChannel && cursorChannel.x >= 0 && cursorChannel.y >= 0) {
+          wheelCenterCh = { x: cursorChannel.x + 0.5, y: cursorChannel.y + 0.5 };
+        } else {
+          wheelCenterCh = { x: (view.x0 + view.x1) / 2.0, y: (view.y0 + view.y1) / 2.0 };
+        }
+      }
+
+      const cx = wheelCenterCh.x;
+      const cy = wheelCenterCh.y;
       const spanX = (view.x1 - view.x0) * factor;
       const spanY = (view.y1 - view.y0) * factor;
 
@@ -2888,6 +2906,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     canvas2d.addEventListener('mouseenter', () => { isMouseOver2D = true; });
     canvas2d.addEventListener('mouseleave', () => {
       isMouseOver2D = false;
+      wheelCenterCh = null;
       if (!isBoxZooming) {
         cursor1DChannelX = null;
         cursor1DChannelY = null;
@@ -2917,6 +2936,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     });
 
     canvas2d.addEventListener('mousemove', (e) => {
+      wheelCenterCh = null;
       const rect = canvas2d.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
