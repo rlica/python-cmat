@@ -262,7 +262,19 @@ $$S(x) = \frac{A_S}{2} \text{erfc}\left[\frac{x-\mu}{\sqrt{2}\sigma}\right]$$
 
 ---
 
-### 2. Self-Consistent 2D $\gamma$-$\gamma$ Coincidence Background Decomposition (Gamba & Morhác)
+### 2. Channel Bin Centering & Calibration Convention (`! al centro del canale`)
+
+In multichannel analyzer (MCA/ADC) spectroscopy and the standard [GASPware](https://github.com/csteke/GASPware) / `xtrackn` suite, an integer histogram bin $k$ represents counts recorded in the channel interval $[k, k+1)$ with its physical center located at:
+$$\text{Channel Position} = k + 0.5$$
+
+`python-cmat` strictly adheres to this Fortran `xtrackn` convention (*"al centro del canale"*, `src/xtrack/trackn.F`):
+- 1D and 2D continuous peak fitting routines evaluate model functions on physical bin centers ($x_i = k + 0.5, y_j = l + 0.5$).
+- Calibrated peak energies $E(\mu) = a_0 + a_1 \mu + a_2 \mu^2$ are computed directly at the continuous centroid $\mu$, guaranteeing exact 1:1 energy calibration agreement with `xtrackn`.
+- Peak curves and centroid marker lines naturally overlap the visual center of histogram step bins on both browser canvases and vector PDF exports.
+
+---
+
+### 3. Self-Consistent 2D $\gamma$-$\gamma$ Coincidence Background Decomposition (Gamba & Morhác)
 
 In 2D $\gamma$-$\gamma$ coincidence spectroscopy, counts in the vicinity of a coincidence peak $(E_d, E_f)$ are composed of four distinct topological components (*Gamba et al., NIM A 928 (2019) 93–103*; *Morhác et al., NIM A 401 (1997) 113*):
 - **$p|p^t$ (True Net Coincidence Peak)**: Genuine correlated full-energy cascade events ($E_d \otimes E_f$), modeled as a 2D peak profile $H \cdot P_X(x) \cdot P_Y(y)$.
@@ -276,7 +288,7 @@ and the Peak-to-Total-Background ratio $\Pi = n^t_{p|p} / n^m_{p|p}$.
 
 ---
 
-### 3. Key References
+### 4. Key References
 
 1. **Phillips, G. W., & Marlow, K. W.** (1976). *"Automatic analysis of gamma-ray spectra from germanium detectors"*. *Nuclear Instruments and Methods*, 137(3), 525–536. [link](https://doi.org/10.1016/0029-554X(76)90472-X).
    *(Original formulation of the Hypermet peak shape: Gaussian + convolved exponential tail + erfc step function).*

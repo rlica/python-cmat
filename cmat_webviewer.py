@@ -206,11 +206,19 @@ def fit_gaussian_peak(x, y, x_center, fit_type="gaussian", fwhm_mult=4.0, cal=[0
                      Exponentially Modified Gaussian (EMG) convolved tail + erfc Compton step.
     ROI window size is determined by fwhm_mult * FWHM_est (or explicit roi_half_width).
     Uses Poisson counting statistics weights and computes full parameter covariance matrix.
+    Assumes histogram channels represent bins [k, k+1) with continuous center coordinate k + 0.5
+    following the standard GASPware / xtrackn convention ('al centro del canale').
     """
-    x = np.asarray(x, dtype=np.float64)
     y = np.asarray(y, dtype=np.float64)
+    if x is None:
+        x = np.arange(len(y), dtype=np.float64) + 0.5
+    else:
+        x = np.asarray(x, dtype=np.float64)
+        if len(x) > 0 and np.isclose(x[0] % 1.0, 0.0):
+            x = x + 0.5
 
-    i_center = int(round(x_center))
+    i_center = int(np.clip(int(np.floor(x_center)), 0, len(y) - 1))
+    center_coord = i_center + 0.5
 
     if roi_half_width is not None:
         half_w = max(3, int(round(roi_half_width)))
@@ -267,7 +275,7 @@ def fit_gaussian_peak(x, y, x_center, fit_type="gaussian", fwhm_mult=4.0, cal=[0
     b0_init = 0.5 * (bg_left + bg_right)
 
     # Net height
-    bg_at_apex = b0_init + b1_init * (mu_init - x_center)
+    bg_at_apex = b0_init + b1_init * (mu_init - center_coord)
     H_init = max(1.0, float(roi_y[apex_idx]) - bg_at_apex)
     sigma_init = max(0.5, (fwhm_est / 2.355) if 'fwhm_est' in locals() else 1.5)
 
@@ -304,7 +312,7 @@ def fit_gaussian_peak(x, y, x_center, fit_type="gaussian", fwhm_mult=4.0, cal=[0
             A_S = max(0.0, A_S)
 
             dx = roi_x - mu
-            dx_c = roi_x - x_center
+            dx_c = roi_x - center_coord
             z = dx / sig
 
             g = H * np.exp(np.clip(-0.5 * z**2, -50.0, 0.0))
@@ -323,7 +331,7 @@ def fit_gaussian_peak(x, y, x_center, fit_type="gaussian", fwhm_mult=4.0, cal=[0
                 p_step[i] += eps
                 b0_s, b1_s, H_s, mu_s, sig_s, fT_s, beta_s, AS_s = p_step
                 sig_s, beta_s = max(0.1, abs(sig_s)), max(0.1, abs(beta_s))
-                dx_s, dx_cs = roi_x - mu_s, roi_x - x_center
+                dx_s, dx_cs = roi_x - mu_s, roi_x - center_coord
                 z_s = dx_s / sig_s
                 g_s = max(0.0, H_s) * np.exp(np.clip(-0.5 * z_s**2, -50.0, 0.0))
                 u_s = np.clip(dx_s / beta_s + 0.5 * (sig_s / beta_s)**2, -50.0, 50.0)
@@ -345,7 +353,7 @@ def fit_gaussian_peak(x, y, x_center, fit_type="gaussian", fwhm_mult=4.0, cal=[0
         H = max(0.0, H)
 
         dx = roi_x - mu
-        dx_c = roi_x - x_center
+        dx_c = roi_x - center_coord
         z = dx / sig
 
         is_gauss = (z >= -alpha)
@@ -476,7 +484,7 @@ def fit_gaussian_peak(x, y, x_center, fit_type="gaussian", fwhm_mult=4.0, cal=[0
     peak_win_min = max(roi_x[0], mu - 1.5 * fwhm)
     peak_win_max = min(roi_x[-1], mu + 1.5 * fwhm)
     win_mask = (roi_x >= peak_win_min) & (roi_x <= peak_win_max)
-    bg_roi_sum = np.sum(b0 + b1 * (roi_x[win_mask] - x_center))
+    bg_roi_sum = np.sum(b0 + b1 * (roi_x[win_mask] - center_coord))
     gross_roi_sum = np.sum(roi_y[win_mask])
 
     ndf = max(1, N - n_params)
@@ -495,7 +503,7 @@ def fit_gaussian_peak(x, y, x_center, fit_type="gaussian", fwhm_mult=4.0, cal=[0
 
     # Dense curve for drawing
     x_dense = np.linspace(roi_x[0], roi_x[-1], 200)
-    dx_c_dense = x_dense - x_center
+    dx_c_dense = x_dense - center_coord
     bg_dense = b0 + b1 * dx_c_dense
     z_dense = (x_dense - mu) / sig
 
@@ -547,8 +555,8 @@ def fit_gaussian_peak(x, y, x_center, fit_type="gaussian", fwhm_mult=4.0, cal=[0
         "chi2": round(float(chi2), 2),
         "ndf": int(ndf),
         "red_chi2": round(float(red_chi2), 3),
-        "roi_ch_min": int(roi_x[0]),
-        "roi_ch_max": int(roi_x[-1]),
+        "roi_ch_min": int(np.floor(roi_x[0])),
+        "roi_ch_max": int(np.floor(roi_x[-1])),
         "curve_x": [round(float(v), 2) for v in x_dense],
         "curve_fit": [round(float(v), 2) for v in fit_dense],
         "curve_bg": [round(float(v), 2) for v in bg_dense],
@@ -603,8 +611,10 @@ def _fit_2d_gaussian_single_roi(
     mat = np.asarray(matrix, dtype=np.float64)
     H_mat, W_mat = mat.shape
 
-    ix = int(round(x_center))
-    iy = int(round(y_center))
+    ix = int(np.clip(int(np.floor(x_center)), 0, W_mat - 1))
+    iy = int(np.clip(int(np.floor(y_center)), 0, H_mat - 1))
+    center_x_coord = ix + 0.5
+    center_y_coord = iy + 0.5
 
     x_min = max(0, ix - roi_half_width)
     x_max = min(W_mat - 1, ix + roi_half_width)
@@ -619,8 +629,8 @@ def _fit_2d_gaussian_single_roi(
     N_pixels = Ny * Nx
     gross_counts = float(np.sum(roi_raw))
 
-    xs = np.arange(x_min, x_max + 1, dtype=np.float64)
-    ys = np.arange(y_min, y_max + 1, dtype=np.float64)
+    xs = np.arange(x_min, x_max + 1, dtype=np.float64) + 0.5
+    ys = np.arange(y_min, y_max + 1, dtype=np.float64) + 0.5
     X_grid, Y_grid = np.meshgrid(xs, ys)
 
     x_flat = X_grid.ravel()
@@ -705,8 +715,8 @@ def _fit_2d_gaussian_single_roi(
             stx, sty = max(0.0, stx), max(0.0, sty)
             H, rx, ry = max(0.0, H), max(0.0, rx), max(0.0, ry)
 
-            dxc = x_flat - ix
-            dyc = y_flat - iy
+            dxc = x_flat - center_x_coord
+            dyc = y_flat - center_y_coord
             bg_cont = b0 + bx * dxc + by * dyc
 
             px = _calc_1d_hyp_profile(x_flat, mx, sx, eta_tx, betax, stx)
@@ -947,8 +957,8 @@ def _fit_2d_gaussian_single_roi(
     # Background decomposition counts in ROI from continuous model
     dx = x_flat - mx
     dy = y_flat - my
-    dxc = x_flat - ix
-    dyc = y_flat - iy
+    dxc = x_flat - center_x_coord
+    dyc = y_flat - center_y_coord
     zx = dx / sx
     zy = dy / sy
     if is_hypermet:
@@ -972,8 +982,8 @@ def _fit_2d_gaussian_single_roi(
     # Define peak region as ±2 sigma around centroid
     w_gx = max(1, int(round(2.0 * sx)))
     w_gy = max(1, int(round(2.0 * sy)))
-    ix_c = int(round(mx)) - x_min
-    iy_c = int(round(my)) - y_min
+    ix_c = int(np.floor(mx)) - x_min
+    iy_c = int(np.floor(my)) - y_min
 
     px0 = max(0, ix_c - w_gx)
     px1 = min(Nx - 1, ix_c + w_gx)
@@ -1111,18 +1121,18 @@ def fit_2d_gaussian_peak(
     # Check fitted centroid coordinates
     mx = res_prelim.get("centroid_x_ch", x_center)
     my = res_prelim.get("centroid_y_ch", y_center)
-    ix_orig = int(round(x_center))
-    iy_orig = int(round(y_center))
-    ix_new = int(round(mx))
-    iy_new = int(round(my))
+    ix_orig = int(np.floor(x_center))
+    iy_orig = int(np.floor(y_center))
+    ix_new = int(np.floor(mx))
+    iy_new = int(np.floor(my))
 
     # If peak is offset from initial click position, recenter ROI and perform refined Pass 2
-    if (ix_new != ix_orig or iy_new != iy_orig) or (abs(mx - x_center) > 0.4 or abs(my - y_center) > 0.4):
+    if (ix_new != ix_orig or iy_new != iy_orig) or (abs(mx - (ix_orig + 0.5)) > 0.4 or abs(my - (iy_orig + 0.5)) > 0.4):
         ix_clamped = max(roi_half_width + 1, min(W_mat - 1 - roi_half_width - 1, ix_new))
         iy_clamped = max(roi_half_width + 1, min(H_mat - 1 - roi_half_width - 1, iy_new))
         try:
             res_refined = _fit_2d_gaussian_single_roi(
-                mat, ix_clamped, iy_clamped, fit_type=fit_type, cal=cal, roi_half_width=roi_half_width,
+                mat, ix_clamped + 0.5, iy_clamped + 0.5, fit_type=fit_type, cal=cal, roi_half_width=roi_half_width,
                 proj_x=proj_x, proj_y=proj_y, total_counts=total_counts, **kwargs
             )
             if res_refined.get("success"):
@@ -1330,8 +1340,8 @@ def generate_pdf_2d(matrix, x0, x1, y0, y1, cmap_name="turbo", scale_mode="log",
 
     # Draw 2D fit crosshair, ellipse and ROI box if active
     if fit_2d_res and fit_2d_res.get("success"):
-        cx = fit_2d_res.get("centroid_x_ch", 0) + 0.5
-        cy = fit_2d_res.get("centroid_y_ch", 0) + 0.5
+        cx = fit_2d_res.get("centroid_x_ch", 0)
+        cy = fit_2d_res.get("centroid_y_ch", 0)
         fwhm_x = fit_2d_res.get("fwhm_x_ch", 4.0)
         fwhm_y = fit_2d_res.get("fwhm_y_ch", 4.0)
 
@@ -1356,7 +1366,7 @@ def generate_pdf_2d(matrix, x0, x1, y0, y1, cmap_name="turbo", scale_mode="log",
         vol_val = fit_2d_res.get("volume", 0)
         vol_err = fit_2d_res.get("volume_err", 0)
         vol_str = f"Net Vol: {vol_val:,.0f} ± {vol_err:,.0f} cts" if vol_err else f"Net Vol: {vol_val:,.0f} cts"
-        ax.text(0.02, 0.98, f"2D Coincidence Peak\nCentroid: ({cx-0.5:.1f}, {cy-0.5:.1f})\n{vol_str}",
+        ax.text(0.02, 0.98, f"2D Coincidence Peak\nCentroid: ({cx:.2f}, {cy:.2f})\n{vol_str}",
                 transform=ax.transAxes, verticalalignment="top", fontsize=9,
                 bbox=dict(boxstyle="round,pad=0.4", facecolor="#191c20", edgecolor="#ffd600", alpha=0.85),
                 color="#ffffff", fontfamily="monospace")
@@ -1463,7 +1473,7 @@ class CMATWebHandler(BaseHTTPRequestHandler):
 
             is_cal = self.cal and (self.cal[0] != 0.0 or self.cal[1] != 1.0 or self.cal[2] != 0.0)
             try:
-                res = fit_gaussian_peak(np.arange(len(spec)), spec, channel, fit_type=fit_type, fwhm_mult=fwhm_mult, cal=self.cal)
+                res = fit_gaussian_peak(np.arange(len(spec)) + 0.5, spec, channel, fit_type=fit_type, fwhm_mult=fwhm_mult, cal=self.cal)
                 res["axis"] = axis
                 print_fit_terminal_report(res, det_name, self.reader.filename.name, is_cal, verbosity=verbosity)
             except Exception as e:
@@ -1602,7 +1612,7 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             fit_res = None
             if has_fit and fit_ch is not None:
                 try:
-                    fit_res = fit_gaussian_peak(np.arange(len(spec)), spec, fit_ch, fit_type=fit_type, fwhm_mult=fwhm_mult, cal=self.cal)
+                    fit_res = fit_gaussian_peak(np.arange(len(spec)) + 0.5, spec, fit_ch, fit_type=fit_type, fwhm_mult=fwhm_mult, cal=self.cal)
                 except Exception:
                     fit_res = None
 

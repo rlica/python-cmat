@@ -867,7 +867,7 @@
     // 5. Draw 2D Coincidence Peak Fit Indicator & FWHM Ellipse
     if (activeFit2D && activeFit2D.success) {
       const f2d = activeFit2D;
-      const ptC = chToPx2D(f2d.centroid_x_ch + 0.5, f2d.centroid_y_ch + 0.5);
+      const ptC = chToPx2D(f2d.centroid_x_ch, f2d.centroid_y_ch);
       const ptL = chToPx2D(f2d.roi_x_min, f2d.roi_y_max + 1);
       const ptR = chToPx2D(f2d.roi_x_max + 1, f2d.roi_y_min);
 
@@ -881,8 +881,8 @@
       ctx2d.setLineDash([]);
 
       // B. FWHM Ellipse
-      const ptXRadius = chToPx2D(f2d.centroid_x_ch + 0.5 + (f2d.fwhm_x_ch / 2), f2d.centroid_y_ch + 0.5);
-      const ptYRadius = chToPx2D(f2d.centroid_x_ch + 0.5, f2d.centroid_y_ch + 0.5 + (f2d.fwhm_y_ch / 2));
+      const ptXRadius = chToPx2D(f2d.centroid_x_ch + (f2d.fwhm_x_ch / 2), f2d.centroid_y_ch);
+      const ptYRadius = chToPx2D(f2d.centroid_x_ch, f2d.centroid_y_ch + (f2d.fwhm_y_ch / 2));
       const radX = Math.abs(ptXRadius.x - ptC.x);
       const radY = Math.abs(ptYRadius.y - ptC.y);
 
@@ -1201,7 +1201,7 @@
           ctx.lineWidth = 1.5;
           ctx.setLineDash([4, 4]);
           for (let k = 0; k < fit.curve_x.length; k++) {
-            const cx = pr.x + ((fit.curve_x[k] + 0.5 - chStart) / span) * pr.w;
+            const cx = pr.x + ((fit.curve_x[k] - chStart) / span) * pr.w;
             const cy = valToPx(fit.curve_bg[k]);
             if (k === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
           }
@@ -1214,14 +1214,14 @@
         ctx.strokeStyle = '#ffd600';
         ctx.lineWidth = 2.2;
         for (let k = 0; k < fit.curve_x.length; k++) {
-          const cx = pr.x + ((fit.curve_x[k] + 0.5 - chStart) / span) * pr.w;
+          const cx = pr.x + ((fit.curve_x[k] - chStart) / span) * pr.w;
           const cy = valToPx(fit.curve_fit[k]);
           if (k === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
         }
         ctx.stroke();
 
         // Centroid Vertical Line
-        const cX = pr.x + ((fit.centroid_ch + 0.5 - chStart) / span) * pr.w;
+        const cX = pr.x + ((fit.centroid_ch - chStart) / span) * pr.w;
         if (cX >= pr.x && cX <= pr.x + pr.w) {
           ctx.strokeStyle = '#ffd600';
           ctx.lineWidth = 1.2;
@@ -1302,7 +1302,7 @@
     let hudText;
     const detLabel = (axis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
     if (cursorCh !== null && cursorCh >= 0 && cursorCh < spec.length) {
-      const eVal = chToEnergy(cursorCh).toFixed(1);
+      const eVal = chToEnergy(cursorCh + 0.5).toFixed(1);
       const cVal = spec[cursorCh] || 0;
       hudText = isCal
         ? `${detLabel} | Ch: ${cursorCh} | ${eVal} keV | Cts: ${cVal}`
@@ -1340,7 +1340,7 @@
       ctx.lineTo(x, pr.y + pr.h + 3);
       ctx.stroke();
       if (isCal) {
-        const eStr = chToEnergy(c).toFixed(0);
+        const eStr = chToEnergy(c + 0.5).toFixed(0);
         ctx.fillText(`${eStr}k (${c})`, x, pr.y + pr.h + 12);
       } else {
         ctx.fillText(c.toString(), x, pr.y + pr.h + 12);
@@ -1484,8 +1484,8 @@
     const res = await fetch(`/api/value?x=${cursorChannel.x}&y=${cursorChannel.y}`);
     const data = await res.json();
     const isCal = metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0);
-    const ex = isCal ? ` (${chToEnergy(data.x).toFixed(1)} keV)` : '';
-    const ey = isCal ? ` (${chToEnergy(data.y).toFixed(1)} keV)` : '';
+    const ex = isCal ? ` (${chToEnergy(data.x + 0.5).toFixed(1)} keV)` : '';
+    const ey = isCal ? ` (${chToEnergy(data.y + 0.5).toFixed(1)} keV)` : '';
     document.getElementById('hudCoords').innerText = `Det 1 (X): ch ${data.x}${ex} | Det 2 (Y): ch ${data.y}${ey} | Counts: ${data.value}`;
   }
 
@@ -1517,7 +1517,7 @@
 `;
 
     for (let i = chStart; i <= chEnd; i++) {
-      let e = chToEnergy(i).toFixed(3);
+      let e = chToEnergy(i + 0.5).toFixed(3);
       content += `${i} ${e} ${spec[i]}
 `;
     }
@@ -2097,7 +2097,7 @@
         const ch = Math.max(0, Math.min(spec.length - 1, Math.floor(chStart + frac * span)));
         if (axis === 0) cursor1DChannelX = ch; else cursor1DChannelY = ch;
         const val = spec[ch] || 0;
-        const energy = chToEnergy(ch).toFixed(1);
+        const energy = chToEnergy(ch + 0.5).toFixed(1);
         const detName = (axis === 0) ? 'Det 1 (1D)' : 'Det 2 (1D)';
         document.getElementById('hudCoords').innerText = `${detName}: ch ${ch} (${energy} keV) | Proj Counts: ${val}`;
       } else {
