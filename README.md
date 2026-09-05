@@ -52,7 +52,8 @@ python cmat_webviewer.py /path/to/matrix.cmat
 | **1D Energy Zoom** | `Click & Drag` (1D) | Zoom into selected energy range on 1D spectrum X axis (syncs 2D & other 1D) |
 | **2D Wheel Zoom** | `Mouse Wheel` (2D) | Zoom In / Out centered on crosshair in equal small steps |
 | **1D Y-Axis Zoom** | `Mouse Wheel` (1D) | Zoom In / Out on Y axis (fixed Ymin, dynamic Ymax for low/high peaks) |
-| **Reset 1D Y-Scale** | `Double Click` (1D) | Reset 1D histogram Y-axis scale to default auto-scale |
+| **Full Zoom Out (2D)** | `Double Click` (2D) | Fully zoom out 2D matrix and both 1D spectra (Full View) |
+| **Full Zoom Out (1D)** | `Double Click` (1D) | Fully zoom out clicked 1D projection only (X range & Y scale; preserves other gate) |
 | **2D Coincidence Peak Fit** | `Ctrl / Cmd + Click` (2D) or `G` | True 2D coincidence peak fit (Gaussian/RadWare/Hypermet) with Gamba & Morhác 4-component BG decomposition |
 | **1D Histogram Peak Fit** | `Ctrl / Cmd + Click` (1D) or `G` | Fit 1D histogram peak (Gaussian/RadWare/Hypermet) + linear BG on Det 1 or Det 2 |
 | **Clear Peak Fits** | `=` (Equals) or `+` | Clear active peak fit curves and markers from 1D spectra and 2D matrix |
@@ -65,10 +66,83 @@ python cmat_webviewer.py /path/to/matrix.cmat
 | **Full Matrix View** | `F` or `f` | Reset zoom to the full 4096 × 4096 matrix |
 | **Color Scale** | `1` (Linear), `2` (Sqrt), `4`/`L` (Log) | Switch 2D intensity scaling mode |
 | **Cycle Colormap** | `C` or `c` | Cycle through Turbo, Viridis, Plasma, Inferno, Hot, Jet, Gray |
+| **Save Config** | `💾 Save Config` (Sidebar) | Save active viewer parameters to `python-cmat-config.txt` in working directory |
 | **Quit Viewer** | `Q` or `q` | Close browser tab and terminate terminal server process |
 | **Print 2D PDF** | `📄 Print PDF` (2D footer) | Export publication-quality vector PDF of current 2D matrix (Times New Roman, Energy keV axes, colorbar) |
 | **Print 1D PDF** | `📄 Print PDF` (1D header) | Export publication-quality vector PDF of active 1D spectrum (Times New Roman, Energy keV axis, stepped histogram, fit curves) |
 | **Help Modal** | `?` or `H` | Open keyboard shortcuts reference |
+
+---
+
+## ⚙️ Configuration File (`python-cmat-config.txt`)
+
+`python-cmat` supports portable, working-directory-specific configuration files so you never have to hardcode defaults or modify the source code when launching from different analysis folders.
+
+### Automatic Creation & Discovery
+- When `cmat_webviewer.py` is executed, it looks for `python-cmat-config.txt` in the **current working directory** (`Path.cwd()`).
+- **If missing**: The script automatically generates a default `python-cmat-config.txt` populated with current defaults and comments:
+  ```text
+  [*] No config file found. Created default config: python-cmat-config.txt
+  ```
+- **If present**: The script loads your settings and indicates in the terminal:
+  ```text
+  [*] Loaded configuration from python-cmat-config.txt
+  ```
+
+### Example `python-cmat-config.txt`
+
+```ini
+# ==============================================================================
+# python-cmat configuration file
+# Automatically generated when no config file is present in the working directory.
+# You can edit these values directly or click "Save Config" in the Web Viewer.
+# ==============================================================================
+
+# Energy Calibration: a0 a1 a2 for E = a0 + a1*ch + a2*ch^2
+cal = 0.0, 1.0, 0.0
+
+# Default Peak Function Model: gaussian, gaussian_tail (RadWare), hypermet
+fit_type = gaussian
+
+# 1D Peak Fitting Region multiplier (times estimated FWHM, e.g. 1.0 to 10.0)
+fwhm_mult_1d = 4.0
+
+# 2D Coincidence ROI half-width in channels (e.g. 6 to 36)
+roi_half_width_2d = 16
+
+# Fit results verbosity: compact, detailed
+fit_verbosity = compact
+
+# Default 2D Colormap: turbo, viridis, plasma, inferno, hot, jet, gray
+colormap = turbo
+
+# Default 2D Scale Mode: log, sqrt, linear
+scale_mode = log
+
+# Default Max Contrast (vmax, 0-1000) and Min Threshold (vmin)
+vmax = 500
+vmin = 1
+
+# Scroll Zoom Sensitivity percentage (1 to 15)
+scroll_sensitivity = 4
+
+# 1D Projection Display Range: synced, full
+proj_range = synced
+
+# 1D Projection Y-Scale: linear, log
+proj_scale = linear
+
+# Web Server Port
+port = 8080
+
+# Automatically open web browser on launch: true, false
+open_browser = true
+```
+
+### Saving Configuration from Web Viewer
+You can adjust sliders, colormaps, peak fit models, or contrast in the Web Viewer and click **`💾 Save Config to File`** in the **⚙ Configuration** panel to immediately save your current state to `python-cmat-config.txt`.
+
+*(Note: Command-line arguments like `--cal`, `-p / --port`, and `--no-browser` will still override config file defaults when explicitly supplied).*
 
 ---
 

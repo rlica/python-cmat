@@ -20,3 +20,7 @@ venv/
 # Matplotlib local font & config cache
 .matplotlib_cache/
 
+# Local configuration files
+python-cmat-config.txt
+
+

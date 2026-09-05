@@ -51,6 +51,146 @@ except Exception:
 
 from cmat import CMATReader
 
+CONFIG_FILENAME = "python-cmat-config.txt"
+
+DEFAULT_CONFIG = {
+    "cal": "0.0, 1.0, 0.0",
+    "fit_type": "gaussian",
+    "fwhm_mult_1d": 4.0,
+    "roi_half_width_2d": 16,
+    "fit_verbosity": "compact",
+    "colormap": "turbo",
+    "scale_mode": "log",
+    "vmax": 500,
+    "vmin": 1,
+    "scroll_sensitivity": 4,
+    "proj_range": "synced",
+    "proj_scale": "linear",
+    "port": 8080,
+    "open_browser": True,
+}
+
+
+def parse_cal_string(cal_val) -> list:
+    """Parse calibration string (e.g. '0.0, 1.0, 0.0' or '0 1 0') into a list of floats."""
+    if isinstance(cal_val, (list, tuple)):
+        return [float(v) for v in cal_val]
+    if isinstance(cal_val, str):
+        parts = cal_val.replace(",", " ").split()
+        return [float(p) for p in parts] if parts else [0.0, 1.0, 0.0]
+    return [0.0, 1.0, 0.0]
+
+
+def generate_config_content(cfg: dict) -> str:
+    """Generate clean, commented INI-style python-cmat-config.txt text."""
+    cal_str = cfg.get("cal", "0.0, 1.0, 0.0")
+    if isinstance(cal_str, (list, tuple)):
+        cal_str = ", ".join(str(v) for v in cal_str)
+
+    open_br = cfg.get("open_browser", True)
+    open_br_str = "true" if open_br in (True, "true", "True", "1", 1) else "false"
+
+    return f"""# ==============================================================================
+# python-cmat configuration file
+# Automatically generated when no config file is present in the working directory.
+# You can edit these values directly or click "Save Config" in the Web Viewer.
+# ==============================================================================
+
+# Energy Calibration: a0 a1 a2 for E = a0 + a1*ch + a2*ch^2
+cal = {cal_str}
+
+# Default Peak Function Model: gaussian, gaussian_tail (RadWare), hypermet
+fit_type = {cfg.get('fit_type', 'gaussian')}
+
+# 1D Peak Fitting Region multiplier (times estimated FWHM, e.g. 1.0 to 10.0)
+fwhm_mult_1d = {cfg.get('fwhm_mult_1d', 4.0)}
+
+# 2D Coincidence ROI half-width in channels (e.g. 6 to 36)
+roi_half_width_2d = {cfg.get('roi_half_width_2d', 16)}
+
+# Fit results verbosity: compact, detailed
+fit_verbosity = {cfg.get('fit_verbosity', 'compact')}
+
+# Default 2D Colormap: turbo, viridis, plasma, inferno, hot, jet, gray
+colormap = {cfg.get('colormap', 'turbo')}
+
+# Default 2D Scale Mode: log, sqrt, linear
+scale_mode = {cfg.get('scale_mode', 'log')}
+
+# Default Max Contrast (vmax, 0-1000) and Min Threshold (vmin)
+vmax = {cfg.get('vmax', 500)}
+vmin = {cfg.get('vmin', 1)}
+
+# Scroll Zoom Sensitivity percentage (1 to 15)
+scroll_sensitivity = {cfg.get('scroll_sensitivity', 4)}
+
+# 1D Projection Display Range: synced, full
+proj_range = {cfg.get('proj_range', 'synced')}
+
+# 1D Projection Y-Scale: linear, log
+proj_scale = {cfg.get('proj_scale', 'linear')}
+
+# Web Server Port
+port = {cfg.get('port', 8080)}
+
+# Automatically open web browser on launch: true, false
+open_browser = {open_br_str}
+"""
+
+
+def load_or_create_config(config_path: Path) -> dict:
+    """Load configuration from file, or create default file if it doesn't exist."""
+    cfg = DEFAULT_CONFIG.copy()
+    if not config_path.exists():
+        try:
+            config_path.write_text(generate_config_content(cfg), encoding="utf-8")
+            print(f"[*] No config file found. Created default config: {config_path.name}")
+        except Exception as e:
+            print(f"[!] Warning: Could not create default config {config_path.name}: {e}", file=sys.stderr)
+        return cfg
+
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if "=" in line:
+                    key, val = line.split("=", 1)
+                    key = key.strip().lower()
+                    val = val.strip()
+                    if key in cfg:
+                        if key == "fwhm_mult_1d":
+                            try:
+                                cfg[key] = float(val)
+                            except ValueError:
+                                pass
+                        elif key in ("vmax", "vmin"):
+                            try:
+                                cfg[key] = float(val) if "." in val else int(val)
+                            except ValueError:
+                                pass
+                        elif key in ("roi_half_width_2d", "scroll_sensitivity", "port"):
+                            try:
+                                cfg[key] = int(val)
+                            except ValueError:
+                                pass
+                        elif key == "open_browser":
+                            cfg[key] = (val.lower() in ("true", "1", "yes", "on"))
+                        else:
+                            cfg[key] = val
+        print(f"[*] Loaded configuration from {config_path.name}")
+    except Exception as e:
+        print(f"[!] Warning: Could not read config {config_path.name}: {e}. Using defaults.", file=sys.stderr)
+    return cfg
+
+
+def save_config_file(config_path: Path, current_settings: dict) -> None:
+    """Save current configuration to the config file."""
+    cfg = DEFAULT_CONFIG.copy()
+    cfg.update(current_settings)
+    config_path.write_text(generate_config_content(cfg), encoding="utf-8")
+
 
 def _vec_erfc(arr):
     f = np.vectorize(math.erfc, otypes=[np.float64])
@@ -1234,6 +1374,8 @@ class CMATWebHandler(BaseHTTPRequestHandler):
     matrix: np.ndarray = None
     proj: np.ndarray = None
     cal: list = [0.0, 1.0, 0.0]
+    config: dict = None
+    config_path: Path = None
 
     def log_message(self, format, *args):
         pass
@@ -1259,6 +1401,8 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             self.end_headers()
             info = self.reader.get_info()
             info["cal"] = self.cal
+            info["config"] = self.config or DEFAULT_CONFIG
+            info["config_file"] = self.config_path.name if self.config_path else CONFIG_FILENAME
             info["max_count"] = int(np.max(self.matrix))
             info["total_counts"] = int(np.sum(self.matrix))
             info["nonzero_bins"] = int(np.count_nonzero(self.matrix))
@@ -1519,6 +1663,33 @@ class CMATWebHandler(BaseHTTPRequestHandler):
                 self.end_headers()
                 self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
 
+        else:
+            self.send_error(404, "Not Found")
+
+    def do_POST(self):
+        if self.path == "/api/save_config":
+            try:
+                content_len = int(self.headers.get("Content-Length", 0))
+                post_body = self.rfile.read(content_len)
+                data = json.loads(post_body.decode("utf-8"))
+
+                if CMATWebHandler.config is None:
+                    CMATWebHandler.config = DEFAULT_CONFIG.copy()
+
+                CMATWebHandler.config.update(data)
+                target_path = CMATWebHandler.config_path if CMATWebHandler.config_path else (Path.cwd() / CONFIG_FILENAME)
+                save_config_file(target_path, CMATWebHandler.config)
+                print(f"[*] Configuration saved to {target_path.name}", flush=True)
+
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": True, "message": target_path.name}).encode("utf-8"))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
         else:
             self.send_error(404, "Not Found")
 
@@ -1832,6 +2003,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <option value="log">Logarithmic</option>
       </select>
     </div>
+
+    <!-- 4. Defaults & Configuration -->
+    <div class="control-group">
+      <h3 style="color: #80cbc4;">⚙ Configuration</h3>
+      <button id="btnSaveConfig" class="secondary" style="background:#00838f; border-color:#00acc1; margin-top:2px;">💾 Save Config to File</button>
+      <small style="color: #888; font-size: 0.68rem; display: block; margin-top: 5px;">
+        Saves current settings to <code style="color:#00e5ff;">python-cmat-config.txt</code> in working directory.
+      </small>
+    </div>
   </aside>
 
   <div class="workspace">
@@ -2140,7 +2320,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   }
 
   async function init() {
-    updateColorLUT();
     resizeCanvases();
     window.addEventListener('resize', () => {
       resizeCanvases();
@@ -2153,8 +2332,62 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     document.getElementById('matInfo').innerText = `${metadata.filename} (${metadata.shape[0]}×${metadata.shape[1]})`;
     view = { x0: 0, x1: metadata.shape[0], y0: 0, y1: metadata.shape[1] };
 
+    // Apply configuration defaults
+    const cfg = metadata.config || {};
+    if (cfg.colormap) {
+      const el = document.getElementById('cmapSelect');
+      if (el) el.value = cfg.colormap;
+    }
+    updateColorLUT();
+
+    if (cfg.scale_mode) {
+      const el = document.getElementById('scaleSelect');
+      if (el) el.value = cfg.scale_mode;
+    }
+    if (cfg.fit_type) {
+      const el = document.getElementById('fitTypeSelect');
+      if (el) el.value = cfg.fit_type;
+    }
+    if (cfg.fwhm_mult_1d !== undefined) {
+      const el = document.getElementById('fwhmMultSlider1D');
+      if (el) {
+        el.value = cfg.fwhm_mult_1d;
+        document.getElementById('fwhmMultLabel1D').innerText = parseFloat(cfg.fwhm_mult_1d).toFixed(1) + '× FWHM';
+      }
+    }
+    if (cfg.roi_half_width_2d !== undefined) {
+      const el = document.getElementById('roiWidthSlider2D');
+      if (el) {
+        el.value = cfg.roi_half_width_2d;
+        document.getElementById('roiWidthLabel2D').innerText = '±' + cfg.roi_half_width_2d + ' ch';
+      }
+    }
+    if (cfg.fit_verbosity) {
+      const el = document.getElementById('fitVerbositySelect');
+      if (el) {
+        el.value = cfg.fit_verbosity;
+        updateFitCardsVerbosity();
+      }
+    }
+    if (cfg.scroll_sensitivity !== undefined) {
+      const el = document.getElementById('scrollSensSlider');
+      if (el) {
+        el.value = cfg.scroll_sensitivity;
+        scrollSensitivity = Math.max(0.01, Math.min(0.20, parseInt(cfg.scroll_sensitivity, 10) / 100.0));
+        document.getElementById('scrollSensLabel').innerText = cfg.scroll_sensitivity + '%';
+      }
+    }
+    if (cfg.proj_range) {
+      const el = document.getElementById('projRangeSelect');
+      if (el) el.value = cfg.proj_range;
+    }
+    if (cfg.proj_scale) {
+      const el = document.getElementById('projScaleSelect');
+      if (el) el.value = cfg.proj_scale;
+    }
+
     maxCountGlobal = Math.max(100, metadata.max_count || 1000);
-    currentVmax = Math.min(800, maxCountGlobal);
+    currentVmax = (cfg.vmax !== undefined) ? parseInt(cfg.vmax, 10) : Math.min(800, maxCountGlobal);
     const vmaxSlider = document.getElementById('vmaxSlider');
     if (vmaxSlider) {
       vmaxSlider.min = "0";
@@ -2162,6 +2395,14 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       vmaxSlider.step = "1";
       vmaxSlider.value = valueToVmaxSlider(currentVmax);
       document.getElementById('vmaxLabel').innerText = currentVmax;
+    }
+
+    if (cfg.vmin !== undefined) {
+      const vminSlider = document.getElementById('vminSlider');
+      if (vminSlider) {
+        vminSlider.value = cfg.vmin;
+        document.getElementById('vminLabel').innerText = cfg.vmin;
+      }
     }
 
     setupEvents();
@@ -3063,7 +3304,66 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     if (b2D) b2D.innerText = isDetailed ? '▴ Compact' : '▾ Details';
   }
 
+  async function saveConfig() {
+    const btn = document.getElementById('btnSaveConfig');
+    const origText = btn ? btn.innerText : '💾 Save Config to File';
+    if (btn) {
+      btn.innerText = "⏳ Saving...";
+      btn.disabled = true;
+    }
+
+    const cfg = {
+      fit_type: getActiveFitType(),
+      fwhm_mult_1d: parseFloat(document.getElementById('fwhmMultSlider1D').value),
+      roi_half_width_2d: parseInt(document.getElementById('roiWidthSlider2D').value, 10),
+      fit_verbosity: document.getElementById('fitVerbositySelect').value,
+      colormap: document.getElementById('cmapSelect').value,
+      scale_mode: document.getElementById('scaleSelect').value,
+      vmax: currentVmax,
+      vmin: parseInt(document.getElementById('vminSlider').value, 10) || 1,
+      scroll_sensitivity: parseInt(document.getElementById('scrollSensSlider').value, 10) || 4,
+      proj_range: document.getElementById('projRangeSelect').value,
+      proj_scale: document.getElementById('projScaleSelect').value,
+    };
+
+    if (metadata && metadata.cal) {
+      cfg.cal = metadata.cal;
+    }
+
+    try {
+      const res = await fetch('/api/save_config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(cfg)
+      });
+      const data = await res.json();
+      if (data.success) {
+        if (btn) {
+          btn.innerText = "✅ Saved to File!";
+          btn.style.background = "#2e7d32";
+          btn.style.borderColor = "#4caf50";
+          setTimeout(() => {
+            btn.innerText = origText;
+            btn.style.background = "#00838f";
+            btn.style.borderColor = "#00acc1";
+            btn.disabled = false;
+          }, 2500);
+        }
+        document.getElementById('hudCoords').innerText = `✅ Settings successfully saved to ${data.message || 'python-cmat-config.txt'}`;
+      } else {
+        alert("Failed to save config: " + data.error);
+        if (btn) { btn.innerText = origText; btn.disabled = false; }
+      }
+    } catch (err) {
+      alert("Error saving config: " + err);
+      if (btn) { btn.innerText = origText; btn.disabled = false; }
+    }
+  }
+
   function setupEvents() {
+    const btnSaveCfg = document.getElementById('btnSaveConfig');
+    if (btnSaveCfg) btnSaveCfg.addEventListener('click', saveConfig);
+
     document.getElementById('cmapSelect').addEventListener('change', () => { updateColorLUT(); render2D(); });
     document.getElementById('scaleSelect').addEventListener('change', render2D);
     const vmaxSlider = document.getElementById('vmaxSlider');
@@ -3554,19 +3854,22 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </html>
 """
 def main():
+    config_path = Path.cwd() / CONFIG_FILENAME
+    config = load_or_create_config(config_path)
+
     parser = argparse.ArgumentParser(
         description="Launch modern Web-based interactive 2D viewer with classic binned 1D histogram."
     )
     parser.add_argument("input", type=str, help="Path to input .cmat file")
-    parser.add_argument("-p", "--port", type=int, default=8080, help="Web server port (default: 8080)")
-    parser.add_argument("--no-browser", action="store_true", help="Do not automatically open the web browser")
+    parser.add_argument("-p", "--port", type=int, default=None, help=f"Web server port (default from config: {config.get('port', 8080)})")
+    parser.add_argument("--no-browser", action="store_true", default=None, help="Do not automatically open the web browser")
     parser.add_argument(
         "--cal",
         nargs="+",
         type=float,
         metavar="COEFF",
-        default=[0.0, 1.0, 0.0],
-        help="Energy calibration coefficients: a0 a1 a2 for E = a0 + a1*ch + a2*ch^2 (default: 0.0 1.0 0.0)",
+        default=None,
+        help="Energy calibration coefficients: a0 a1 a2 for E = a0 + a1*ch + a2*ch^2 (overrides config)",
     )
 
     args = parser.parse_args()
@@ -3576,6 +3879,19 @@ def main():
         print(f"Error: File '{input_path}' not found.", file=sys.stderr)
         sys.exit(1)
 
+    # Resolve settings: CLI arguments override config file defaults
+    port = args.port if args.port is not None else int(config.get("port", 8080))
+    if args.no_browser is True:
+        open_browser = False
+    else:
+        open_br = config.get("open_browser", True)
+        open_browser = (open_br in (True, "true", "True", "1", 1))
+
+    if args.cal is not None:
+        cal = args.cal
+    else:
+        cal = parse_cal_string(config.get("cal", [0.0, 1.0, 0.0]))
+
     print(f"[*] Loading matrix from {input_path} ...")
     reader = CMATReader(input_path)
     mat = reader.to_numpy()
@@ -3584,17 +3900,19 @@ def main():
     CMATWebHandler.reader = reader
     CMATWebHandler.matrix = mat
     CMATWebHandler.proj = proj
-    CMATWebHandler.cal = args.cal
+    CMATWebHandler.cal = cal
+    CMATWebHandler.config = config
+    CMATWebHandler.config_path = config_path
 
-    server_address = ("", args.port)
+    server_address = ("", port)
     httpd = HTTPServer(server_address, CMATWebHandler)
-    url = f"http://localhost:{args.port}"
+    url = f"http://localhost:{port}"
     print(f"\n[+] Interactive 2D CMAT Web Viewer is ready!")
     print(f"[+] Access the viewer at: {url}")
     print(f"[+] Classic Binned 1D Histogram with real-time mouse inspector.")
     print(f"[+] Press Ctrl+C in terminal to stop server.\n")
 
-    if not args.no_browser:
+    if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
 
     try:
