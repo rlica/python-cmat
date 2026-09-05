@@ -11,14 +11,27 @@
 ### Key Capabilities:
 - **Full `.cmat` Reverse-Engineering**: Decompresses all proprietary IVF block compression algorithms (Modes 0–32 bit-packing, Mode 33 16-bit sparse lists, Mode 34 32-bit sparse lists, Mode 37 tagged token bit-streams, Mode 41 unary run-length shift maps) directly in pure Python + NumPy.
 - **CLI Matrix Converter (`cmat2amat.py`)**: Converts `.cmat` matrices into standard ASCII `.amat` files (dense 2D grid or sparse `x y count` list).
-- **Interactive Web Viewer (`cmat_webviewer.py`)**:
-  - Blazing fast GPU-accelerated canvas display running locally in your browser.
+- **Interactive Web Viewer (`cmat_webviewer.py` + `cmat_webviewer.html`)**:
+  - Blazing fast GPU-accelerated canvas display running locally in your browser with modular HTML/CSS/JS frontend decoupling.
   - Pixel-matched rendering: fetches only as many data points as screen pixels available, with 2D max-pooling to preserve narrow gamma peaks at full zoom out.
   - **Full [GASPware](https://github.com/csteke/GASPware) `cmat` Controls**: Box zoom (`Click+Drag`), marker limits (`Arrow keys`), expand (`E`), and full view (`F`).
   - **Simultaneous Dual 1D Projections**: Stacked top/bottom 1D histograms displaying Det 1 (X projection sliced over visible Y) and Det 2 (Y projection sliced over visible X) simultaneously.
   - **Classic Binned Histograms**: Nuclear physics stepped staircase histograms with dynamic auto-scaling, synchronized real-time cursor highlighting across 2D and 1D views, calibrated energy readouts (keV), and ASCII `.dat` export.
     - **1D Histogram Peak Fitting (`xtrackn AG`)**: Dedicated 1D nonlinear least-squares peak fitting with linear background subtraction (`Ctrl+Click` or `G` on any 1D projection spectrum). Supports three scientific models: Standard Symmetric Gaussian, RadWare / SAMPO Piecewise Exponential Left Tail, and Hypermet Convolved Tail + $\text{erfc}$ Compton Step. Calculates centroid, net area, FWHM, and amplitude with complete statistical covariance error propagation, printed directly to the terminal and rendered with fitted curves on the 1D spectrum canvas.
     - **True 2D Coincidence Peak Fitting (Gamba & Morhác Background Decomposition)**: Dedicated 2D nonlinear least-squares Levenberg-Marquardt fitting directly on the 2D coincidence matrix (`Ctrl+Click` or `G` on the 2D matrix) supporting all three peak profile models. Self-consistently decomposes gross counts into true net coincidence volume ($p|p^t$), orthogonal coincidence cross-ridges ($p|bg, bg|p$), and 2D Compton continuum + accidental random coincidences ($bg|bg$). Computes the discrete Gamba net area ($n^t_{p|p}$) and Peak-to-Total-Background ratio ($\Pi$). Displays a dedicated 2D coincidence results card and renders the 2D FWHM ellipse, crosshair, and ROI boundaries on the 2D matrix without interfering with 1D histogram fits.
+
+---
+
+## 📁 Project Structure
+
+| File | Description |
+|---|---|
+| `cmat.py` | Core decompression engine, reader library, and gate extraction for `.cmat` files |
+| `cmat2amat.py` | Command-line matrix converter from `.cmat` to standard ASCII `.amat` format |
+| `cmat_webviewer.py` | High-performance HTTP server, peak fitting engine (1D & 2D), and vector PDF renderer |
+| `cmat_webviewer.html` | Standalone frontend client (HTML5, dual Canvas rendering, interactive controls, keyboard navigation) |
+| `python-cmat-config.txt` | Directory-specific configuration file defining default parameters and calibrations |
+| `requirements.txt` | Python package dependencies (`numpy`) |
 
 ---
 
