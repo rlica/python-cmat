@@ -416,16 +416,17 @@ def fit_gaussian_peak(x, y, x_center, fit_type="gaussian", fwhm_mult=4.0, cal=[0
 
 
 def print_fit_terminal_report(res, det_name, filename, is_cal, verbosity="compact"):
+    ft = res.get("fit_type", "gaussian")
+    model_tag = "Hypermet" if ft == "hypermet" else ("RadWare" if ft == "gaussian_tail" else "Gaussian")
     if verbosity == "compact":
         if is_cal:
-            print(f"⚛ 1D Fit [{det_name}]: Centroid: {res['centroid_e']:.2f}({res['centroid_e_err']:.2f}) keV   Area: {res['area']:.1f}({res['area_err']:.1f}) counts   FWHM: {res['fwhm_e']:.2f}({res['fwhm_e_err']:.2f}) keV", flush=True)
+            print(f"⚛ 1D Fit [{det_name}] ({model_tag}): Centroid: {res['centroid_e']:.2f}({res['centroid_e_err']:.2f}) keV   Area: {res['area']:.1f}({res['area_err']:.1f}) counts   FWHM: {res['fwhm_e']:.2f}({res['fwhm_e_err']:.2f}) keV", flush=True)
         else:
-            print(f"⚛ 1D Fit [{det_name}]: Centroid: {res['centroid_ch']:.3f}({res['centroid_ch_err']:.3f}) ch   Area: {res['area']:.1f}({res['area_err']:.1f}) counts   FWHM: {res['fwhm_ch']:.3f}({res['fwhm_ch_err']:.3f}) ch", flush=True)
+            print(f"⚛ 1D Fit [{det_name}] ({model_tag}): Centroid: {res['centroid_ch']:.3f}({res['centroid_ch_err']:.3f}) ch   Area: {res['area']:.1f}({res['area_err']:.1f}) counts   FWHM: {res['fwhm_ch']:.3f}({res['fwhm_ch_err']:.3f}) ch", flush=True)
         return
 
     bar = "═" * 80
     subbar = "─" * 80
-    ft = res.get("fit_type")
     if ft == "hypermet":
         model_name = "Hypermet Model (Convolved Tail + Erfc Step)"
     elif ft == "gaussian_tail":
@@ -455,21 +456,10 @@ def print_fit_terminal_report(res, det_name, filename, is_cal, verbosity="compac
     print(f"{bar}\n", flush=True)
 
 
-def fit_2d_gaussian_peak(
+def _fit_2d_gaussian_single_roi(
     matrix, x_center, y_center, fit_type="gaussian", cal=[0.0, 1.0, 0.0], roi_half_width=16,
     proj_x=None, proj_y=None, total_counts=None, **kwargs
 ):
-    """
-    Fits a true 2D coincidence peak (Symmetric Gaussian, RadWare Tail, or Hypermet Model)
-    on the 2D gamma-gamma coincidence matrix using the self-consistent 4-component background
-    decomposition established by Gamba et al. (NIM A 928, 2019, 93-103) & Morhác et al. (NIM A 401, 1997, 113):
-      - bg|bg: 2D Compton continuum + accidental random coincidences: b0 + bx*(x - x_c) + by*(y - y_c)
-      - p|bg : Det 1 peak with Det 2 Compton/random continuum ridge: R_x * P_X(x)
-      - bg|p : Det 2 peak with Det 1 Compton/random continuum ridge: R_y * P_Y(y)
-      - p|p^t: True 2D coincidence peak volume: H * P_X(x) * P_Y(y)
-    
-    All background components are extracted self-consistently from the 2D spectrum without arbitrary parameters.
-    """
     mat = np.asarray(matrix, dtype=np.float64)
     H_mat, W_mat = mat.shape
 
@@ -949,15 +939,71 @@ def fit_2d_gaussian_peak(
     return res_dict
 
 
+def fit_2d_gaussian_peak(
+    matrix, x_center, y_center, fit_type="gaussian", cal=[0.0, 1.0, 0.0], roi_half_width=16,
+    proj_x=None, proj_y=None, total_counts=None, recenter=True, **kwargs
+):
+    """
+    Fits a true 2D coincidence peak (Symmetric Gaussian, RadWare Tail, or Hypermet Model)
+    on the 2D gamma-gamma coincidence matrix using the self-consistent 4-component background
+    decomposition established by Gamba et al. (NIM A 928, 2019, 93-103) & Morhác et al. (NIM A 401, 1997, 113):
+      - bg|bg: 2D Compton continuum + accidental random coincidences: b0 + bx*(x - x_c) + by*(y - y_c)
+      - p|bg : Det 1 peak with Det 2 Compton/random continuum ridge: R_x * P_X(x)
+      - bg|p : Det 2 peak with Det 1 Compton/random continuum ridge: R_y * P_Y(y)
+      - p|p^t: True 2D coincidence peak volume: H * P_X(x) * P_Y(y)
+    
+    Performs a 2-pass iterative recentering: after a preliminary fit at the initial pointer location,
+    it readjusts the ROI center to the fitted peak centroid to ensure perfect symmetry and invariance
+    to the initial pointer position.
+    """
+    mat = np.asarray(matrix, dtype=np.float64)
+    H_mat, W_mat = mat.shape
+
+    # Pass 1: Preliminary fit around initial user pointer position
+    res_prelim = _fit_2d_gaussian_single_roi(
+        mat, x_center, y_center, fit_type=fit_type, cal=cal, roi_half_width=roi_half_width,
+        proj_x=proj_x, proj_y=proj_y, total_counts=total_counts, **kwargs
+    )
+
+    if not recenter or not res_prelim.get("success"):
+        return res_prelim
+
+    # Check fitted centroid coordinates
+    mx = res_prelim.get("centroid_x_ch", x_center)
+    my = res_prelim.get("centroid_y_ch", y_center)
+    ix_orig = int(round(x_center))
+    iy_orig = int(round(y_center))
+    ix_new = int(round(mx))
+    iy_new = int(round(my))
+
+    # If peak is offset from initial click position, recenter ROI and perform refined Pass 2
+    if (ix_new != ix_orig or iy_new != iy_orig) or (abs(mx - x_center) > 0.4 or abs(my - y_center) > 0.4):
+        ix_clamped = max(roi_half_width + 1, min(W_mat - 1 - roi_half_width - 1, ix_new))
+        iy_clamped = max(roi_half_width + 1, min(H_mat - 1 - roi_half_width - 1, iy_new))
+        try:
+            res_refined = _fit_2d_gaussian_single_roi(
+                mat, ix_clamped, iy_clamped, fit_type=fit_type, cal=cal, roi_half_width=roi_half_width,
+                proj_x=proj_x, proj_y=proj_y, total_counts=total_counts, **kwargs
+            )
+            if res_refined.get("success"):
+                return res_refined
+        except Exception:
+            pass
+
+    return res_prelim
+
+
 def print_fit_2d_terminal_report(res, filename, is_cal, verbosity="compact"):
+    ft = res.get("fit_type", "gaussian")
+    model_tag = "Hypermet" if ft == "hypermet" else ("RadWare" if ft == "gaussian_tail" else "Gaussian")
     if verbosity == "compact":
         if is_cal:
-            print(f"⚛ 2D Fit [{filename}] (Gamba & Morhác BG Decomposition):", flush=True)
+            print(f"⚛ 2D Fit [{filename}] ({model_tag} + Gamba BG):", flush=True)
             print(f"  Det 1 (X): Centroid: {res['centroid_x_e']:.2f}({res['centroid_x_e_err']:.2f}) keV   Area: {res['volume']:.1f}({res['volume_err']:.1f}) counts   FWHM: {res['fwhm_x_e']:.2f}({res['fwhm_x_e_err']:.2f}) keV", flush=True)
             print(f"  Det 2 (Y): Centroid: {res['centroid_y_e']:.2f}({res['centroid_y_e_err']:.2f}) keV   Area: {res['volume']:.1f}({res['volume_err']:.1f}) counts   FWHM: {res['fwhm_y_e']:.2f}({res['fwhm_y_e_err']:.2f}) keV", flush=True)
             print(f"  Gamba Net Area (p|p^t): {res['gamba_net']:.1f} ± {res['gamba_net_err']:.1f} counts   Peak/Total-BG Ratio (Π): {res['pi_ratio_percent']:.1f}%\n", flush=True)
         else:
-            print(f"⚛ 2D Fit [{filename}] (Gamba & Morhác BG Decomposition):", flush=True)
+            print(f"⚛ 2D Fit [{filename}] ({model_tag} + Gamba BG):", flush=True)
             print(f"  Det 1 (X): Centroid: {res['centroid_x_ch']:.3f}({res['centroid_x_ch_err']:.3f}) ch   Area: {res['volume']:.1f}({res['volume_err']:.1f}) counts   FWHM: {res['fwhm_x_ch']:.3f}({res['fwhm_x_ch_err']:.3f}) ch", flush=True)
             print(f"  Det 2 (Y): Centroid: {res['centroid_y_ch']:.3f}({res['centroid_y_ch_err']:.3f}) ch   Area: {res['volume']:.1f}({res['volume_err']:.1f}) counts   FWHM: {res['fwhm_y_ch']:.3f}({res['fwhm_y_ch_err']:.3f}) ch", flush=True)
             print(f"  Gamba Net Area (p|p^t): {res['gamba_net']:.1f} ± {res['gamba_net_err']:.1f} counts   Peak/Total-BG Ratio (Π): {res['pi_ratio_percent']:.1f}%\n", flush=True)
@@ -965,7 +1011,6 @@ def print_fit_2d_terminal_report(res, filename, is_cal, verbosity="compact"):
 
     bar = "═" * 80
     subbar = "─" * 80
-    ft = res.get("fit_type")
     if ft == "hypermet":
         model_name = "Hypermet Model (Convolved Tail + Erfc Step Profile)"
     elif ft == "gaussian_tail":
@@ -1719,11 +1764,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <button id="btnQuit" class="secondary" style="background:#b71c1c; margin-top:5px;">Quit Viewer [Q]</button>
     </div>
 
-    <!-- 2. 1D Spectrum Fitting -->
+    <!-- 2. Peak Fitting (1D & 2D) -->
     <div class="control-group">
-      <h3 style="color: #00e5ff;">1D Histogram Peak Fit</h3>
-      <label>1D Peak Function</label>
-      <select id="fitTypeSelect1D">
+      <h3 style="color: #00e5ff;">⚛ Peak Fitting (1D &amp; 2D)</h3>
+      <label>Peak Function Model</label>
+      <select id="fitTypeSelect">
         <option value="gaussian" selected>Gaussian (Symmetric)</option>
         <option value="gaussian_tail">Gaussian + Left Tail (RadWare)</option>
         <option value="hypermet">Hypermet (Convolved Tail + Step)</option>
@@ -1731,20 +1776,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       <label style="margin-top: 6px;">1D Fit Region <span class="range-val" id="fwhmMultLabel1D">4.0× FWHM</span></label>
       <input type="range" id="fwhmMultSlider1D" min="1.0" max="10.0" step="0.5" value="4.0">
-      <small style="color: #888; font-size: 0.68rem; display: block; margin-top: 3px;">
-        Fits 1D histogram peaks on Det 1 or Det 2 (Ctrl+Click on spectrum or [G]).
-      </small>
-    </div>
-
-    <!-- 3. 2D Coincidence Fitting -->
-    <div class="control-group">
-      <h3 style="color: #ffd600;">2D Coincidence Peak Fit</h3>
-      <label>2D Peak Function</label>
-      <select id="fitTypeSelect2D">
-        <option value="gaussian" selected>Gaussian (Symmetric)</option>
-        <option value="gaussian_tail">Gaussian + Left Tail (RadWare)</option>
-        <option value="hypermet">Hypermet (Convolved Tail + Step)</option>
-      </select>
 
       <label style="margin-top: 6px;">2D ROI Half-Width <span class="range-val" id="roiWidthLabel2D">±16 ch</span></label>
       <input type="range" id="roiWidthSlider2D" min="6" max="36" step="2" value="16">
@@ -1756,7 +1787,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <option value="detailed">Detailed (Full breakdown)</option>
         </select>
         <small style="color: #888; font-size: 0.68rem; display: block; margin-top: 3px;">
-          Gamba &amp; Morh&aacute;c 4-component BG decomposition (Ctrl+Click on 2D or [G]).
+          1D: Ctrl+Click or [G] on Det 1/2 spectrum.<br>
+          2D: Ctrl+Click or [G] on 2D matrix (Gamba BG).
         </small>
       </div>
     </div>
@@ -1898,8 +1930,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <tr><td>Click & Drag (2D)</td><td>Box Zoom into 2D rectangle</td></tr>
     <tr><td>Click & Drag (1D)</td><td>Box Zoom on 1D spectrum X-axis (syncs 2D &amp; other 1D spectrum)</td></tr>
     <tr><td>Mouse Wheel (2D)</td><td>Zoom In / Out centered on crosshair in equal steps</td></tr>
-    <tr><td>Mouse Wheel (1D)</td><td>Zoom In / Out on Y-axis (fixed Ymin, adjusts Ymax)</td></tr>
-    <tr><td>Double Click (1D)</td><td>Reset 1D Y-axis scale to default auto-scale</td></tr>
+    <tr><td>Double Click (2D)</td><td>Fully zoom out 2D matrix and both 1D spectra (Full View)</td></tr>
+    <tr><td>Double Click (1D)</td><td>Fully zoom out clicked 1D projection only (X range &amp; Y scale)</td></tr>
     <tr><td>Ctrl / Cmd + Click (2D)</td><td>2D Coincidence Peak Fit (Gaussian/HPGe + BG &amp; Random Subtraction)</td></tr>
     <tr><td>Ctrl / Cmd + Click (1D)</td><td>1D Histogram Peak Fit + Linear Background (Det 1 or Det 2)</td></tr>
     <tr><td>G / g</td><td>Fit peak at current cursor position (2D coincidence or 1D histogram)</td></tr>
@@ -2346,8 +2378,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   let activeFit1D = { 0: null, 1: null };
   let activeFit2D = null;
 
+  function getActiveFitType() {
+    const sel = document.getElementById('fitTypeSelect') || document.getElementById('fitTypeSelect1D') || document.getElementById('fitTypeSelect2D');
+    return sel ? sel.value : 'gaussian';
+  }
+
   async function requestPeakFit2D(x, y) {
-    const fitType = document.getElementById('fitTypeSelect2D') ? document.getElementById('fitTypeSelect2D').value : 'gaussian';
+    const fitType = getActiveFitType();
     const roiHW = document.getElementById('roiWidthSlider2D') ? parseInt(document.getElementById('roiWidthSlider2D').value, 10) : 16;
     const verbosity = document.getElementById('fitVerbositySelect') ? document.getElementById('fitVerbositySelect').value : 'compact';
 
@@ -2435,7 +2472,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const x1 = Math.ceil(Math.min(metadata.shape[0], view.x1));
     const y0 = Math.floor(Math.max(0, view.y0));
     const y1 = Math.ceil(Math.min(metadata.shape[1], view.y1));
-    const fitType = document.getElementById('fitTypeSelect1D') ? document.getElementById('fitTypeSelect1D').value : 'gaussian';
+    const fitType = getActiveFitType();
     const fwhmMult = document.getElementById('fwhmMultSlider1D') ? document.getElementById('fwhmMultSlider1D').value : '4.0';
     const verbosity = document.getElementById('fitVerbositySelect') ? document.getElementById('fitVerbositySelect').value : 'compact';
 
@@ -2834,7 +2871,28 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   function zoomFull() {
     view.x0 = 0; view.x1 = metadata.shape[0]; view.y0 = 0; view.y1 = metadata.shape[1];
     markers.left = null; markers.right = null; markers.down = null; markers.up = null;
+    zoom1DY[0] = 1.0; zoom1DY[1] = 1.0;
     updateMarkerStatus(); fetchTileAndRender(); fetch1DProjection();
+  }
+
+  function zoomFull1D(axis) {
+    if (!metadata) return;
+    if (axis === 0) {
+      view.x0 = 0;
+      view.x1 = metadata.shape[0];
+      markers.left = null;
+      markers.right = null;
+      zoom1DY[0] = 1.0;
+    } else {
+      view.y0 = 0;
+      view.y1 = metadata.shape[1];
+      markers.down = null;
+      markers.up = null;
+      zoom1DY[1] = 1.0;
+    }
+    updateMarkerStatus();
+    fetchTileAndRender();
+    fetch1DProjection();
   }
 
   function pan2D(dxRatio, dyRatio) {
@@ -2930,7 +2988,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const y1 = Math.ceil(Math.min(metadata.shape[1], view.y1));
     const zoomY = zoom1DY[axis] || 1.0;
     const fit = activeFit1D[axis];
-    const fitType = document.getElementById('fitTypeSelect1D') ? document.getElementById('fitTypeSelect1D').value : 'gaussian';
+    const fitType = getActiveFitType();
     const fwhmMult = document.getElementById('fwhmMultSlider1D') ? document.getElementById('fwhmMultSlider1D').value : '4.0';
 
     let url = `/api/export_pdf_1d?axis=${axis}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}&is_synced=${isSynced ? 1 : 0}&is_log=${isLog}&zoom_y=${zoomY}`;
@@ -2950,7 +3008,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     const vmin = document.getElementById('vminSlider').value;
     const vmax = currentVmax || 100;
     const f2d = activeFit2D;
-    const fitType = document.getElementById('fitTypeSelect2D') ? document.getElementById('fitTypeSelect2D').value : 'gaussian';
+    const fitType = getActiveFitType();
 
     let url = `/api/export_pdf_2d?x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}&cmap=${cmap}&scale=${scale}&vmin=${vmin}&vmax=${vmax}`;
     if (f2d && f2d.centroid_x_ch !== undefined) {
@@ -3055,6 +3113,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     document.getElementById('btnPrintPDF1DX').addEventListener('click', () => printPDF1D(0));
     document.getElementById('btnPrintPDF1DY').addEventListener('click', () => printPDF1D(1));
     document.getElementById('btnPrintPDF2D').addEventListener('click', printPDF2D);
+    const selFitType = document.getElementById('fitTypeSelect');
+
 
     document.getElementById('fwhmMultSlider1D').addEventListener('input', (e) => {
       document.getElementById('fwhmMultLabel1D').innerText = parseFloat(e.target.value).toFixed(1) + '× FWHM';
@@ -3083,29 +3143,52 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       }
     });
 
-    document.getElementById('btnCloseFit1D').addEventListener('click', clearFit1D);
-    document.getElementById('btnCloseFit2D').addEventListener('click', clearFit2D);
+    const btnClose1 = document.getElementById('btnCloseFit1D');
+    if (btnClose1) btnClose1.addEventListener('click', clearFit1D);
+    const btnClose2 = document.getElementById('btnCloseFit2D');
+    if (btnClose2) btnClose2.addEventListener('click', clearFit2D);
 
-    document.getElementById('btnHelp').addEventListener('click', () => { document.getElementById('helpModal').style.display = 'block'; });
+    const btnHelp = document.getElementById('btnHelp');
+    if (btnHelp) btnHelp.addEventListener('click', () => { document.getElementById('helpModal').style.display = 'block'; });
+
+    function unfocusControls() {
+      if (document.activeElement && document.activeElement !== document.body) {
+        document.activeElement.blur();
+      }
+    }
+
+    document.querySelectorAll('select').forEach(el => {
+      el.addEventListener('change', () => el.blur());
+    });
+
+    canvas2d.addEventListener('mouseenter', unfocusControls);
+    canvas2d.addEventListener('mousedown', unfocusControls);
+    canvas1dX.addEventListener('mouseenter', unfocusControls);
+    canvas1dX.addEventListener('mousedown', unfocusControls);
+    canvas1dY.addEventListener('mouseenter', unfocusControls);
+    canvas1dY.addEventListener('mousedown', unfocusControls);
 
     window.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowLeft') {
+      const k = e.key.toLowerCase();
+      const isShortcut = ['arrowleft', 'arrowright', 'arrowdown', 'arrowup', 'e', 'f', 'q', '=', '+', 'g', 'c', '1', '2', '4', 'l', '?', 'h', 'escape'].includes(k);
+      if (isShortcut) {
         e.preventDefault();
+        unfocusControls();
+      }
+
+      if (e.key === 'ArrowLeft') {
         if (e.shiftKey) pan2D(-1, 0);
         else { markers.left = cursorChannel.x; render2D(); }
       }
       else if (e.key === 'ArrowRight') {
-        e.preventDefault();
         if (e.shiftKey) pan2D(1, 0);
         else { markers.right = cursorChannel.x; render2D(); }
       }
       else if (e.key === 'ArrowDown') {
-        e.preventDefault();
         if (e.shiftKey) pan2D(0, -1);
         else { markers.down = cursorChannel.y; render2D(); }
       }
       else if (e.key === 'ArrowUp') {
-        e.preventDefault();
         if (e.shiftKey) pan2D(0, 1);
         else { markers.up = cursorChannel.y; render2D(); }
       }
@@ -3213,13 +3296,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     }, { passive: false });
 
     canvas1dX.addEventListener('dblclick', () => {
-      zoom1DY[0] = 1.0;
-      renderBoth1DSpectra();
+      zoomFull1D(0);
     });
 
     canvas1dY.addEventListener('dblclick', () => {
-      zoom1DY[1] = 1.0;
-      renderBoth1DSpectra();
+      zoomFull1D(1);
+    });
+
+    canvas2d.addEventListener('dblclick', () => {
+      zoomFull();
     });
 
     // 2D Canvas Handlers
