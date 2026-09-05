@@ -356,16 +356,19 @@ def print_fit_terminal_report(res, det_name, filename, is_cal, verbosity="compac
 
 def fit_2d_gaussian_peak(
     matrix, x_center, y_center, fit_type="gaussian", cal=[0.0, 1.0, 0.0], roi_half_width=16,
-    sub_random=True, random_fraction=0.05, proj_x=None, proj_y=None, total_counts=None
+    proj_x=None, proj_y=None, total_counts=None, **kwargs
 ):
     """
     Fits a true 2D coincidence peak (Symmetric Gaussian or HPGe Gaussian with Left Tail)
-    on the 2D gamma-gamma coincidence matrix with complete background decomposition:
-    - Random (accidental) gamma-gamma coincidences: B_rand(x, y) = f_rand * (P_x * P_y) / T_tot
-    - Vertical coincidence ridge along Y (Det 1 peak with Det 2 Compton): R_x * G_x(x)
-    - Horizontal coincidence ridge along X (Det 2 peak with Det 1 Compton): R_y * G_y(y)
-    - Smooth 2D Compton continuum: b0 + bx*(x - x_center) + by*(y - y_center)
-    - True 2D coincidence peak: H * G_x(x) * G_y(y)
+    on the 2D gamma-gamma coincidence matrix using the self-consistent 4-component background
+    decomposition established by Gamba et al. (NIM A 928, 2019, 93-103) & Morhác et al. (NIM A 401, 1997, 113):
+      - bg|bg: 2D Compton continuum + accidental random coincidences: b0 + bx*(x - x_c) + by*(y - y_c)
+      - p|bg : Det 1 peak with Det 2 Compton/random continuum ridge: R_x * G_x(x)
+      - bg|p : Det 2 peak with Det 1 Compton/random continuum ridge: R_y * G_y(y)
+      - p|p^t: True 2D coincidence peak volume: H * G_x(x) * G_y(y)
+    
+    All background components (continuum, accidental coincidences, and cross-ridges) are extracted
+    self-consistently by the non-linear least-squares fit from the 2D spectrum without arbitrary parameters.
     """
     mat = np.asarray(matrix, dtype=np.float64)
     H_mat, W_mat = mat.shape
@@ -394,44 +397,27 @@ def fit_2d_gaussian_peak(
     y_flat = Y_grid.ravel()
     z_raw_flat = roi_raw.ravel()
 
-    # Calculate Random Coincidence Background in ROI from singles projections
-    if proj_x is None:
-        proj_x = np.sum(mat, axis=0, dtype=np.float64)
-    if proj_y is None:
-        proj_y = np.sum(mat, axis=1, dtype=np.float64)
-    if total_counts is None or total_counts <= 0:
-        total_counts = float(np.sum(proj_x))
-
-    T_tot = max(1.0, float(total_counts))
-    px_roi = proj_x[x_min:x_max+1]
-    py_roi = proj_y[y_min:y_max+1]
-
-    # Random coincidence matrix template: P_x(x) * P_y(y) / T_tot
-    rand_template_2d = np.outer(py_roi, px_roi) / T_tot
-    f_rand = max(0.0, float(random_fraction)) if sub_random else 0.0
-    b_rand_2d = f_rand * rand_template_2d
-    rand_counts = float(np.sum(b_rand_2d))
-    b_rand_flat = b_rand_2d.ravel()
-
-    # Data to fit with peak + continuum + ridges (random coincidences subtracted)
-    z_corr_flat = z_raw_flat - b_rand_flat
-    roi_corr = roi_raw - b_rand_2d
-
-    # Estimate continuum from corners of random-corrected ROI
-    corners = [roi_corr[0, 0], roi_corr[0, -1], roi_corr[-1, 0], roi_corr[-1, -1]]
-    b0_init = max(0.0, float(np.mean(corners)))
+    # Estimate bg|bg continuum from 4 outer corners of the ROI
+    c_w = max(1, min(3, min(Nx, Ny) // 4))
+    corners = [
+        roi_raw[:c_w, :c_w],
+        roi_raw[:c_w, -c_w:],
+        roi_raw[-c_w:, :c_w],
+        roi_raw[-c_w:, -c_w:]
+    ]
+    b0_init = max(0.0, float(np.mean([np.mean(c) for c in corners])))
     bx_init = 0.0
     by_init = 0.0
 
-    # Estimate ridges from borders (subtracting continuum)
-    border_y = (roi_corr[:, 0] + roi_corr[:, -1]) / 2.0
+    # Estimate p|bg and bg|p ridges from border strips (subtracting b0)
+    border_y = (roi_raw[:, 0] + roi_raw[:, -1]) / 2.0
     ry_init = max(0.0, float(np.max(border_y) - b0_init))
 
-    border_x = (roi_corr[0, :] + roi_corr[-1, :]) / 2.0
+    border_x = (roi_raw[0, :] + roi_raw[-1, :]) / 2.0
     rx_init = max(0.0, float(np.max(border_x) - b0_init))
 
     # Initial centroid estimates via smoothed apex
-    pad = np.pad(np.maximum(0.0, roi_corr), 1, mode='edge')
+    pad = np.pad(np.maximum(0.0, roi_raw), 1, mode='edge')
     smooth = (pad[:-2, :-2] + pad[:-2, 1:-1] + pad[:-2, 2:] +
               pad[1:-1, :-2] + pad[1:-1, 1:-1] + pad[1:-1, 2:] +
               pad[2:, :-2] + pad[2:, 1:-1] + pad[2:, 2:]) / 9.0
@@ -441,7 +427,7 @@ def fit_2d_gaussian_peak(
 
     sig_x_init = 1.4
     sig_y_init = 1.4
-    h_init = max(1.0, float(np.max(roi_corr)) - b0_init - rx_init - ry_init)
+    h_init = max(1.0, float(np.max(roi_raw)) - b0_init - rx_init - ry_init)
 
     is_tail = (fit_type == "gaussian_tail")
     if is_tail:
@@ -490,9 +476,10 @@ def fit_2d_gaussian_peak(
 
         g2d = gx * gy
 
+        # Self-consistent model: 2D continuum (bg|bg) + Det 1 ridge (p|bg) + Det 2 ridge (bg|p) + True 2D peak (p|p)
         bg_cont = b0 + bx * dxc + by * dyc
         model = bg_cont + rx * gx + ry * gy + H * g2d
-        r = (model - z_corr_flat) * weights
+        r = (model - z_raw_flat) * weights
 
         J = np.zeros((N_pixels, n_params), dtype=np.float64)
         J[:, 0] = weights
@@ -630,7 +617,7 @@ def fit_2d_gaussian_peak(
     ndf = max(1, N_pixels - n_params)
     red_chi2 = chi2 / ndf
 
-    # Background decomposition counts in ROI
+    # Background decomposition counts in ROI from continuous model
     dx = x_flat - mx
     dy = y_flat - my
     dxc = x_flat - ix
@@ -649,7 +636,58 @@ def fit_2d_gaussian_peak(
     gy_2d = np.repeat(gy_val[::Nx], Nx)
     ridge_x_counts = float(rx * np.sum(gx_2d))
     ridge_y_counts = float(ry * np.sum(gy_2d))
-    total_bg_counts = rand_counts + cont_counts + ridge_x_counts + ridge_y_counts
+    total_bg_counts = cont_counts + ridge_x_counts + ridge_y_counts
+
+    # Discrete 4-region Gamba & Morhác decomposition (Eqs. 4 & 14 in Gamba et al., NIM A 928)
+    # Define peak region as ±2 sigma around centroid
+    w_gx = max(1, int(round(2.0 * sx)))
+    w_gy = max(1, int(round(2.0 * sy)))
+    ix_c = int(round(mx)) - x_min
+    iy_c = int(round(my)) - y_min
+
+    px0 = max(0, ix_c - w_gx)
+    px1 = min(Nx - 1, ix_c + w_gx)
+    py0 = max(0, iy_c - w_gy)
+    py1 = min(Ny - 1, iy_c + w_gy)
+
+    # Masks for 4 regions
+    mask_peak_x = np.zeros(Nx, dtype=bool)
+    mask_peak_x[px0:px1+1] = True
+    mask_bg_x = ~mask_peak_x
+
+    mask_peak_y = np.zeros(Ny, dtype=bool)
+    mask_peak_y[py0:py1+1] = True
+    mask_bg_y = ~mask_peak_y
+
+    area_pp = int(np.sum(mask_peak_y)) * int(np.sum(mask_peak_x))
+    area_pbg = int(np.sum(mask_bg_y)) * int(np.sum(mask_peak_x))
+    area_bgp = int(np.sum(mask_peak_y)) * int(np.sum(mask_bg_x))
+    area_bgbg = int(np.sum(mask_bg_y)) * int(np.sum(mask_bg_x))
+
+    # Raw counts in each region
+    roi_pp = roi_raw[py0:py1+1, px0:px1+1]
+    n_pp_m = float(np.sum(roi_pp))
+
+    n_pbg_raw = float(np.sum(roi_raw[mask_bg_y, :][:, mask_peak_x])) if area_pbg > 0 else 0.0
+    n_bgp_raw = float(np.sum(roi_raw[mask_peak_y, :][:, mask_bg_x])) if area_bgp > 0 else 0.0
+    n_bgbg_raw = float(np.sum(roi_raw[mask_bg_y, :][:, mask_bg_x])) if area_bgbg > 0 else 0.0
+
+    # Normalized counts to peak gate area
+    s_pbg = (area_pp / max(1, area_pbg)) if area_pbg > 0 else 0.0
+    s_bgp = (area_pp / max(1, area_bgp)) if area_bgp > 0 else 0.0
+    s_bgbg = (area_pp / max(1, area_bgbg)) if area_bgbg > 0 else 0.0
+
+    n_pbg_m = n_pbg_raw * s_pbg
+    n_bgp_m = n_bgp_raw * s_bgp
+    n_bgbg_m = n_bgbg_raw * s_bgbg
+
+    # True net peak counts (Gamba Eq. 4 / Eq. 14): n_pp_t = n_pp_m - n_pbg_m - n_bgp_m + n_bgbg_m
+    n_pp_t = n_pp_m - n_pbg_m - n_bgp_m + n_bgbg_m
+    var_gamba = n_pp_m + (s_pbg**2 * n_pbg_raw) + (s_bgp**2 * n_bgp_raw) + (s_bgbg**2 * n_bgbg_raw)
+    n_pp_t_err = float(np.sqrt(max(0.0, var_gamba)))
+
+    # Peak-to-Total-Background ratio Pi (Gamba Eq. 17)
+    pi_ratio = n_pp_t / max(1.0, n_pp_m)
 
     return {
         "success": True,
@@ -665,6 +703,10 @@ def fit_2d_gaussian_peak(
         "centroid_y_e_err": round(float(e_y_err), 2),
         "volume": round(float(vol), 1),
         "volume_err": round(float(vol_err), 1),
+        "gamba_net": round(float(n_pp_t), 1),
+        "gamba_net_err": round(float(n_pp_t_err), 1),
+        "pi_ratio": round(float(pi_ratio), 4),
+        "pi_ratio_percent": round(float(pi_ratio * 100.0), 2),
         "fwhm_x_ch": round(float(fwhm_x), 3),
         "fwhm_x_ch_err": round(float(fwhm_x_err), 3),
         "fwhm_y_ch": round(float(fwhm_y), 3),
@@ -681,12 +723,13 @@ def fit_2d_gaussian_peak(
         "alpha_y_err": ay_err,
         "gross_counts": round(gross_counts, 1),
         "total_bg_counts": round(total_bg_counts, 1),
-        "rand_counts": round(rand_counts, 1),
         "cont_counts": round(cont_counts, 1),
         "ridge_x_counts": round(ridge_x_counts, 1),
         "ridge_y_counts": round(ridge_y_counts, 1),
-        "sub_random": sub_random,
-        "random_fraction": round(float(f_rand), 4),
+        "n_pp_m": round(float(n_pp_m), 1),
+        "n_pbg_m": round(float(n_pbg_m), 1),
+        "n_bgp_m": round(float(n_bgp_m), 1),
+        "n_bgbg_m": round(float(n_bgbg_m), 1),
         "ridge_x": round(float(rx), 1),
         "ridge_x_err": round(float(param_errors[3]), 1),
         "ridge_y": round(float(ry), 1),
@@ -707,13 +750,15 @@ def fit_2d_gaussian_peak(
 def print_fit_2d_terminal_report(res, filename, is_cal, verbosity="compact"):
     if verbosity == "compact":
         if is_cal:
-            print(f"⚛ 2D Fit [{filename}]:", flush=True)
+            print(f"⚛ 2D Fit [{filename}] (Gamba & Morhác BG Decomposition):", flush=True)
             print(f"  Det 1 (X): Centroid: {res['centroid_x_e']:.2f}({res['centroid_x_e_err']:.2f}) keV   Area: {res['volume']:.1f}({res['volume_err']:.1f}) counts   FWHM: {res['fwhm_x_e']:.2f}({res['fwhm_x_e_err']:.2f}) keV", flush=True)
-            print(f"  Det 2 (Y): Centroid: {res['centroid_y_e']:.2f}({res['centroid_y_e_err']:.2f}) keV   Area: {res['volume']:.1f}({res['volume_err']:.1f}) counts   FWHM: {res['fwhm_y_e']:.2f}({res['fwhm_y_e_err']:.2f}) keV\n", flush=True)
+            print(f"  Det 2 (Y): Centroid: {res['centroid_y_e']:.2f}({res['centroid_y_e_err']:.2f}) keV   Area: {res['volume']:.1f}({res['volume_err']:.1f}) counts   FWHM: {res['fwhm_y_e']:.2f}({res['fwhm_y_e_err']:.2f}) keV", flush=True)
+            print(f"  Gamba Net Area (p|p^t): {res['gamba_net']:.1f} ± {res['gamba_net_err']:.1f} counts   Peak/Total-BG Ratio (Π): {res['pi_ratio_percent']:.1f}%\n", flush=True)
         else:
-            print(f"⚛ 2D Fit [{filename}]:", flush=True)
+            print(f"⚛ 2D Fit [{filename}] (Gamba & Morhác BG Decomposition):", flush=True)
             print(f"  Det 1 (X): Centroid: {res['centroid_x_ch']:.3f}({res['centroid_x_ch_err']:.3f}) ch   Area: {res['volume']:.1f}({res['volume_err']:.1f}) counts   FWHM: {res['fwhm_x_ch']:.3f}({res['fwhm_x_ch_err']:.3f}) ch", flush=True)
-            print(f"  Det 2 (Y): Centroid: {res['centroid_y_ch']:.3f}({res['centroid_y_ch_err']:.3f}) ch   Area: {res['volume']:.1f}({res['volume_err']:.1f}) counts   FWHM: {res['fwhm_y_ch']:.3f}({res['fwhm_y_ch_err']:.3f}) ch\n", flush=True)
+            print(f"  Det 2 (Y): Centroid: {res['centroid_y_ch']:.3f}({res['centroid_y_ch_err']:.3f}) ch   Area: {res['volume']:.1f}({res['volume_err']:.1f}) counts   FWHM: {res['fwhm_y_ch']:.3f}({res['fwhm_y_ch_err']:.3f}) ch", flush=True)
+            print(f"  Gamba Net Area (p|p^t): {res['gamba_net']:.1f} ± {res['gamba_net_err']:.1f} counts   Peak/Total-BG Ratio (Π): {res['pi_ratio_percent']:.1f}%\n", flush=True)
         return
 
     bar = "═" * 80
@@ -721,6 +766,7 @@ def print_fit_2d_terminal_report(res, filename, is_cal, verbosity="compact"):
     model_name = "Gaussian with Left Tail (HPGe)" if res.get("fit_type") == "gaussian_tail" else "Standard Symmetric Gaussian"
     print(f"\n{bar}")
     print(f"⚛ GASPware 2D Coincidence Peak Fit - {filename} ({model_name})")
+    print(f"   [Self-Consistent 4-Component BG Decomposition: Gamba et al., NIM A 928 (2019) 93]")
     print(subbar)
     if is_cal:
         print(f"  2D Centroid (Energy): ({res['centroid_x_e']:.2f} ± {res['centroid_x_e_err']:.2f}, {res['centroid_y_e']:.2f} ± {res['centroid_y_e_err']:.2f}) keV")
@@ -730,20 +776,20 @@ def print_fit_2d_terminal_report(res, filename, is_cal, verbosity="compact"):
     else:
         print(f"  2D Centroid (ch)    : ({res['centroid_x_ch']:.3f} ± {res['centroid_x_ch_err']:.3f}, {res['centroid_y_ch']:.3f} ± {res['centroid_y_ch_err']:.3f}) ch")
         print(f"  FWHM (ch)           : Det 1 (X) = {res['fwhm_x_ch']:.3f} ± {res['fwhm_x_ch_err']:.3f} ch | Det 2 (Y) = {res['fwhm_y_ch']:.3f} ± {res['fwhm_y_ch_err']:.3f} ch")
-    print(f"  True 2D Volume      : {res['volume']:10.1f} ± {res['volume_err']:<6.1f} counts  (Net Coincidence Area)")
+    print(f"  Fitted Net Volume   : {res['volume']:10.1f} ± {res['volume_err']:<6.1f} counts  (Integrated 2D Peak)")
+    print(f"  Gamba Gate Net (p|p): {res['gamba_net']:10.1f} ± {res['gamba_net_err']:<6.1f} counts  [Π Ratio: {res['pi_ratio_percent']:.1f}%]")
     print(f"  Peak Amplitude (H)  : {res['amplitude']:10.1f} ± {res['amplitude_err']:<6.1f} counts")
     if res.get("alpha_x") is not None:
         ax_str = f"{res['alpha_x']:.3f}" + (f" ± {res['alpha_x_err']:.3f}" if res.get('alpha_x_err') else "")
         ay_str = f"{res['alpha_y']:.3f}" + (f" ± {res['alpha_y_err']:.3f}" if res.get('alpha_y_err') else "")
         print(f"  Left Tail Joins (α) : α_X = {ax_str} | α_Y = {ay_str}")
     print(subbar)
-    print(f"  Background Decomposition:")
-    rand_status = f"Subtracted ({res['random_fraction']*100:.1f}%)" if res.get('sub_random') else "Disabled"
-    print(f"    • Random γ-γ Coinc. : {res.get('rand_counts', 0.0):10.1f} counts [{rand_status}]")
-    print(f"    • 2D Continuum BG   : {res.get('cont_counts', 0.0):10.1f} counts (b0={res['bg_b0']:.2f}, bx={res['bg_bx']:.4f}, by={res['bg_by']:.4f})")
-    print(f"    • Cross-Ridge Det 1 : {res.get('ridge_x_counts', 0.0):10.1f} counts (Rx={res['ridge_x']:.1f} ± {res['ridge_x_err']:.1f})")
-    print(f"    • Cross-Ridge Det 2 : {res.get('ridge_y_counts', 0.0):10.1f} counts (Ry={res['ridge_y']:.1f} ± {res['ridge_y_err']:.1f})")
-    print(f"    • Total Background  : {res.get('total_bg_counts', 0.0):10.1f} counts | Gross in ROI: {res.get('gross_counts', 0.0):10.1f} counts")
+    print(f"  Gamba & Morhác 4-Component Background Decomposition:")
+    print(f"    • 2D Continuum (bg|bg): {res.get('cont_counts', 0.0):10.1f} counts (b0={res['bg_b0']:.2f}, bx={res['bg_bx']:.4f}, by={res['bg_by']:.4f})")
+    print(f"    • Cross-Ridge Det 1 (p|bg): {res.get('ridge_x_counts', 0.0):10.1f} counts (Rx={res['ridge_x']:.1f} ± {res['ridge_x_err']:.1f})")
+    print(f"    • Cross-Ridge Det 2 (bg|p): {res.get('ridge_y_counts', 0.0):10.1f} counts (Ry={res['ridge_y']:.1f} ± {res['ridge_y_err']:.1f})")
+    print(f"    • Gamba Discrete Gates: n_pp^m={res['n_pp_m']:.1f}, n_pbg^m={res['n_pbg_m']:.1f}, n_bgp^m={res['n_bgp_m']:.1f}, n_bgbg^m={res['n_bgbg_m']:.1f}")
+    print(f"    • Total Background    : {res.get('total_bg_counts', 0.0):10.1f} counts | Gross in ROI: {res.get('gross_counts', 0.0):10.1f} counts")
     print(f"  2D Fit ROI Window   : Det 1 (X)=[ch {res['roi_x_min']}..{res['roi_x_max']}], Det 2 (Y)=[ch {res['roi_y_min']}..{res['roi_y_max']}]")
     print(f"  Reduced Chi2 / NDF  : {res['red_chi2']:.3f} (Chi2 = {res['chi2']:.1f}, NDF = {res['ndf']})")
     print(f"{bar}\n", flush=True)
@@ -969,8 +1015,6 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             y = float(query.get("y", [0])[0])
             fit_type = query.get("fit_type", ["gaussian"])[0]
             roi_half_width = int(float(query.get("roi_half_width", [query.get("roi_width", [16])[0]])[0]))
-            sub_random = query.get("sub_random", ["true"])[0].lower() in ("true", "1", "yes")
-            random_frac = float(query.get("random_frac", [0.05])[0])
             verbosity = query.get("verbosity", ["compact"])[0].lower()
 
             is_cal = self.cal and (self.cal[0] != 0.0 or self.cal[1] != 1.0 or self.cal[2] != 0.0)
@@ -979,7 +1023,6 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             try:
                 res = fit_2d_gaussian_peak(
                     self.matrix, x, y, fit_type=fit_type, cal=self.cal, roi_half_width=roi_half_width,
-                    sub_random=sub_random, random_fraction=random_frac,
                     proj_x=self.proj, proj_y=proj_y, total_counts=tot_counts
                 )
                 print_fit_2d_terminal_report(res, self.reader.filename.name, is_cal, verbosity=verbosity)
@@ -1202,7 +1245,6 @@ class CMATWebHandler(BaseHTTPRequestHandler):
                     proj_y = self.proj if (self.reader and self.reader.is_symmetric) else np.sum(self.matrix, axis=1, dtype=np.float64)
                     fit_2d_res = fit_2d_gaussian_peak(
                         self.matrix, fit_x, fit_y, fit_type=fit_type, cal=self.cal, roi_half_width=16,
-                        sub_random=True, random_fraction=0.05,
                         proj_x=self.proj, proj_y=proj_y, total_counts=float(np.sum(self.proj))
                     )
                 except Exception:
@@ -1495,26 +1537,13 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <input type="range" id="roiWidthSlider2D" min="6" max="36" step="2" value="16">
 
       <div style="margin-top: 8px; padding-top: 6px; border-top: 1px solid #333;">
-        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; color: #eee; font-size: 0.74rem;">
-          <input type="checkbox" id="subRandomCheck2D" checked style="width: auto; margin: 0; cursor: pointer;">
-          <span>Subtract Random Coincidences</span>
-        </label>
-
-        <label style="margin-top: 6px;">Random Fraction (<span style="font-family: monospace;">f<sub>rand</sub></span>) <span class="range-val" id="randFracLabel2D">5.0%</span></label>
-        <input type="range" id="randFracSlider2D" min="0" max="30" step="0.5" value="5.0">
-        <small style="color: #888; font-size: 0.68rem; display: block; margin-top: 3px;">
-          B<sub>rand</sub> = f<sub>rand</sub> · [P<sub>x</sub>·P<sub>y</sub> / T<sub>tot</sub>] (Ctrl+Click on 2D or [G]).
-        </small>
-      </div>
-
-      <div style="margin-top: 8px; padding-top: 6px; border-top: 1px solid #333;">
         <label>Results Verbosity</label>
         <select id="fitVerbositySelect">
           <option value="compact" selected>Compact (1 line / axis)</option>
           <option value="detailed">Detailed (Full breakdown)</option>
         </select>
         <small style="color: #888; font-size: 0.68rem; display: block; margin-top: 3px;">
-          Format: centroid(err) &nbsp; area(err) &nbsp; fwhm(err).
+          Gamba &amp; Morh&aacute;c 4-component BG decomposition (Ctrl+Click on 2D or [G]).
         </small>
       </div>
     </div>
@@ -1628,15 +1657,17 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <div class="fit-compact-box" id="fitCompactBox2D">
           <div class="fit-compact-line" id="fitCompactLine2D_X">-</div>
           <div class="fit-compact-line" id="fitCompactLine2D_Y">-</div>
+          <div class="fit-compact-line" id="fitCompactLine2D_Gamba" style="color: #81c784; font-size: 0.72rem; margin-top: 3px;">-</div>
         </div>
         <div class="fit-grid" id="fitGrid2D" style="display: none; margin-top: 6px; padding-top: 6px; border-top: 1px solid #333;">
           <div class="fit-item"><span class="lbl">2D Centroid:</span><span class="val" id="fitCentroid2D">-</span></div>
-          <div class="fit-item"><span class="lbl">Net 2D Volume:</span><span class="val" id="fitVolume2D" style="color: #4caf50;">-</span></div>
+          <div class="fit-item"><span class="lbl">Fitted Net Vol:</span><span class="val" id="fitVolume2D" style="color: #4caf50;">-</span></div>
+          <div class="fit-item"><span class="lbl">Gamba Gate Net:</span><span class="val" id="fitGambaNet2D" style="color: #81c784;">-</span></div>
+          <div class="fit-item"><span class="lbl">Peak/Total BG (Π):</span><span class="val" id="fitPiRatio2D" style="color: #64b5f6;">-</span></div>
           <div class="fit-item"><span class="lbl">FWHM (X / Y):</span><span class="val" id="fitFWHM2D">-</span></div>
           <div class="fit-item"><span class="lbl">Amplitude (H):</span><span class="val" id="fitAmp2D">-</span></div>
           <div class="fit-item" id="fitTailItem2D"><span class="lbl">Left Tails (α):</span><span class="val" id="fitTail2D">-</span></div>
-          <div class="fit-item"><span class="lbl">Random BG Sub:</span><span class="val" id="fitRandBg2D" style="color: #ff80ab;">-</span></div>
-          <div class="fit-item"><span class="lbl">Continuum BG:</span><span class="val" id="fitContBg2D">-</span></div>
+          <div class="fit-item"><span class="lbl">2D Cont. (bg|bg):</span><span class="val" id="fitContBg2D">-</span></div>
           <div class="fit-item"><span class="lbl">Cross-Ridges:</span><span class="val" id="fitRidges2D">-</span></div>
           <div class="fit-item"><span class="lbl">Gross / Total BG:</span><span class="val" id="fitGrossBg2D">-</span></div>
           <div class="fit-item"><span class="lbl">Reduced χ² / NDF:</span><span class="val" id="fitChi22D">-</span></div>
@@ -2103,12 +2134,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   async function requestPeakFit2D(x, y) {
     const fitType = document.getElementById('fitTypeSelect2D') ? document.getElementById('fitTypeSelect2D').value : 'gaussian';
     const roiHW = document.getElementById('roiWidthSlider2D') ? parseInt(document.getElementById('roiWidthSlider2D').value, 10) : 16;
-    const subRand = document.getElementById('subRandomCheck2D') ? document.getElementById('subRandomCheck2D').checked : true;
-    const randFracPercent = document.getElementById('randFracSlider2D') ? parseFloat(document.getElementById('randFracSlider2D').value) : 5.0;
-    const randFrac = (randFracPercent / 100.0).toFixed(4);
     const verbosity = document.getElementById('fitVerbositySelect') ? document.getElementById('fitVerbositySelect').value : 'compact';
 
-    const res = await fetch(`/api/fit_peak_2d?x=${x}&y=${y}&fit_type=${fitType}&roi_half_width=${roiHW}&sub_random=${subRand}&random_frac=${randFrac}&verbosity=${verbosity}`);
+    const res = await fetch(`/api/fit_peak_2d?x=${x}&y=${y}&fit_type=${fitType}&roi_half_width=${roiHW}&verbosity=${verbosity}`);
     const data = await res.json();
     if (data.success) {
       activeFit2D = data;
@@ -2121,7 +2149,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
       document.getElementById('fitTitle2D').innerText = `⚛ ${modelTag}: ${posTag}`;
 
-      // Compact format (one simple line for each axis: centroid(err)   area(err)   fwhm(err))
+      // Compact format (one simple line for each axis + Gamba net summary)
       const volStr = `${data.volume.toLocaleString()}(${data.volume_err.toLocaleString()})`;
       const lineX = isCal
         ? `<strong>Det 1 (X):</strong> Centroid: ${data.centroid_x_e}(${data.centroid_x_e_err}) keV &nbsp;&nbsp; Area: ${volStr} counts &nbsp;&nbsp; FWHM: ${data.fwhm_x_e}(${data.fwhm_x_e_err}) keV`
@@ -2129,9 +2157,11 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       const lineY = isCal
         ? `<strong>Det 2 (Y):</strong> Centroid: ${data.centroid_y_e}(${data.centroid_y_e_err}) keV &nbsp;&nbsp; Area: ${volStr} counts &nbsp;&nbsp; FWHM: ${data.fwhm_y_e}(${data.fwhm_y_e_err}) keV`
         : `<strong>Det 2 (Y):</strong> Centroid: ${data.centroid_y_ch}(${data.centroid_y_ch_err}) ch &nbsp;&nbsp; Area: ${volStr} counts &nbsp;&nbsp; FWHM: ${data.fwhm_y_ch}(${data.fwhm_y_ch_err}) ch`;
+      const lineGamba = `<strong>Gamba Gate Net (p|p<sup>t</sup>):</strong> ${data.gamba_net.toLocaleString()} ± ${data.gamba_net_err.toLocaleString()} counts &nbsp;&nbsp; <strong>Π Ratio:</strong> ${data.pi_ratio_percent}%`;
 
       document.getElementById('fitCompactLine2D_X').innerHTML = lineX;
       document.getElementById('fitCompactLine2D_Y').innerHTML = lineY;
+      document.getElementById('fitCompactLine2D_Gamba').innerHTML = lineGamba;
 
       // Detailed parameters grid
       document.getElementById('fitCentroid2D').innerText = isCal
@@ -2139,6 +2169,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         : `(${data.centroid_x_ch} ± ${data.centroid_x_ch_err}, ${data.centroid_y_ch} ± ${data.centroid_y_ch_err}) ch`;
 
       document.getElementById('fitVolume2D').innerText = `${data.volume.toLocaleString()} ± ${data.volume_err.toLocaleString()} counts`;
+      document.getElementById('fitGambaNet2D').innerText = `${data.gamba_net.toLocaleString()} ± ${data.gamba_net_err.toLocaleString()} counts`;
+      document.getElementById('fitPiRatio2D').innerText = `${data.pi_ratio_percent}% (Π = ${data.pi_ratio})`;
 
       document.getElementById('fitFWHM2D').innerText = isCal
         ? `X: ${data.fwhm_x_e} ± ${data.fwhm_x_e_err} | Y: ${data.fwhm_y_e} ± ${data.fwhm_y_e_err} keV`
@@ -2158,17 +2190,15 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
       }
 
-      const randSubStatus = data.sub_random ? `Subtracted (${(data.random_fraction * 100).toFixed(1)}%)` : 'Disabled';
-      document.getElementById('fitRandBg2D').innerText = `${data.rand_counts.toLocaleString()} counts [${randSubStatus}]`;
       document.getElementById('fitContBg2D').innerText = `${data.cont_counts.toLocaleString()} counts (b0=${data.bg_b0}, bx=${data.bg_bx}, by=${data.bg_by})`;
-      document.getElementById('fitRidges2D').innerText = `Rx: ${data.ridge_x} ± ${data.ridge_x_err} (${data.ridge_x_counts} cts) | Ry: ${data.ridge_y} ± ${data.ridge_y_err} (${data.ridge_y_counts} cts)`;
+      document.getElementById('fitRidges2D').innerText = `p|bg (X): ${data.ridge_x} ± ${data.ridge_x_err} (${data.ridge_x_counts} cts) | bg|p (Y): ${data.ridge_y} ± ${data.ridge_y_err} (${data.ridge_y_counts} cts)`;
       document.getElementById('fitGrossBg2D').innerText = `${data.gross_counts.toLocaleString()} gross / ${data.total_bg_counts.toLocaleString()} bg counts`;
       document.getElementById('fitChi22D').innerText = `${data.red_chi2} (χ²=${data.chi2}, NDF=${data.ndf})`;
 
       updateFitCardsVerbosity();
       document.getElementById('fitCard2D').style.display = 'block';
 
-      document.getElementById('hudCoords').innerText = `2D Fit: Centroid = ${posTag} | Net Volume = ${data.volume} ± ${data.volume_err} | FWHMs = (${isCal ? data.fwhm_x_e + ', ' + data.fwhm_y_e + ' keV' : data.fwhm_x_ch + ', ' + data.fwhm_y_ch + ' ch'})`;
+      document.getElementById('hudCoords').innerText = `2D Fit: Centroid = ${posTag} | Net Volume = ${data.volume} ± ${data.volume_err} | Gamba Net = ${data.gamba_net} (Π=${data.pi_ratio_percent}%) | FWHMs = (${isCal ? data.fwhm_x_e + ', ' + data.fwhm_y_e + ' keV' : data.fwhm_x_ch + ', ' + data.fwhm_y_ch + ' ch'})`;
     } else {
       console.warn("2D Peak fit failed:", data.error);
     }
@@ -2796,9 +2826,6 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     });
     document.getElementById('roiWidthSlider2D').addEventListener('input', (e) => {
       document.getElementById('roiWidthLabel2D').innerText = '±' + e.target.value + ' ch';
-    });
-    document.getElementById('randFracSlider2D').addEventListener('input', (e) => {
-      document.getElementById('randFracLabel2D').innerText = parseFloat(e.target.value).toFixed(1) + '%';
     });
     const selVerb = document.getElementById('fitVerbositySelect');
     if (selVerb) selVerb.addEventListener('change', updateFitCardsVerbosity);
