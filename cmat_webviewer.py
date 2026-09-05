@@ -52,9 +52,18 @@ except Exception:
 from cmat import CMATReader
 
 
+def _vec_erfc(arr):
+    f = np.vectorize(math.erfc, otypes=[np.float64])
+    return f(arr)
+
+
 def fit_gaussian_peak(x, y, x_center, fit_type="gaussian", fwhm_mult=4.0, cal=[0.0, 1.0, 0.0], roi_half_width=None):
     """
-    Fits a single peak (Symmetric Gaussian or Gaussian with Left Exponential Tail) + linear background.
+    Fits a single peak with one of three scientific models:
+      1. 'gaussian': Standard Symmetric Gaussian + linear background.
+      2. 'gaussian_tail': RadWare / SAMPO Gaussian with Left Exponential Tail (Helmer & Lee / Radford).
+      3. 'hypermet': Hypermet Model (Phillips & Marlow / Campbell & Maxwell) with analytical
+                     Exponentially Modified Gaussian (EMG) convolved tail + erfc Compton step.
     ROI window size is determined by fwhm_mult * FWHM_est (or explicit roi_half_width).
     Uses Poisson counting statistics weights and computes full parameter covariance matrix.
     """
@@ -120,13 +129,21 @@ def fit_gaussian_peak(x, y, x_center, fit_type="gaussian", fwhm_mult=4.0, cal=[0
     # Net height
     bg_at_apex = b0_init + b1_init * (mu_init - x_center)
     H_init = max(1.0, float(roi_y[apex_idx]) - bg_at_apex)
-    sigma_init = 2.0
+    sigma_init = max(0.5, (fwhm_est / 2.355) if 'fwhm_est' in locals() else 1.5)
 
     sigma_y = np.sqrt(np.maximum(1.0, roi_y))
     weights = 1.0 / sigma_y
 
+    is_hypermet = (fit_type == "hypermet")
     is_tail = (fit_type == "gaussian_tail")
-    if is_tail:
+
+    if is_hypermet:
+        f_T_init = 0.15 * (H_init * sigma_init * math.sqrt(2.0 * math.pi))
+        beta_init = 1.5 * sigma_init
+        A_S_init = 0.02 * H_init
+        theta = np.array([b0_init, b1_init, H_init, mu_init, sigma_init, f_T_init, beta_init, A_S_init], dtype=np.float64)
+        n_params = 8
+    elif is_tail:
         alpha_init = 1.5
         theta = np.array([b0_init, b1_init, H_init, mu_init, sigma_init, alpha_init], dtype=np.float64)
         n_params = 6
@@ -138,6 +155,45 @@ def fit_gaussian_peak(x, y, x_center, fit_type="gaussian", fwhm_mult=4.0, cal=[0
     max_iters = 80
 
     def calc_residuals_and_jacobian(p):
+        if is_hypermet:
+            b0, b1, H, mu, sig, f_T, beta, A_S = p
+            sig = max(0.1, abs(sig))
+            beta = max(0.1, abs(beta))
+            H = max(0.0, H)
+            f_T = max(0.0, f_T)
+            A_S = max(0.0, A_S)
+
+            dx = roi_x - mu
+            dx_c = roi_x - x_center
+            z = dx / sig
+
+            g = H * np.exp(np.clip(-0.5 * z**2, -50.0, 0.0))
+            u = np.clip(dx / beta + 0.5 * (sig / beta)**2, -50.0, 50.0)
+            v = np.clip(dx / (math.sqrt(2.0) * sig) + sig / (math.sqrt(2.0) * beta), -20.0, 20.0)
+            t = (f_T / (2.0 * beta)) * np.exp(u) * _vec_erfc(v)
+            s = 0.5 * A_S * _vec_erfc(np.clip(z / math.sqrt(2.0), -20.0, 20.0))
+
+            model = b0 + b1 * dx_c + g + t + s
+            r = (model - roi_y) * weights
+
+            J = np.zeros((N, n_params), dtype=np.float64)
+            eps = 1e-6
+            for i in range(n_params):
+                p_step = p.copy()
+                p_step[i] += eps
+                b0_s, b1_s, H_s, mu_s, sig_s, fT_s, beta_s, AS_s = p_step
+                sig_s, beta_s = max(0.1, abs(sig_s)), max(0.1, abs(beta_s))
+                dx_s, dx_cs = roi_x - mu_s, roi_x - x_center
+                z_s = dx_s / sig_s
+                g_s = max(0.0, H_s) * np.exp(np.clip(-0.5 * z_s**2, -50.0, 0.0))
+                u_s = np.clip(dx_s / beta_s + 0.5 * (sig_s / beta_s)**2, -50.0, 50.0)
+                v_s = np.clip(dx_s / (math.sqrt(2.0) * sig_s) + sig_s / (math.sqrt(2.0) * beta_s), -20.0, 20.0)
+                t_s = (max(0.0, fT_s) / (2.0 * beta_s)) * np.exp(u_s) * _vec_erfc(v_s)
+                s_s = 0.5 * max(0.0, AS_s) * _vec_erfc(np.clip(z_s / math.sqrt(2.0), -20.0, 20.0))
+                mod_s = b0_s + b1_s * dx_cs + g_s + t_s + s_s
+                J[:, i] = (mod_s - model) / eps * weights
+            return r, J, model
+
         if is_tail:
             b0, b1, H, mu, sig, alpha = p
             alpha = max(0.3, min(5.0, alpha))
@@ -195,10 +251,14 @@ def fit_gaussian_peak(x, y, x_center, fit_type="gaussian", fwhm_mult=4.0, cal=[0
             continue
 
         theta_new = theta + d_theta
-        theta_new[2] = max(0.0, theta_new[2]) # H >= 0
-        theta_new[4] = max(0.2, min(half_w, abs(theta_new[4]))) # sigma
-        theta_new[3] = max(roi_x[0], min(roi_x[-1], theta_new[3])) # mu within ROI
-        if is_tail:
+        theta_new[2] = max(0.0, theta_new[2])  # H >= 0
+        theta_new[4] = max(0.2, min(half_w, abs(theta_new[4])))  # sigma
+        theta_new[3] = max(roi_x[0], min(roi_x[-1], theta_new[3]))  # mu within ROI
+        if is_hypermet:
+            theta_new[5] = max(0.0, theta_new[5])  # f_T >= 0
+            theta_new[6] = max(0.2, min(half_w, theta_new[6]))  # beta
+            theta_new[7] = max(0.0, theta_new[7])  # A_S >= 0
+        elif is_tail:
             theta_new[5] = max(0.3, min(5.0, theta_new[5]))
 
         r_new, J_new, model_new = calc_residuals_and_jacobian(theta_new)
@@ -224,7 +284,20 @@ def fit_gaussian_peak(x, y, x_center, fit_type="gaussian", fwhm_mult=4.0, cal=[0
 
     param_errors = np.sqrt(np.maximum(0.0, np.diag(cov)))
 
-    if is_tail:
+    if is_hypermet:
+        b0, b1, H, mu, sig, f_T, beta, A_S = theta
+        sig = abs(sig)
+        area = float(math.sqrt(2.0 * math.pi) * H * sig + f_T)
+        grad_A = np.zeros(n_params)
+        grad_A[2] = math.sqrt(2.0 * math.pi) * sig
+        grad_A[4] = math.sqrt(2.0 * math.pi) * H
+        grad_A[5] = 1.0
+        area_err = float(np.sqrt(np.maximum(0.0, grad_A @ cov @ grad_A)))
+        alpha_val, alpha_err_val = None, None
+        f_T_val, f_T_err_val = round(float(f_T), 1), round(float(param_errors[5]), 1)
+        beta_val, beta_err_val = round(float(beta), 3), round(float(param_errors[6]), 3)
+        A_S_val, A_S_err_val = round(float(A_S), 2), round(float(param_errors[7]), 2)
+    elif is_tail:
         b0, b1, H, mu, sig, alpha = theta
         sig = abs(sig)
         term1 = math.sqrt(math.pi / 2.0) * (1.0 + math.erf(alpha / math.sqrt(2.0)))
@@ -240,6 +313,9 @@ def fit_gaussian_peak(x, y, x_center, fit_type="gaussian", fwhm_mult=4.0, cal=[0
         area_err = float(np.sqrt(np.maximum(0.0, grad_A @ cov @ grad_A)))
         alpha_val = round(float(alpha), 3)
         alpha_err_val = round(float(param_errors[5]), 3)
+        f_T_val, f_T_err_val = None, None
+        beta_val, beta_err_val = None, None
+        A_S_val, A_S_err_val = None, None
     else:
         b0, b1, H, mu, sig = theta
         sig = abs(sig)
@@ -248,8 +324,10 @@ def fit_gaussian_peak(x, y, x_center, fit_type="gaussian", fwhm_mult=4.0, cal=[0
         dA_dsig = H * np.sqrt(2.0 * np.pi)
         grad_A = np.array([0.0, 0.0, dA_dH, 0.0, dA_dsig])
         area_err = float(np.sqrt(np.maximum(0.0, grad_A @ cov @ grad_A)))
-        alpha_val = None
-        alpha_err_val = None
+        alpha_val, alpha_err_val = None, None
+        f_T_val, f_T_err_val = None, None
+        beta_val, beta_err_val = None, None
+        A_S_val, A_S_err_val = None, None
 
     fwhm_factor = 2.0 * np.sqrt(2.0 * np.log(2.0))
     fwhm = fwhm_factor * sig
@@ -281,16 +359,23 @@ def fit_gaussian_peak(x, y, x_center, fit_type="gaussian", fwhm_mult=4.0, cal=[0
     bg_dense = b0 + b1 * dx_c_dense
     z_dense = (x_dense - mu) / sig
 
-    if is_tail:
+    if is_hypermet:
+        g_dense = H * np.exp(np.clip(-0.5 * z_dense**2, -50.0, 0.0))
+        u_dense = np.clip((x_dense - mu) / beta + 0.5 * (sig / beta)**2, -50.0, 50.0)
+        v_dense = np.clip((x_dense - mu) / (math.sqrt(2.0) * sig) + sig / (math.sqrt(2.0) * beta), -20.0, 20.0)
+        t_dense = (f_T / (2.0 * beta)) * np.exp(u_dense) * _vec_erfc(v_dense)
+        s_dense = 0.5 * A_S * _vec_erfc(np.clip(z_dense / math.sqrt(2.0), -20.0, 20.0))
+        peak_dense = g_dense + t_dense + s_dense
+    elif is_tail:
         is_gauss_dense = (z_dense >= -alpha)
         g_gauss_dense = H * np.exp(-0.5 * z_dense**2)
         exponent_dense = np.clip(0.5 * alpha**2 + alpha * z_dense, -50.0, 50.0)
         g_tail_dense = H * np.exp(exponent_dense)
-        gauss_dense = np.where(is_gauss_dense, g_gauss_dense, g_tail_dense)
+        peak_dense = np.where(is_gauss_dense, g_gauss_dense, g_tail_dense)
     else:
-        gauss_dense = H * np.exp(-0.5 * z_dense**2)
+        peak_dense = H * np.exp(-0.5 * z_dense**2)
 
-    fit_dense = bg_dense + gauss_dense
+    fit_dense = bg_dense + peak_dense
 
     return {
         "success": True,
@@ -309,6 +394,12 @@ def fit_gaussian_peak(x, y, x_center, fit_type="gaussian", fwhm_mult=4.0, cal=[0
         "amplitude_err": round(float(param_errors[2]), 1),
         "alpha": alpha_val,
         "alpha_err": alpha_err_val,
+        "tail_area": f_T_val,
+        "tail_area_err": f_T_err_val,
+        "tail_slope": beta_val,
+        "tail_slope_err": beta_err_val,
+        "step_height": A_S_val,
+        "step_height_err": A_S_err_val,
         "bg_b0": round(float(b0), 2),
         "bg_b1": round(float(b1), 4),
         "gross_counts": round(float(gross_roi_sum), 1),
@@ -334,7 +425,14 @@ def print_fit_terminal_report(res, det_name, filename, is_cal, verbosity="compac
 
     bar = "═" * 80
     subbar = "─" * 80
-    model_name = "Gaussian with Left Tail (HPGe)" if res.get("fit_type") == "gaussian_tail" else "Standard Symmetric Gaussian"
+    ft = res.get("fit_type")
+    if ft == "hypermet":
+        model_name = "Hypermet Model (Convolved Tail + Erfc Step)"
+    elif ft == "gaussian_tail":
+        model_name = "Gaussian with Left Tail (RadWare / HPGe)"
+    else:
+        model_name = "Standard Symmetric Gaussian"
+
     print(f"\n{bar}")
     print(f"⚛ GASPware 1D Peak Fit [{det_name}] - {filename} ({model_name})")
     print(subbar)
@@ -346,7 +444,10 @@ def print_fit_terminal_report(res, det_name, filename, is_cal, verbosity="compac
         print(f"  Peak FWHM         : {res['fwhm_ch']:10.3f} ± {res['fwhm_ch_err']:<6.3f} ch")
     print(f"  Net Peak Area     : {res['area']:10.1f} ± {res['area_err']:<6.1f} counts")
     print(f"  Peak Amplitude (H): {res['amplitude']:10.1f} ± {res['amplitude_err']:<6.1f} counts")
-    if res.get("alpha") is not None:
+    if res.get("tail_area") is not None:
+        print(f"  Hypermet Tail(fT) : {res['tail_area']:10.1f} ± {res['tail_area_err']:<6.1f} counts  (Slope β: {res['tail_slope']:.3f} ± {res['tail_slope_err']:.3f} ch)")
+        print(f"  Compton Step (As) : {res['step_height']:10.2f} ± {res['step_height_err']:<6.2f} counts")
+    elif res.get("alpha") is not None:
         print(f"  Left Tail Join(α) : {res['alpha']:10.3f} ± {res['alpha_err']:<6.3f} (Join at ch {res['centroid_ch'] - res['alpha']*res['fwhm_ch']/2.355:.2f})")
     print(f"  Gross Counts (ROI): {res['gross_counts']:10.1f} counts  (Background: {res['bg_counts']:.1f} counts)")
     print(f"  Fit ROI Window    : ch {res['roi_ch_min']} to {res['roi_ch_max']} ({res['roi_ch_max'] - res['roi_ch_min'] + 1} channels)")
@@ -359,16 +460,15 @@ def fit_2d_gaussian_peak(
     proj_x=None, proj_y=None, total_counts=None, **kwargs
 ):
     """
-    Fits a true 2D coincidence peak (Symmetric Gaussian or HPGe Gaussian with Left Tail)
+    Fits a true 2D coincidence peak (Symmetric Gaussian, RadWare Tail, or Hypermet Model)
     on the 2D gamma-gamma coincidence matrix using the self-consistent 4-component background
     decomposition established by Gamba et al. (NIM A 928, 2019, 93-103) & Morhác et al. (NIM A 401, 1997, 113):
       - bg|bg: 2D Compton continuum + accidental random coincidences: b0 + bx*(x - x_c) + by*(y - y_c)
-      - p|bg : Det 1 peak with Det 2 Compton/random continuum ridge: R_x * G_x(x)
-      - bg|p : Det 2 peak with Det 1 Compton/random continuum ridge: R_y * G_y(y)
-      - p|p^t: True 2D coincidence peak volume: H * G_x(x) * G_y(y)
+      - p|bg : Det 1 peak with Det 2 Compton/random continuum ridge: R_x * P_X(x)
+      - bg|p : Det 2 peak with Det 1 Compton/random continuum ridge: R_y * P_Y(y)
+      - p|p^t: True 2D coincidence peak volume: H * P_X(x) * P_Y(y)
     
-    All background components (continuum, accidental coincidences, and cross-ridges) are extracted
-    self-consistently by the non-linear least-squares fit from the 2D spectrum without arbitrary parameters.
+    All background components are extracted self-consistently from the 2D spectrum without arbitrary parameters.
     """
     mat = np.asarray(matrix, dtype=np.float64)
     H_mat, W_mat = mat.shape
@@ -429,19 +529,82 @@ def fit_2d_gaussian_peak(
     sig_y_init = 1.4
     h_init = max(1.0, float(np.max(roi_raw)) - b0_init - rx_init - ry_init)
 
+    is_hypermet = (fit_type == "hypermet")
     is_tail = (fit_type == "gaussian_tail")
-    if is_tail:
+
+    if is_hypermet:
+        n_params = 16
+        eta_tx_init = 0.15 * math.sqrt(2.0 * math.pi) * sig_x_init
+        betax_init = 1.5 * sig_x_init
+        stx_init = 0.02
+        eta_ty_init = 0.15 * math.sqrt(2.0 * math.pi) * sig_y_init
+        betay_init = 1.5 * sig_y_init
+        sty_init = 0.02
+        theta = np.array([
+            b0_init, bx_init, by_init, rx_init, ry_init, h_init,
+            mu_x_init, mu_y_init, sig_x_init, sig_y_init,
+            eta_tx_init, betax_init, stx_init,
+            eta_ty_init, betay_init, sty_init
+        ], dtype=np.float64)
+    elif is_tail:
         n_params = 12
         theta = np.array([b0_init, bx_init, by_init, rx_init, ry_init, h_init, mu_x_init, mu_y_init, sig_x_init, sig_y_init, 1.5, 1.5], dtype=np.float64)
     else:
         n_params = 10
         theta = np.array([b0_init, bx_init, by_init, rx_init, ry_init, h_init, mu_x_init, mu_y_init, sig_x_init, sig_y_init], dtype=np.float64)
 
-    # Weights governed by Poisson counting statistics of observed raw counts
     sigma_z = np.sqrt(np.maximum(1.0, z_raw_flat))
     weights = 1.0 / sigma_z
 
+    def _calc_1d_hyp_profile(coords, mu, sig, eta_t, beta, step_amp):
+        d = coords - mu
+        z = d / sig
+        g = np.exp(np.clip(-0.5 * z**2, -50.0, 0.0))
+        u = np.clip(d / beta + 0.5 * (sig / beta)**2, -50.0, 50.0)
+        v = np.clip(d / (math.sqrt(2.0) * sig) + sig / (math.sqrt(2.0) * beta), -20.0, 20.0)
+        t = (eta_t / (2.0 * beta)) * np.exp(u) * _vec_erfc(v)
+        s = 0.5 * step_amp * _vec_erfc(np.clip(z / math.sqrt(2.0), -20.0, 20.0))
+        return g + t + s
+
     def calc_residuals_and_jacobian(p):
+        if is_hypermet:
+            b0, bx, by, rx, ry, H, mx, my, sx, sy, eta_tx, betax, stx, eta_ty, betay, sty = p
+            sx, sy = max(0.2, abs(sx)), max(0.2, abs(sy))
+            betax, betay = max(0.2, abs(betax)), max(0.2, abs(betay))
+            eta_tx, eta_ty = max(0.0, eta_tx), max(0.0, eta_ty)
+            stx, sty = max(0.0, stx), max(0.0, sty)
+            H, rx, ry = max(0.0, H), max(0.0, rx), max(0.0, ry)
+
+            dxc = x_flat - ix
+            dyc = y_flat - iy
+            bg_cont = b0 + bx * dxc + by * dyc
+
+            px = _calc_1d_hyp_profile(x_flat, mx, sx, eta_tx, betax, stx)
+            py = _calc_1d_hyp_profile(y_flat, my, sy, eta_ty, betay, sty)
+            p2d = px * py
+
+            model = bg_cont + rx * px + ry * py + H * p2d
+            r = (model - z_raw_flat) * weights
+
+            J = np.zeros((N_pixels, n_params), dtype=np.float64)
+            eps = 1e-6
+            for i in range(n_params):
+                p_step = p.copy()
+                p_step[i] += eps
+                b0_s, bx_s, by_s, rx_s, ry_s, H_s, mx_s, my_s, sx_s, sy_s, etx_s, bx_t_s, stx_s, ety_s, by_t_s, sty_s = p_step
+                sx_s, sy_s = max(0.2, abs(sx_s)), max(0.2, abs(sy_s))
+                bx_t_s, by_t_s = max(0.2, abs(bx_t_s)), max(0.2, abs(by_t_s))
+                etx_s, ety_s = max(0.0, etx_s), max(0.0, ety_s)
+                stx_s, sty_s = max(0.0, stx_s), max(0.0, sty_s)
+                H_s, rx_s, ry_s = max(0.0, H_s), max(0.0, rx_s), max(0.0, ry_s)
+
+                bg_s = b0_s + bx_s * dxc + by_s * dyc
+                px_s = _calc_1d_hyp_profile(x_flat, mx_s, sx_s, etx_s, bx_t_s, stx_s)
+                py_s = _calc_1d_hyp_profile(y_flat, my_s, sy_s, ety_s, by_t_s, sty_s)
+                mod_s = bg_s + rx_s * px_s + ry_s * py_s + H_s * (px_s * py_s)
+                J[:, i] = (mod_s - model) / eps * weights
+            return r, J, model
+
         if is_tail:
             b0, bx, by, rx, ry, H, mx, my, sx, sy, ax, ay = p
             ax = max(0.3, min(5.0, ax))
@@ -476,7 +639,6 @@ def fit_2d_gaussian_peak(
 
         g2d = gx * gy
 
-        # Self-consistent model: 2D continuum (bg|bg) + Det 1 ridge (p|bg) + Det 2 ridge (bg|p) + True 2D peak (p|p)
         bg_cont = b0 + bx * dxc + by * dyc
         model = bg_cont + rx * gx + ry * gy + H * g2d
         r = (model - z_raw_flat) * weights
@@ -529,14 +691,21 @@ def fit_2d_gaussian_peak(
             continue
 
         theta_new = theta + d_theta
-        theta_new[3] = max(0.0, theta_new[3])
-        theta_new[4] = max(0.0, theta_new[4])
-        theta_new[5] = max(0.0, theta_new[5])
+        theta_new[3] = max(0.0, theta_new[3])  # Rx
+        theta_new[4] = max(0.0, theta_new[4])  # Ry
+        theta_new[5] = max(0.0, theta_new[5])  # H
         theta_new[6] = max(x_min, min(x_max, theta_new[6]))
         theta_new[7] = max(y_min, min(y_max, theta_new[7]))
         theta_new[8] = max(0.2, min(roi_half_width, abs(theta_new[8])))
         theta_new[9] = max(0.2, min(roi_half_width, abs(theta_new[9])))
-        if is_tail:
+        if is_hypermet:
+            theta_new[10] = max(0.0, min(roi_half_width, theta_new[10]))  # eta_tx
+            theta_new[11] = max(0.2, min(roi_half_width, theta_new[11]))  # betax
+            theta_new[12] = max(0.0, min(1.0, theta_new[12]))  # stx
+            theta_new[13] = max(0.0, min(roi_half_width, theta_new[13]))  # eta_ty
+            theta_new[14] = max(0.2, min(roi_half_width, theta_new[14]))  # betay
+            theta_new[15] = max(0.0, min(1.0, theta_new[15]))  # sty
+        elif is_tail:
             theta_new[10] = max(0.3, min(5.0, theta_new[10]))
             theta_new[11] = max(0.3, min(5.0, theta_new[11]))
 
@@ -563,7 +732,33 @@ def fit_2d_gaussian_peak(
 
     param_errors = np.sqrt(np.maximum(0.0, np.diag(cov)))
 
-    if is_tail:
+    if is_hypermet:
+        b0, bx, by, rx, ry, H, mx, my, sx, sy, eta_tx, betax, stx, eta_ty, betay, sty = theta
+        sx, sy = abs(sx), abs(sy)
+        vol = H * (math.sqrt(2.0 * math.pi) * sx + eta_tx) * (math.sqrt(2.0 * math.pi) * sy + eta_ty)
+
+        grad_vol = np.zeros(n_params)
+        grad_vol[5] = (math.sqrt(2.0 * math.pi) * sx + eta_tx) * (math.sqrt(2.0 * math.pi) * sy + eta_ty)
+        grad_vol[8] = H * math.sqrt(2.0 * math.pi) * (math.sqrt(2.0 * math.pi) * sy + eta_ty)
+        grad_vol[9] = H * math.sqrt(2.0 * math.pi) * (math.sqrt(2.0 * math.pi) * sx + eta_tx)
+        grad_vol[10] = H * (math.sqrt(2.0 * math.pi) * sy + eta_ty)
+        grad_vol[13] = H * (math.sqrt(2.0 * math.pi) * sx + eta_tx)
+        vol_err = float(np.sqrt(np.maximum(0.0, grad_vol @ cov @ grad_vol)))
+        ax_val, ay_val = None, None
+        ax_err, ay_err = None, None
+        hyper_res = {
+            "eta_tx": round(float(eta_tx), 3),
+            "eta_tx_err": round(float(param_errors[10]), 3),
+            "beta_x": round(float(betax), 3),
+            "beta_x_err": round(float(param_errors[11]), 3),
+            "step_x": round(float(stx), 3),
+            "eta_ty": round(float(eta_ty), 3),
+            "eta_ty_err": round(float(param_errors[13]), 3),
+            "beta_y": round(float(betay), 3),
+            "beta_y_err": round(float(param_errors[14]), 3),
+            "step_y": round(float(sty), 3),
+        }
+    elif is_tail:
         b0, bx, by, rx, ry, H, mx, my, sx, sy, ax, ay = theta
         sx, sy = abs(sx), abs(sy)
         k_x = math.sqrt(math.pi / 2.0) * (1.0 + math.erf(ax / math.sqrt(2.0))) + math.exp(-0.5 * ax**2) / ax
@@ -581,6 +776,7 @@ def fit_2d_gaussian_peak(
         ax_val, ay_val = round(float(ax), 3), round(float(ay), 3)
         ax_err = round(float(param_errors[10]), 3) if param_errors[10] < 1000.0 else None
         ay_err = round(float(param_errors[11]), 3) if param_errors[11] < 1000.0 else None
+        hyper_res = {}
     else:
         b0, bx, by, rx, ry, H, mx, my, sx, sy = theta
         sx, sy = abs(sx), abs(sy)
@@ -591,6 +787,7 @@ def fit_2d_gaussian_peak(
         vol_err = np.sqrt(max(0.0, var_vol))
         ax_val, ay_val = None, None
         ax_err, ay_err = None, None
+        hyper_res = {}
 
     fwhm_factor = 2.0 * np.sqrt(2.0 * np.log(2.0))
     fwhm_x = fwhm_factor * sx
@@ -624,7 +821,10 @@ def fit_2d_gaussian_peak(
     dyc = y_flat - iy
     zx = dx / sx
     zy = dy / sy
-    if is_tail:
+    if is_hypermet:
+        gx_val = _calc_1d_hyp_profile(x_flat, mx, sx, eta_tx, betax, stx)
+        gy_val = _calc_1d_hyp_profile(y_flat, my, sy, eta_ty, betay, sty)
+    elif is_tail:
         gx_val = np.where(zx >= -ax, np.exp(-0.5 * zx**2), np.exp(np.clip(0.5 * ax**2 + ax * zx, -50.0, 50.0)))
         gy_val = np.where(zy >= -ay, np.exp(-0.5 * zy**2), np.exp(np.clip(0.5 * ay**2 + ay * zy, -50.0, 50.0)))
     else:
@@ -689,7 +889,7 @@ def fit_2d_gaussian_peak(
     # Peak-to-Total-Background ratio Pi (Gamba Eq. 17)
     pi_ratio = n_pp_t / max(1.0, n_pp_m)
 
-    return {
+    res_dict = {
         "success": True,
         "is_2d": True,
         "fit_type": fit_type,
@@ -745,6 +945,8 @@ def fit_2d_gaussian_peak(
         "roi_y_min": int(y_min),
         "roi_y_max": int(y_max)
     }
+    res_dict.update(hyper_res)
+    return res_dict
 
 
 def print_fit_2d_terminal_report(res, filename, is_cal, verbosity="compact"):
@@ -763,7 +965,14 @@ def print_fit_2d_terminal_report(res, filename, is_cal, verbosity="compact"):
 
     bar = "═" * 80
     subbar = "─" * 80
-    model_name = "Gaussian with Left Tail (HPGe)" if res.get("fit_type") == "gaussian_tail" else "Standard Symmetric Gaussian"
+    ft = res.get("fit_type")
+    if ft == "hypermet":
+        model_name = "Hypermet Model (Convolved Tail + Erfc Step Profile)"
+    elif ft == "gaussian_tail":
+        model_name = "Gaussian with Left Tail (RadWare / HPGe)"
+    else:
+        model_name = "Standard Symmetric Gaussian"
+
     print(f"\n{bar}")
     print(f"⚛ GASPware 2D Coincidence Peak Fit - {filename} ({model_name})")
     print(f"   [Self-Consistent 4-Component BG Decomposition: Gamba et al., NIM A 928 (2019) 93]")
@@ -779,7 +988,9 @@ def print_fit_2d_terminal_report(res, filename, is_cal, verbosity="compact"):
     print(f"  Fitted Net Volume   : {res['volume']:10.1f} ± {res['volume_err']:<6.1f} counts  (Integrated 2D Peak)")
     print(f"  Gamba Gate Net (p|p): {res['gamba_net']:10.1f} ± {res['gamba_net_err']:<6.1f} counts  [Π Ratio: {res['pi_ratio_percent']:.1f}%]")
     print(f"  Peak Amplitude (H)  : {res['amplitude']:10.1f} ± {res['amplitude_err']:<6.1f} counts")
-    if res.get("alpha_x") is not None:
+    if res.get("eta_tx") is not None:
+        print(f"  Hypermet Tails (η)  : η_X = {res['eta_tx']:.3f} (β_X = {res['beta_x']:.2f}) | η_Y = {res['eta_ty']:.3f} (β_Y = {res['beta_y']:.2f})")
+    elif res.get("alpha_x") is not None:
         ax_str = f"{res['alpha_x']:.3f}" + (f" ± {res['alpha_x_err']:.3f}" if res.get('alpha_x_err') else "")
         ay_str = f"{res['alpha_y']:.3f}" + (f" ± {res['alpha_y_err']:.3f}" if res.get('alpha_y_err') else "")
         print(f"  Left Tail Joins (α) : α_X = {ax_str} | α_Y = {ay_str}")
@@ -1514,7 +1725,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <label>1D Peak Function</label>
       <select id="fitTypeSelect1D">
         <option value="gaussian" selected>Gaussian (Symmetric)</option>
-        <option value="gaussian_tail">Gaussian + Left Tail (HPGe)</option>
+        <option value="gaussian_tail">Gaussian + Left Tail (RadWare)</option>
+        <option value="hypermet">Hypermet (Convolved Tail + Step)</option>
       </select>
 
       <label style="margin-top: 6px;">1D Fit Region <span class="range-val" id="fwhmMultLabel1D">4.0× FWHM</span></label>
@@ -1530,7 +1742,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       <label>2D Peak Function</label>
       <select id="fitTypeSelect2D">
         <option value="gaussian" selected>Gaussian (Symmetric)</option>
-        <option value="gaussian_tail">Gaussian + Left Tail (HPGe)</option>
+        <option value="gaussian_tail">Gaussian + Left Tail (RadWare)</option>
+        <option value="hypermet">Hypermet (Convolved Tail + Step)</option>
       </select>
 
       <label style="margin-top: 6px;">2D ROI Half-Width <span class="range-val" id="roiWidthLabel2D">±16 ch</span></label>
@@ -1640,6 +1853,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <div class="fit-item"><span class="lbl">FWHM:</span><span class="val" id="fitFWHM1D">-</span></div>
           <div class="fit-item"><span class="lbl">Amplitude:</span><span class="val" id="fitAmp1D">-</span></div>
           <div class="fit-item" id="fitTailItem1D"><span class="lbl">Left Tail (α):</span><span class="val" id="fitTail1D">-</span></div>
+          <div class="fit-item" id="fitHypermetItem1D" style="display: none;"><span class="lbl">Hypermet (fT/β):</span><span class="val" id="fitHypermet1D">-</span></div>
           <div class="fit-item"><span class="lbl">Gross / Bg:</span><span class="val" id="fitGrossBg1D">-</span></div>
           <div class="fit-item"><span class="lbl">Reduced χ²:</span><span class="val" id="fitChi21D">-</span></div>
         </div>
@@ -1667,6 +1881,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           <div class="fit-item"><span class="lbl">FWHM (X / Y):</span><span class="val" id="fitFWHM2D">-</span></div>
           <div class="fit-item"><span class="lbl">Amplitude (H):</span><span class="val" id="fitAmp2D">-</span></div>
           <div class="fit-item" id="fitTailItem2D"><span class="lbl">Left Tails (α):</span><span class="val" id="fitTail2D">-</span></div>
+          <div class="fit-item" id="fitHypermetItem2D" style="display: none;"><span class="lbl">Hypermet Tails:</span><span class="val" id="fitHypermet2D">-</span></div>
           <div class="fit-item"><span class="lbl">2D Cont. (bg|bg):</span><span class="val" id="fitContBg2D">-</span></div>
           <div class="fit-item"><span class="lbl">Cross-Ridges:</span><span class="val" id="fitRidges2D">-</span></div>
           <div class="fit-item"><span class="lbl">Gross / Total BG:</span><span class="val" id="fitGrossBg2D">-</span></div>
@@ -2142,7 +2357,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       activeFit2D = data;
 
       const isCal = metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0);
-      const modelTag = (data.fit_type === 'gaussian_tail') ? '2D Peak Fit (Left-Tail HPGe)' : '2D Gaussian Fit (Symmetric)';
+      const modelTag = (data.fit_type === 'hypermet') ? '2D Hypermet Fit (Convolved Tail + Step)' : ((data.fit_type === 'gaussian_tail') ? '2D Peak Fit (Left-Tail RadWare)' : '2D Gaussian Fit (Symmetric)');
       const posTag = isCal
         ? `(${data.centroid_x_e}, ${data.centroid_y_e}) keV`
         : `(${data.centroid_x_ch}, ${data.centroid_y_ch}) ch`;
@@ -2190,6 +2405,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         }
       }
 
+      const hypItem = document.getElementById('fitHypermetItem2D');
+      if (hypItem) {
+        if (data.fit_type === 'hypermet' && data.eta_tx !== undefined && data.eta_ty !== undefined) {
+          hypItem.style.display = 'flex';
+          document.getElementById('fitHypermet2D').innerText = `ηX=${data.eta_tx} (β=${data.beta_x}) | ηY=${data.eta_ty} (β=${data.beta_y})`;
+        } else {
+          hypItem.style.display = 'none';
+        }
+      }
+
       document.getElementById('fitContBg2D').innerText = `${data.cont_counts.toLocaleString()} counts (b0=${data.bg_b0}, bx=${data.bg_bx}, by=${data.bg_by})`;
       document.getElementById('fitRidges2D').innerText = `p|bg (X): ${data.ridge_x} ± ${data.ridge_x_err} (${data.ridge_x_counts} cts) | bg|p (Y): ${data.ridge_y} ± ${data.ridge_y_err} (${data.ridge_y_counts} cts)`;
       document.getElementById('fitGrossBg2D').innerText = `${data.gross_counts.toLocaleString()} gross / ${data.total_bg_counts.toLocaleString()} bg counts`;
@@ -2220,7 +2445,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       activeFit1D[axis] = data;
       const isCal = metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0);
       const detLabel = (axis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
-      const modelTag = (data.fit_type === 'gaussian_tail') ? '1D Peak Fit (Left-Tail)' : '1D Gaussian Fit';
+      const modelTag = (data.fit_type === 'hypermet') ? '1D Hypermet Fit (Convolved Tail + Step)' : ((data.fit_type === 'gaussian_tail') ? '1D Peak Fit (Left-Tail RadWare)' : '1D Gaussian Fit');
       document.getElementById('fitTitle1D').innerText = `⚛ ${modelTag} [${detLabel}]: ${isCal ? data.centroid_e + ' keV' : 'ch ' + data.centroid_ch}`;
 
       // Compact line in format: centroid(err)   area(err)   fwhm(err)
@@ -2247,6 +2472,16 @@ HTML_TEMPLATE = """<!DOCTYPE html>
           document.getElementById('fitTail1D').innerText = `${data.alpha} ± ${data.alpha_err}`;
         } else {
           tailItem.style.display = 'none';
+        }
+      }
+
+      const hypItem = document.getElementById('fitHypermetItem1D');
+      if (hypItem) {
+        if (data.fit_type === 'hypermet' && data.tail_area !== undefined && data.tail_area !== null) {
+          hypItem.style.display = 'flex';
+          document.getElementById('fitHypermet1D').innerText = `fT=${data.tail_area} ± ${data.tail_area_err} (β=${data.tail_slope}, As=${data.step_height})`;
+        } else {
+          hypItem.style.display = 'none';
         }
       }
 

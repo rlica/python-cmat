@@ -17,8 +17,8 @@
   - **Full [GASPware](https://github.com/csteke/GASPware) `cmat` Controls**: Box zoom (`Click+Drag`), marker limits (`Arrow keys`), expand (`E`), and full view (`F`).
   - **Simultaneous Dual 1D Projections**: Stacked top/bottom 1D histograms displaying Det 1 (X projection sliced over visible Y) and Det 2 (Y projection sliced over visible X) simultaneously.
   - **Classic Binned Histograms**: Nuclear physics stepped staircase histograms with dynamic auto-scaling, synchronized real-time cursor highlighting across 2D and 1D views, calibrated energy readouts (keV), and ASCII `.dat` export.
-    - **1D Histogram Peak Fitting (`xtrackn AG`)**: Dedicated 1D nonlinear least-squares peak fitting with linear background subtraction (`Ctrl+Click` or `G` on any 1D projection spectrum). Fits either a standard Gaussian or an HPGe Gaussian with an exponential left tail. Calculates centroid, net area, FWHM, and amplitude with complete statistical covariance error propagation, printed directly to the terminal and rendered with fitted curves on the 1D spectrum canvas.
-    - **True 2D Coincidence Peak Fitting (Gamba & Morhác Background Decomposition)**: Dedicated 2D nonlinear least-squares Levenberg-Marquardt fitting directly on the 2D coincidence matrix (`Ctrl+Click` or `G` on the 2D matrix). Self-consistently decomposes gross counts into true net coincidence volume ($p|p^t$), orthogonal coincidence cross-ridges ($p|bg, bg|p$), and 2D Compton continuum + accidental random coincidences ($bg|bg$). Computes the discrete Gamba net area ($n^t_{p|p}$) and Peak-to-Total-Background ratio ($\Pi$). Displays a dedicated 2D coincidence results card and renders the 2D FWHM ellipse, crosshair, and ROI boundaries on the 2D matrix without interfering with 1D histogram fits.
+    - **1D Histogram Peak Fitting (`xtrackn AG`)**: Dedicated 1D nonlinear least-squares peak fitting with linear background subtraction (`Ctrl+Click` or `G` on any 1D projection spectrum). Supports three scientific models: Standard Symmetric Gaussian, RadWare / SAMPO Piecewise Exponential Left Tail, and Hypermet Convolved Tail + $\text{erfc}$ Compton Step. Calculates centroid, net area, FWHM, and amplitude with complete statistical covariance error propagation, printed directly to the terminal and rendered with fitted curves on the 1D spectrum canvas.
+    - **True 2D Coincidence Peak Fitting (Gamba & Morhác Background Decomposition)**: Dedicated 2D nonlinear least-squares Levenberg-Marquardt fitting directly on the 2D coincidence matrix (`Ctrl+Click` or `G` on the 2D matrix) supporting all three peak profile models. Self-consistently decomposes gross counts into true net coincidence volume ($p|p^t$), orthogonal coincidence cross-ridges ($p|bg, bg|p$), and 2D Compton continuum + accidental random coincidences ($bg|bg$). Computes the discrete Gamba net area ($n^t_{p|p}$) and Peak-to-Total-Background ratio ($\Pi$). Displays a dedicated 2D coincidence results card and renders the 2D FWHM ellipse, crosshair, and ROI boundaries on the 2D matrix without interfering with 1D histogram fits.
 
 ---
 
@@ -53,8 +53,8 @@ python cmat_webviewer.py /path/to/matrix.cmat
 | **2D Wheel Zoom** | `Mouse Wheel` (2D) | Zoom In / Out centered on crosshair in equal small steps |
 | **1D Y-Axis Zoom** | `Mouse Wheel` (1D) | Zoom In / Out on Y axis (fixed Ymin, dynamic Ymax for low/high peaks) |
 | **Reset 1D Y-Scale** | `Double Click` (1D) | Reset 1D histogram Y-axis scale to default auto-scale |
-| **2D Coincidence Peak Fit** | `Ctrl / Cmd + Click` (2D) or `G` | True 2D coincidence peak fit (Gaussian/HPGe) with Gamba & Morhác 4-component BG decomposition |
-| **1D Histogram Peak Fit** | `Ctrl / Cmd + Click` (1D) or `G` | Fit 1D histogram peak (Gaussian or Left-Tailed HPGe) + linear BG on Det 1 or Det 2 |
+| **2D Coincidence Peak Fit** | `Ctrl / Cmd + Click` (2D) or `G` | True 2D coincidence peak fit (Gaussian/RadWare/Hypermet) with Gamba & Morhác 4-component BG decomposition |
+| **1D Histogram Peak Fit** | `Ctrl / Cmd + Click` (1D) or `G` | Fit 1D histogram peak (Gaussian/RadWare/Hypermet) + linear BG on Det 1 or Det 2 |
 | **Clear Peak Fits** | `=` (Equals) or `+` | Clear active peak fit curves and markers from 1D spectra and 2D matrix |
 | **Pan 2D View** | `Shift + Arrow Keys` (`←`, `→`, `↓`, `↑`) | Pan visible 2D matrix view in steps (uses Scroll Sensitivity) |
 | **Set Left Limit (Xmin)** | `Left Arrow (←)` | Set Left limit at cursor |
@@ -130,41 +130,83 @@ Each sub-block is compressed using one of 5 algorithms:
 
 ---
 
-## 📚 Scientific References & Peak Fitting
+## 📚 Scientific References & Peak Fitting Models
 
-The peak fitting algorithms and background models implemented in `python-cmat` follow established physics methodologies in semiconductor $\gamma$-ray spectroscopy:
+The peak fitting algorithms and background decomposition models implemented in `python-cmat` follow established methodologies in semiconductor $\gamma$-ray spectroscopy.
 
-### 1. HPGe Peak Shapes & Left-Hand Exponential Tails
-While symmetric Gaussians model ideal electronic noise and carrier statistics, real High-Purity Germanium (HPGe) and Ge(Li) detector photopeaks exhibit an asymmetric low-energy tailing caused by:
-- **Incomplete charge collection & hole trapping**: Lower hole mobility and radiation-induced defect traps (e.g. from fast neutrons) attenuate the collected charge pulse.
-- **Ballistic deficit**: Charge collection times exceeding the amplifier shaping time.
-- **Small-angle Compton scattering**: Interactions in detector dead layers, cryostat windows, and target chambers.
+### 1. Photopeak Models (1D & 2D)
 
-To model this accurately, the viewer provides an optional Gaussian with an exponential left tail that joins smoothly with continuous amplitude and slope.
+While ideal electronic noise and charge generation statistics yield symmetric Gaussian peaks, real High-Purity Germanium (HPGe) and Ge(Li) detector photopeaks exhibit asymmetric low-energy tailing caused by:
+- **Incomplete charge collection & hole trapping**: Reduced hole drift mobility and radiation-induced crystal defect traps attenuate the induced charge signal.
+- **Ballistic deficit**: Charge collection rise times exceeding the shaping amplifier time constants.
+- **Small-angle Compton scattering**: Photons scattering in detector dead layers, cryostat entrance windows, or target chambers before photoabsorption.
+
+`python-cmat` provides **three selectable peak shape models** for both 1D histogram and 2D coincidence matrix fitting:
+
+#### Option 1: Standard Symmetric Gaussian (`gaussian`)
+A pure Gaussian photopeak sitting on a linear/planar baseline:
+$$G(x) = H \exp\left(-\frac{1}{2}\left(\frac{x-\mu}{\sigma}\right)^2\right)$$
+- **Net Peak Area**: $A_{\text{net}} = \sqrt{2\pi} H \sigma \approx 2.5066 \cdot H \cdot \sigma$
+- **FWHM**: $\text{FWHM} = 2\sqrt{2\ln 2} \sigma \approx 2.35482 \cdot \sigma$
+- Best for well-shaped symmetric scintillation peaks or HPGe peaks with negligible trapping.
+
+#### Option 2: RadWare / SAMPO Piecewise Left Exponential Tail (`gaussian_tail`)
+The classic piecewise formulation used in RadWare (`gf3`), SAMPO, and `xtrackn` (*Helmer & Lee, 1980*; *Radford, 1995*; *Routti & Prussin, 1969*). The exponential tail joins the Gaussian at $z = (x - \mu)/\sigma = -\alpha$ with continuous amplitude and continuous first derivative:
+$$P(x) = \begin{cases} H \exp\left(-\frac{1}{2} z^2\right), & z \ge -\alpha \\ H \exp\left(\frac{1}{2}\alpha^2 + \alpha z\right), & z < -\alpha \end{cases}$$
+- **Net Peak Area**:
+  $$A_{\text{net}} = H \sigma \left[ \sqrt{\frac{\pi}{2}}\left(1 + \text{erf}\left(\frac{\alpha}{\sqrt{2}}\right)\right) + \frac{1}{\alpha}\exp\left(-\frac{1}{2}\alpha^2\right) \right]$$
+- $\alpha$ is the join parameter (in units of $\sigma$ below the centroid $\mu$).
+
+#### Option 3: Hypermet Model (`hypermet`)
+The analytical formulation combining a symmetric Gaussian $G(x)$, an analytical Exponentially Modified Gaussian (EMG) convolved tail $T(x)$, and an error-function Compton step $S(x)$ (*Phillips & Marlow, 1976*; *Campbell & Maxwell, 1993*):
+$$P(x) = G(x) + T(x) + S(x)$$
+where:
+$$G(x) = H \exp\left(-\frac{1}{2}\left(\frac{x-\mu}{\sigma}\right)^2\right)$$
+$$T(x) = \frac{f_T}{2\beta} \exp\left[\frac{x-\mu}{\beta} + \frac{\sigma^2}{2\beta^2}\right] \text{erfc}\left[\frac{x-\mu}{\sqrt{2}\sigma} + \frac{\sigma}{\sqrt{2}\beta}\right]$$
+$$S(x) = \frac{A_S}{2} \text{erfc}\left[\frac{x-\mu}{\sqrt{2}\sigma}\right]$$
+- **Parameters**:
+  - $H$: Gaussian peak amplitude.
+  - $\mu, \sigma$: Centroid and Gaussian dispersion width.
+  - $f_T$: Integrated area of the convolved exponential tail.
+  - $\beta$: Exponential decay slope length ($\text{ch}$).
+  - $A_S$: Amplitude of the Compton step function.
+- **Total Net Peak Area**: $A_{\text{net}} = \sqrt{2\pi} H \sigma + f_T$
+- In 2D coincidence matrices, the true coincidence peak is modeled as the 2D tensor product $H \cdot P_X(x) \cdot P_Y(y)$ with total net volume $V_{\text{fit}} = H (\sqrt{2\pi}\sigma_x + \eta_{Tx})(\sqrt{2\pi}\sigma_y + \eta_{Ty})$.
+
+---
 
 ### 2. Self-Consistent 2D $\gamma$-$\gamma$ Coincidence Background Decomposition (Gamba & Morhác)
+
 In 2D $\gamma$-$\gamma$ coincidence spectroscopy, counts in the vicinity of a coincidence peak $(E_d, E_f)$ are composed of four distinct topological components (*Gamba et al., NIM A 928 (2019) 93–103*; *Morhác et al., NIM A 401 (1997) 113*):
-- **$p|p^t$ (True Net Coincidence Peak)**: Genuine correlated full-energy cascade events ($E_d \otimes E_f$), modeled as a 2D Gaussian $H \cdot G_x(x) \cdot G_y(y)$ (or HPGe left-tailed Gaussian).
-- **$p|bg$ (Det 1 Peak with Det 2 Continuum / Random Ridge)**: Full energy in Det 1 ($E_d$) and Compton continuum (or randoms) in Det 2 $\rightarrow$ forms a vertical cross-ridge $R_x \cdot G_x(x)$.
-- **$bg|p$ (Det 2 Peak with Det 1 Continuum / Random Ridge)**: Full energy in Det 2 ($E_f$) and Compton continuum (or randoms) in Det 1 $\rightarrow$ forms a horizontal cross-ridge $R_y \cdot G_y(y)$.
+- **$p|p^t$ (True Net Coincidence Peak)**: Genuine correlated full-energy cascade events ($E_d \otimes E_f$), modeled as a 2D peak profile $H \cdot P_X(x) \cdot P_Y(y)$.
+- **$p|bg$ (Det 1 Peak with Det 2 Continuum / Random Ridge)**: Full energy in Det 1 ($E_d$) and Compton continuum (or randoms) in Det 2 $\rightarrow$ forms a vertical cross-ridge $R_x \cdot P_X(x)$.
+- **$bg|p$ (Det 2 Peak with Det 1 Continuum / Random Ridge)**: Full energy in Det 2 ($E_f$) and Compton continuum (or randoms) in Det 1 $\rightarrow$ forms a horizontal cross-ridge $R_y \cdot P_Y(y)$.
 - **$bg|bg$ (2D Compton Continuum & Accidental Coincidences)**: Compton continuum and time-uncorrelated random coincidences in both detectors $\rightarrow$ modeled as a 2D planar baseline $b_0 + b_x(x - x_c) + b_y(y - y_c)$.
 
-Because accidental (random) coincidences naturally distribute into the exact same topological structures (FEP–Random into ridges, Compton–Random into continuum, Random–Random into the local plane), **no arbitrary user-tuned random fraction is required**. The 2D fitting engine extracts all parameters ($b_0, b_x, b_y, R_x, R_y, H, \mu_x, \mu_y, \sigma_x, \sigma_y$) simultaneously via Levenberg-Marquardt with Poisson statistical weights, while also calculating the discrete Gamba net area:
+Because accidental (random) coincidences naturally distribute into the exact same topological structures (FEP–Random into ridges, Compton–Random into continuum, Random–Random into the local plane), **no arbitrary user-tuned random fraction is required**. The 2D fitting engine extracts all parameters simultaneously via Levenberg-Marquardt with Poisson statistical weights, while also calculating the discrete Gamba net area:
 $$n^t_{p|p} = n^m_{p|p} - n^m_{p|bg} - n^m_{bg|p} + n^m_{bg|bg}$$
 and the Peak-to-Total-Background ratio $\Pi = n^t_{p|p} / n^m_{p|p}$.
 
+---
+
 ### 3. Key References
-1. **Gamba, E. R., Bruce, A. M., & Rudigier, M.** (2019). *"Treatment of background in $\gamma$-$\gamma$ fast-timing measurements"*. *Nuclear Instruments and Methods in Physics Research Section A*, 928, 93–103. [link](https://doi.org/10.1016/j.nima.2019.03.028).
+
+1. **Phillips, G. W., & Marlow, K. W.** (1976). *"Automatic analysis of gamma-ray spectra from germanium detectors"*. *Nuclear Instruments and Methods*, 137(3), 525–536. [link](https://doi.org/10.1016/0029-554X(76)90472-X).
+   *(Original formulation of the Hypermet peak shape: Gaussian + convolved exponential tail + erfc step function).*
+2. **Campbell, J. L., & Maxwell, J. A.** (1993). *"Analytical representation of Si(Li) and HPGe detector response functions"*. *Nuclear Instruments and Methods in Physics Research Section B*, 73(4), 545–551. [link](https://doi.org/10.1016/0168-583X(93)95837-K).
+   *(Comprehensive evaluation of analytical detector response functions and physical origin of peak tailing components).*
+3. **Gamba, E. R., Bruce, A. M., & Rudigier, M.** (2019). *"Treatment of background in $\gamma$-$\gamma$ fast-timing measurements"*. *Nuclear Instruments and Methods in Physics Research Section A*, 928, 93–103. [link](https://doi.org/10.1016/j.nima.2019.03.028).
    *(Mathematical formulation of the 4-component coincidence background decomposition, ridge extraction, and Peak-to-Total-Background ratio $\Pi$).*
-2. **Morhác, M., Kliman, J., Jandel, M., Krupa, L., & Matoušek, V.** (1997). *"Study of background and peak decomposition in multidimensional coincidence $\gamma$-ray spectra"*. *Nuclear Instruments and Methods in Physics Research Section A*, 401(1), 113–131. [link](https://doi.org/10.1016/S0168-9002(97)01023-1).
+4. **Morhác, M., Kliman, J., Jandel, M., Krupa, L., & Matoušek, V.** (1997). *"Study of background and peak decomposition in multidimensional coincidence $\gamma$-ray spectra"*. *Nuclear Instruments and Methods in Physics Research Section A*, 401(1), 113–131. [link](https://doi.org/10.1016/S0168-9002(97)01023-1).
    *(Foundational 2D coincidence background estimation and non-linear peak decomposition algorithms).*
-3. **Radford, D. C.** (1995). *"ESCL8R and LEVIT8R: Software for interactive analysis of HPGe coincidence data sets"*. *Nuclear Instruments and Methods in Physics Research Section A*, 361(1-2), 297–305. [link](https://www.sciencedirect.com/science/article/abs/pii/0168900295001832).
+5. **Radford, D. C.** (1995). *"ESCL8R and LEVIT8R: Software for interactive analysis of HPGe coincidence data sets"*. *Nuclear Instruments and Methods in Physics Research Section A*, 361(1-2), 297–305. [link](https://www.sciencedirect.com/science/article/abs/pii/0168900295001832).
    *(Foundational reference for the RadWare analysis package and the `gf3` peak fitting algorithms used throughout modern nuclear structure coincidence analysis).*
-4. **Knoll, G. F.** (2010). *"Radiation Detection and Measurement"*, 4th Edition, John Wiley & Sons, New York. ISBN: 978-0-470-13148-0.
-   *(Chapters 12 & 18: Germanium gamma-ray detectors, pulse height defect, hole trapping, and peak shape asymmetry).*
-5. **Routti, J. T., & Prussin, S. G.** (1969). *"Photopeak method for the computer analysis of gamma-ray spectra from semiconductor detectors"*. *Nuclear Instruments and Methods*, 72(2), 125–142. [link](https://doi.org/10.1016/0029-554X(69)90148-7).
-   *(Original formulation of the Gaussian peak with continuous exponential tails in the SAMPO program).*
 6. **Helmer, R. G., & Lee, M. A.** (1980). *"Analytical functions for fitting peaks from Ge semiconductor detectors"*. *Nuclear Instruments and Methods*, 178(2-3), 499–512. [link](https://www.sciencedirect.com/science/article/abs/pii/0029554X80908307).
+   *(Systematic comparison of analytical peak fitting formulations for germanium semiconductor detectors).*
+7. **Routti, J. T., & Prussin, S. G.** (1969). *"Photopeak method for the computer analysis of gamma-ray spectra from semiconductor detectors"*. *Nuclear Instruments and Methods*, 72(2), 125–142. [link](https://doi.org/10.1016/0029-554X(69)90148-7).
+   *(Original formulation of the Gaussian peak with continuous exponential tails in the SAMPO program).*
+8. **Knoll, G. F.** (2010). *"Radiation Detection and Measurement"*, 4th Edition, John Wiley & Sons, New York. ISBN: 978-0-470-13148-0.
+   *(Chapters 12 & 18: Germanium gamma-ray detectors, pulse height defect, hole trapping, and peak shape asymmetry).*
 
 ---
 
