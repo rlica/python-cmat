@@ -85,6 +85,7 @@ python cmat_webviewer.py /path/to/matrix.cmat
 | **1D Peak / Multiplet Fit** | `Ctrl / Cmd + Click` (1D) or `G` | Fit 1D peak or multiplet (fits all clustered `J` markers together as a multiplet with full covariance) |
 | **Automatic 1D Peak Search** | `P` or `p` | Automatically find peaks in focused 1D spectrum (Prominence / CWT / Mariscotti methods) |
 | **Add / Remove Manual Peak Marker** | `J` or `j` | Add manual peak marker at cursor (or remove if hovering existing marker); setup multiplets for `G` or `H` |
+| **Set Fit Region Limits** | `R` or `r` (1D) | Set Left / Right fit region limits for 'G' with straight-line background (1-FWHM wings) |
 | **Fit All Displayed Peaks** | `H` or `h` | Fit all visible candidate peaks on Peak-Aware Continuum Background (averages low-statistics noise grass, connects smoothly under multiplets) |
 | **Clear Peak Fits & Markers** | `=` (Equals) or `+` | Clear active peak fit curves and found peak markers from 1D spectra and 2D matrix |
 | **Set Peak Gate Limits** | `W` or `w` (1D) | Set Left / Right peak coincidence gate limits ($W_k$) on 1D spectrum |
@@ -373,6 +374,14 @@ Following automatic peak identification (`P`), pressing **`H`** (or clicking `Fi
   - **Toggle Removal**: Pressing `J` while hovering over an existing marker within 1.2 channels deletes the marker, allowing instant pruning.
   - **Visual Distinction**: Manual markers are rendered with a distinct cyan caret (`#00e5ff`) and cyan text label (`#80d8ff`), smoothly turning into green (`#00e676`) once fitted.
   - **Coupled Multiplet Deconvolution (`G`)**: When two or more markers (manual, automatic, or mixed) form a multiplet cluster, pressing **`G`** (or `Ctrl/Cmd + Click`) anywhere across the cluster automatically performs a simultaneous multi-peak fit across all components in the cluster. It estimates the continuum baseline, deconvolves overlapping components, propagates the full parameter covariance matrix, updates the markers with fitted net areas, and displays the multi-fit results card. Isolated markers continue to execute the standard single-peak fit.
+- **Region-Constrained Fitting with Straight-Line Background (`R`)**:
+  To achieve optimal background determination when fitting multiplets or complex photopeak structures, users can explicitly define the region of interest using hotkey **`R`**:
+  - **Region Definition (`R`)**: Pressing `R` once places Limit 1 ($R_{\text{left}}$); moving the cursor and pressing `R` again sets Limit 2 ($R_{\text{right}}$).
+  - **Averaging Wings Background Determination**: Outside the region bounded by `R`, the continuum level is calculated by averaging an interval of width equal to 1 FWHM immediately adjacent on either side:
+    $$\bar{y}_{\text{left}} = \frac{1}{w} \sum_{c = R_{\text{left}} - w}^{R_{\text{left}} - 1} y[c], \quad \bar{y}_{\text{right}} = \frac{1}{w} \sum_{c = R_{\text{right}} + 1}^{R_{\text{right}} + w} y[c] \quad (w = \text{round}(\text{FWHM}))$$
+  - **Straight-Line Continuum**: A straight line connects $\bar{y}_{\text{left}}$ and $\bar{y}_{\text{right}}$ across the entire region without bowing or noise-clipping bias.
+  - **Multiplet Fitting on 'G'**: Pressing **`G`** within the active region simultaneously fits all peaks in the region on top of this straight-line background, reporting parameter covariances and updating the multi-fit results card.
+  - **Visual Overlays & Previews**: Rendered with soft purple shaded envelopes, boundary badges (`R_L`, `R_R`), a dashed amber background preview line, and interactive 1D header buttons for immediate clearing.
 - **Visual Display & Vector PDF Export**:
   The continuum baseline is rendered in dashed amber (`#ffa726`), the composite multi-peak model is drawn in vibrant neon green (`#00e676`), and fitted peak markers switch to green with updated net areas. Exporting to PDF (`Print PDF`) incorporates both the continuous baseline and composite multi-peak curves into publication-quality vector plots.
 

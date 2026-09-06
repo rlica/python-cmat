@@ -2010,36 +2010,98 @@ def fit_all_peaks_1d(
     cal: list = [0.0, 1.0, 0.0],
     fwhm_mult: float = 4.0,
     bg_method: str = "peak_aware",
-    snip_iter: int = None
+    snip_iter: int = None,
+    region: list = None
 ) -> dict:
     """
     Fits all candidate peaks in the visible display window [ch_min, ch_max] by distinguishing
     between pure continuum regions (where peak search 'P' confirmed no peaks exist) and photopeaks.
 
-    In pure background channels, the baseline fits the central expected value (average) of the noise
-    grass using rolling smoothing, completely eliminating the underside under-fit. Underneath candidate
-    peaks, the baseline connects smoothly between the continuum levels on either side of the cluster.
+    If an explicit fit region is specified via `region=[r_left, r_right]`, the baseline is strictly
+    computed as a straight line by averaging a 1-FWHM window on the left and right outside the region:
+      - Left Background: average over [r_left - FWHM, r_left - 1]
+      - Right Background: average over [r_right + 1, r_right + FWHM]
+      - Baseline: exact linear connecting line across the region and background wings.
+    All peaks inside the region are fitted simultaneously as a coupled multiplet on this straight line.
     """
     ch_min = max(0, int(ch_min))
     ch_max = min(len(spectrum) - 1, int(ch_max))
-    x_total = np.arange(ch_min, ch_max + 1, dtype=np.int64)
-    y_total = np.asarray(spectrum[ch_min:ch_max + 1], dtype=np.float64)
-    n_ch = len(x_total)
-
-    if n_ch < 5:
-        return {"success": False, "error": "Display range too small for peak fitting (< 5 channels)."}
-
-    if peak_channels is None:
-        peak_channels = []
-    valid_peaks = sorted([float(c) for c in peak_channels if ch_min <= c <= ch_max])
-    if not valid_peaks:
-        # Fallback to auto-detecting peaks in window if none passed
-        search_res = find_peaks_1d(spectrum, ch_min=ch_min, ch_max=ch_max, min_snr=5.0, fwhm_est=fwhm_est, cal=cal)
-        valid_peaks = sorted([p["channel"] for p in search_res.get("peaks", []) if ch_min <= p["channel"] <= ch_max])
-        if not valid_peaks:
-            return {"success": False, "error": f"No candidate peaks found within display range [{ch_min}..{ch_max}]."}
-
     fwhm_clean = max(1.5, float(fwhm_est))
+    region_info = None
+
+    if region is not None and len(region) >= 2:
+        r_left = min(float(region[0]), float(region[1]))
+        r_right = max(float(region[0]), float(region[1]))
+        w_bg = max(1, int(round(fwhm_clean)))
+
+        # Left background: 1 FWHM immediately left outside the region
+        c_L0 = max(0, int(np.floor(r_left)) - w_bg)
+        c_L1 = max(0, int(np.floor(r_left)) - 1)
+        if c_L1 < c_L0:
+            c_L1 = c_L0
+        y_L_avg = float(np.mean(spectrum[c_L0:c_L1 + 1]))
+        x_L_center = (c_L0 + c_L1) / 2.0 + 0.5
+
+        # Right background: 1 FWHM immediately right outside the region
+        c_R0 = min(len(spectrum) - 1, int(np.ceil(r_right)) + 1)
+        c_R1 = min(len(spectrum) - 1, int(np.ceil(r_right)) + w_bg)
+        if c_R1 < c_R0:
+            c_R1 = c_R0
+        y_R_avg = float(np.mean(spectrum[c_R0:c_R1 + 1]))
+        x_R_center = (c_R0 + c_R1) / 2.0 + 0.5
+
+        dx = max(1e-6, x_R_center - x_L_center)
+        slope = (y_R_avg - y_L_avg) / dx
+        intercept = y_L_avg - slope * x_L_center
+
+        ch_min = c_L0
+        ch_max = c_R1
+        x_total = np.arange(ch_min, ch_max + 1, dtype=np.int64)
+        y_total = np.asarray(spectrum[ch_min:ch_max + 1], dtype=np.float64)
+        n_ch = len(x_total)
+
+        x_ch_arr = np.arange(ch_min, ch_max + 1, dtype=np.float64) + 0.5
+        bg_baseline = slope * x_ch_arr + intercept
+        used_bg_method = "linear_region_average"
+        region_info = {
+            "r_left": r_left,
+            "r_right": r_right,
+            "left_avg": round(y_L_avg, 2),
+            "right_avg": round(y_R_avg, 2),
+            "slope": round(slope, 4),
+            "c_L0": c_L0,
+            "c_L1": c_L1,
+            "c_R0": c_R0,
+            "c_R1": c_R1
+        }
+
+        # Filter candidate peaks: only peaks within [r_left - 1.0, r_right + 1.0]
+        reg_peaks = [float(c) for c in (peak_channels or []) if (r_left - 1.0) <= c <= (r_right + 1.0)]
+        if not reg_peaks:
+            sub_s = spectrum[int(np.floor(r_left)):int(np.ceil(r_right)) + 1]
+            if len(sub_s) > 0:
+                apex = int(np.floor(r_left)) + int(np.argmax(sub_s))
+                reg_peaks = [float(apex)]
+            else:
+                reg_peaks = [(r_left + r_right) / 2.0]
+        valid_peaks = sorted(reg_peaks)
+    else:
+        x_total = np.arange(ch_min, ch_max + 1, dtype=np.int64)
+        y_total = np.asarray(spectrum[ch_min:ch_max + 1], dtype=np.float64)
+        n_ch = len(x_total)
+
+        if n_ch < 5:
+            return {"success": False, "error": "Display range too small for peak fitting (< 5 channels)."}
+
+        if peak_channels is None:
+            peak_channels = []
+        valid_peaks = sorted([float(c) for c in peak_channels if ch_min <= c <= ch_max])
+        if not valid_peaks:
+            # Fallback to auto-detecting peaks in window if none passed
+            search_res = find_peaks_1d(spectrum, ch_min=ch_min, ch_max=ch_max, min_snr=5.0, fwhm_est=fwhm_est, cal=cal)
+            valid_peaks = sorted([p["channel"] for p in search_res.get("peaks", []) if ch_min <= p["channel"] <= ch_max])
+            if not valid_peaks:
+                return {"success": False, "error": f"No candidate peaks found within display range [{ch_min}..{ch_max}]."}
 
     # Clean candidate peaks: suppress duplicate candidates closer than 0.8 * FWHM without >= 10% dip
     # When explicit peaks were supplied (e.g. user set up peaks with 'J' to fit a multiplet with 'G'),
@@ -2064,25 +2126,29 @@ def fit_all_peaks_1d(
                         continue
             clean_peaks.append(p)
 
-    # Cluster peaks: peaks within threshold are grouped into the same multiplet
-    # When explicit multiplet peaks (<= 6 peaks) are passed to be fitted together,
-    # expand grouping threshold to 4.5 * FWHM to ensure all components fit as one cluster.
-    clusters = []
-    c_threshold = (4.5 * fwhm_clean) if (is_explicit_peaks and len(clean_peaks) <= 6) else (3.2 * fwhm_clean)
-    for p in clean_peaks:
-        if not clusters or p - clusters[-1][-1] > c_threshold:
-            clusters.append([p])
-        else:
-            clusters[-1].append(p)
-
-    # 1. Compute baseline across the display range
-    if bg_method == "snip":
-        m_iter = max(3, int(round(1.4 * fwhm_clean))) if snip_iter is None else int(snip_iter)
-        bg_baseline = compute_snip_background(spectrum, ch_min=ch_min, ch_max=ch_max, fwhm_est=fwhm_clean, iterations=m_iter)
-        used_bg_method = "snip"
+    if region_info is not None:
+        clusters = [ clean_peaks ]
     else:
-        bg_baseline = compute_peak_aware_background(spectrum, ch_min=ch_min, ch_max=ch_max, peak_channels=clean_peaks, fwhm_est=fwhm_clean)
-        used_bg_method = "peak_aware_average"
+        # Cluster peaks: peaks within threshold are grouped into the same multiplet
+        # When explicit multiplet peaks (<= 6 peaks) are passed to be fitted together,
+        # expand grouping threshold to 4.5 * FWHM to ensure all components fit as one cluster.
+        clusters = []
+        c_threshold = (4.5 * fwhm_clean) if (is_explicit_peaks and len(clean_peaks) <= 6) else (3.2 * fwhm_clean)
+        for p in clean_peaks:
+            if not clusters or p - clusters[-1][-1] > c_threshold:
+                clusters.append([p])
+            else:
+                clusters[-1].append(p)
+
+    # 1. Compute baseline across the display range (if not already computed via region)
+    if region_info is None:
+        if bg_method == "snip":
+            m_iter = max(3, int(round(1.4 * fwhm_clean))) if snip_iter is None else int(snip_iter)
+            bg_baseline = compute_snip_background(spectrum, ch_min=ch_min, ch_max=ch_max, fwhm_est=fwhm_clean, iterations=m_iter)
+            used_bg_method = "snip"
+        else:
+            bg_baseline = compute_peak_aware_background(spectrum, ch_min=ch_min, ch_max=ch_max, peak_channels=clean_peaks, fwhm_est=fwhm_clean)
+            used_bg_method = "peak_aware_average"
 
     x_spec = np.arange(len(spectrum), dtype=np.float64) + 0.5
     y_spec = np.asarray(spectrum, dtype=np.float64)
@@ -2101,8 +2167,12 @@ def fit_all_peaks_1d(
 
     for cluster in clusters:
         k = len(cluster)
-        i_min = max(ch_min, int(np.floor(min(cluster) - half_w)))
-        i_max = min(ch_max, int(np.ceil(max(cluster) + half_w)))
+        if region_info is not None:
+            i_min = ch_min
+            i_max = ch_max
+        else:
+            i_min = max(ch_min, int(np.floor(min(cluster) - half_w)))
+            i_max = min(ch_max, int(np.ceil(max(cluster) + half_w)))
 
         roi_x = x_spec[i_min:i_max + 1]
         roi_y = y_spec[i_min:i_max + 1]
@@ -2159,7 +2229,8 @@ def fit_all_peaks_1d(
                     v = np.clip(dx / (math.sqrt(2.0) * sig) + sig / (math.sqrt(2.0) * beta), -20.0, 20.0)
                     t = (fT / (2.0 * beta)) * np.exp(u) * _vec_erfc(v)
                     s = 0.5 * AS * _vec_erfc(np.clip(z / math.sqrt(2.0), -20.0, 20.0))
-                    tot += (g + t + s)
+                    s_loc = np.where((roi_x >= i_min) & (roi_x <= mu + 4.0 * sig), s, 0.0)
+                    tot += (g + t + s_loc)
                 elif is_tail:
                     H = max(0.0, p[base])
                     mu = p[base + 1]
@@ -2170,12 +2241,15 @@ def fit_all_peaks_1d(
                     is_g = (z >= -alpha)
                     g_val = H * np.exp(-0.5 * z**2)
                     t_val = H * np.exp(np.clip(0.5 * alpha**2 + alpha * z, -50.0, 50.0))
-                    tot += np.where(is_g, g_val, t_val)
+                    tail_win = (roi_x >= mu - 15.0 * sig) & (roi_x <= mu + 6.0 * sig)
+                    pk_val = np.where(is_g, g_val, t_val)
+                    tot += np.where(tail_win, pk_val, 0.0)
                 else:
                     H = max(0.0, p[base])
                     mu = p[base + 1]
                     sig = max(0.2, abs(p[base + 2]))
-                    tot += H * np.exp(-0.5 * ((roi_x - mu) / sig)**2)
+                    dx = roi_x - mu
+                    tot += H * np.exp(np.clip(-0.5 * (dx / sig)**2, -50.0, 0.0))
             return tot
 
         for it in range(80):
@@ -2219,91 +2293,91 @@ def fit_all_peaks_1d(
                 lam = min(1e4, lam * 3.0)
 
         fit_cluster = model(p_curr)
-        dof = max(1, N - len(p_curr))
-        chi2_c = float(np.sum(((fit_cluster - roi_y) * weights)**2) / dof)
+        res_cluster = (fit_cluster - roi_y) * weights
+        chi2_c = float(np.sum(res_cluster**2))
 
+        # Parameter Covariance Matrix
+        J = np.zeros((N, len(p_curr)), dtype=np.float64)
+        for idx_p in range(len(p_curr)):
+            dp = max(1e-5, abs(p_curr[idx_p]) * 1e-4)
+            p_up = p_curr.copy()
+            p_up[idx_p] += dp
+            J[:, idx_p] = (model(p_up) - fit_cluster) / dp * weights
+
+        JTJ = J.T @ J
+        ndf_c = max(1, N - len(p_curr))
+        s2_c = chi2_c / ndf_c
         try:
-            cov = np.linalg.pinv(JTJ) * chi2_c
-        except Exception:
-            cov = None
+            cov_c = np.linalg.inv(JTJ) * s2_c
+        except np.linalg.LinAlgError:
+            cov_c = np.linalg.pinv(JTJ) * s2_c
 
         c_peaks = []
         for j in range(k):
             base = n_per_peak * j
-            H_f = float(p_curr[base])
-            mu_f = float(p_curr[base + 1])
-            sig_f = float(p_curr[base + 2])
-            fwhm_ch = sig_f * 2.35482
+            H_fit = float(p_curr[base])
+            mu_fit = float(p_curr[base + 1])
+            sig_fit = float(abs(p_curr[base + 2]))
+
+            var_H = max(0.0, float(cov_c[base, base]))
+            var_mu = max(0.0, float(cov_c[base + 1, base + 1]))
+            var_sig = max(0.0, float(cov_c[base + 2, base + 2]))
+            cov_H_sig = float(cov_c[base, base + 2])
+
+            H_err = math.sqrt(var_H)
+            mu_err = math.sqrt(var_mu)
+            sig_err = math.sqrt(var_sig)
+
+            fwhm_fit = sig_fit * 2.354820045
+            fwhm_err = sig_err * 2.354820045
 
             if is_hypermet:
-                fT_f = float(p_curr[base + 3])
-                area = math.sqrt(2.0 * math.pi) * H_f * sig_f + fT_f
+                fT_fit = float(p_curr[base + 3])
+                AS_fit = float(p_curr[base + 5])
+                net_area = H_fit * sig_fit * math.sqrt(2.0 * math.pi) + fT_fit + AS_fit * (sig_fit * math.sqrt(2.0 * math.pi))
+                area_err = math.sqrt(max(1.0, 2.0 * math.pi * (sig_fit**2 * var_H + H_fit**2 * var_sig + 2.0 * H_fit * sig_fit * cov_H_sig)))
             elif is_tail:
-                alpha_f = float(p_curr[base + 3])
-                fac = math.sqrt(math.pi / 2.0) * (1.0 + math.erf(alpha_f / math.sqrt(2.0))) + (1.0 / alpha_f) * math.exp(-0.5 * alpha_f**2)
-                area = H_f * sig_f * fac
+                alpha_fit = float(p_curr[base + 3])
+                A_tail = (1.0 / alpha_fit) * math.exp(0.5 * alpha_fit**2) * _vec_erfc(alpha_fit / math.sqrt(2.0))
+                factor = math.sqrt(2.0 * math.pi) * (1.0 - 0.5 * _vec_erfc(alpha_fit / math.sqrt(2.0))) + A_tail
+                net_area = H_fit * sig_fit * factor
+                area_err = math.sqrt(max(1.0, factor**2 * (sig_fit**2 * var_H + H_fit**2 * var_sig + 2.0 * H_fit * sig_fit * cov_H_sig)))
             else:
-                area = math.sqrt(2.0 * math.pi) * H_f * sig_f
+                net_area = H_fit * sig_fit * math.sqrt(2.0 * math.pi)
+                var_area = 2.0 * math.pi * (sig_fit**2 * var_H + H_fit**2 * var_sig + 2.0 * H_fit * sig_fit * cov_H_sig)
+                area_err = math.sqrt(max(1.0, var_area))
 
-            if cov is not None:
-                dH = math.sqrt(max(0.0, cov[base, base]))
-                dmu = math.sqrt(max(0.0, cov[base + 1, base + 1]))
-                dsig = math.sqrt(max(0.0, cov[base + 2, base + 2]))
-                dfwhm_ch = 2.35482 * dsig
+            # Centroid and FWHM in energy
+            e_c = ch_to_e(mu_fit)
+            disp_c = de_dch(mu_fit)
+            e_err = mu_err * disp_c
+            fwhm_e = fwhm_fit * disp_c
+            fwhm_e_err = fwhm_err * disp_c
 
-                if is_hypermet:
-                    dA_dH = math.sqrt(2.0 * math.pi) * sig_f
-                    dA_dsig = math.sqrt(2.0 * math.pi) * H_f
-                    dA_dfT = 1.0
-                    idx_sub = [base, base + 2, base + 3]
-                    cov_sub = cov[np.ix_(idx_sub, idx_sub)]
-                    g_vec = np.array([dA_dH, dA_dsig, dA_dfT], dtype=np.float64)
-                    darea = math.sqrt(max(1.0, float(g_vec @ cov_sub @ g_vec)))
-                elif is_tail:
-                    term1 = math.sqrt(math.pi / 2.0) * (1.0 + math.erf(alpha_f / math.sqrt(2.0)))
-                    term2 = math.exp(-0.5 * alpha_f**2) / alpha_f
-                    dA_dH = sig_f * (term1 + term2)
-                    dA_dsig = H_f * (term1 + term2)
-                    dA_dalpha = H_f * sig_f * (math.exp(-0.5 * alpha_f**2) - (1.0 + alpha_f**2) * math.exp(-0.5 * alpha_f**2) / (alpha_f**2))
-                    idx_sub = [base, base + 2, base + 3]
-                    cov_sub = cov[np.ix_(idx_sub, idx_sub)]
-                    g_vec = np.array([dA_dH, dA_dsig, dA_dalpha], dtype=np.float64)
-                    darea = math.sqrt(max(1.0, float(g_vec @ cov_sub @ g_vec)))
-                else:
-                    dA_dH = math.sqrt(2.0 * math.pi) * sig_f
-                    dA_dsig = math.sqrt(2.0 * math.pi) * H_f
-                    idx_sub = [base, base + 2]
-                    cov_sub = cov[np.ix_(idx_sub, idx_sub)]
-                    g_vec = np.array([dA_dH, dA_dsig], dtype=np.float64)
-                    darea = math.sqrt(max(1.0, float(g_vec @ cov_sub @ g_vec)))
-            else:
-                dH = math.sqrt(max(1.0, H_f))
-                dmu = 0.03
-                dsig = 0.05
-                dfwhm_ch = 0.12
-                darea = math.sqrt(max(1.0, area))
+            # Peak-to-background ratio
+            idx_ch = int(np.clip(round(mu_fit - ch_min), 0, len(bg_baseline) - 1))
+            bg_val = float(bg_baseline[idx_ch])
+            p_to_bg = (H_fit / max(1.0, bg_val)) if bg_val > 0 else 999.0
 
-            bg_at_mu = float(np.interp(mu_f, roi_x, roi_bg))
-            pbg = H_f / max(1.0, abs(bg_at_mu))
-
-            pk_dict = {
-                "centroid_ch": round(mu_f, 3),
-                "centroid_ch_err": round(dmu, 3),
-                "centroid_e": round(ch_to_e(mu_f), 2),
-                "centroid_e_err": round(de_dch(mu_f) * dmu, 2),
-                "fwhm_ch": round(fwhm_ch, 3),
-                "fwhm_ch_err": round(dfwhm_ch, 3),
-                "fwhm_e": round(de_dch(mu_f) * fwhm_ch, 2),
-                "fwhm_e_err": round(de_dch(mu_f) * dfwhm_ch, 2),
-                "amplitude": round(H_f, 1),
-                "amplitude_err": round(dH, 1),
-                "area": round(area, 1),
-                "area_err": round(darea, 1),
-                "bg_counts": round(bg_at_mu, 1),
-                "peak_to_bg": round(pbg, 2)
-            }
-            c_peaks.append(pk_dict)
-            all_fitted_peaks.append(pk_dict)
+            c_peaks.append({
+                "cluster_idx": len(cluster_results),
+                "peak_idx": j,
+                "centroid_ch": round(mu_fit, 3),
+                "centroid_ch_err": round(mu_err, 3),
+                "centroid_e": round(e_c, 2),
+                "centroid_e_err": round(e_err, 2),
+                "fwhm_ch": round(fwhm_fit, 3),
+                "fwhm_ch_err": round(fwhm_err, 3),
+                "fwhm_e": round(fwhm_e, 2),
+                "fwhm_e_err": round(fwhm_e_err, 2),
+                "area": round(net_area, 1),
+                "area_err": round(area_err, 1),
+                "amplitude": round(H_fit, 1),
+                "amplitude_err": round(H_err, 1),
+                "bg_level": round(bg_val, 1),
+                "peak_to_bg": round(p_to_bg, 2)
+            })
+            all_fitted_peaks.append(c_peaks[-1])
 
         cluster_results.append({
             "roi_ch_min": i_min,
@@ -2338,8 +2412,6 @@ def fit_all_peaks_1d(
         ndf_tot = 1
 
     # Continuous dense grid evaluation for smooth drawing and exact bin-center alignment
-    # Continuous channel coordinates align with bin centers at k + 0.5 ('al centro del canale').
-    # Continuous display window spans ch_min to ch_max + 1.0.
     n_span = ch_max - ch_min + 1
     n_pts = min(3000, max(600, n_span * 10))
     x_dense = np.linspace(float(ch_min), float(ch_max + 1.0), n_pts)
@@ -2389,7 +2461,7 @@ def fit_all_peaks_1d(
                 dx = x_dense - mu
                 fit_dense += H * np.exp(np.clip(-0.5 * (dx / sig)**2, -50.0, 0.0))
 
-    return {
+    ret = {
         "success": True,
         "bg_method": used_bg_method,
         "fit_type": fit_type,
@@ -2406,6 +2478,9 @@ def fit_all_peaks_1d(
         "curve_fit": [round(float(v), 2) for v in fit_dense],
         "peaks": all_fitted_peaks
     }
+    if region_info is not None:
+        ret["region_info"] = region_info
+    return ret
 
 
 def print_multi_fit_terminal_report(res: dict, det_name: str, matrix_name: str, is_cal: bool):
@@ -2418,13 +2493,21 @@ def print_multi_fit_terminal_report(res: dict, det_name: str, matrix_name: str, 
     ch_max = res.get("ch_max", 4095)
     clusters = res.get("total_clusters", 1)
     bg_method = res.get("bg_method", "peak_aware_average")
-    bg_name = "Peak-Aware Continuum Average" if bg_method == "peak_aware_average" else f"SNIP Background (M={res.get('snip_iterations', 6)})"
+    r_info = res.get("region_info")
+    if bg_method == "linear_region_average" and r_info:
+        bg_name = f"Straight-Line Region Average [ch {r_info['r_left']:.1f}..{r_info['r_right']:.1f}]"
+    elif bg_method == "snip":
+        bg_name = f"SNIP Background (M={res.get('snip_iterations', 6)})"
+    else:
+        bg_name = "Peak-Aware Continuum Average"
 
     bar = "═" * 96
     subbar = "─" * 96
     print(f"\n{bar}", flush=True)
     print(f"[GASPware 1D Multi-Peak Fit] [{det_name}] - {matrix_name}", flush=True)
     print(f"Model: {model_name} | {bg_name} ({clusters} clusters) | Display Window: ch [{ch_min}..{ch_max}]", flush=True)
+    if r_info:
+        print(f"Region: [ch {r_info['r_left']:.1f}..{r_info['r_right']:.1f}] | Background: Left Avg = {r_info['left_avg']:.1f} (ch {r_info['c_L0']}..{r_info['c_L1']}) | Right Avg = {r_info['right_avg']:.1f} (ch {r_info['c_R0']}..{r_info['c_R1']}) | Slope = {r_info['slope']:.4f}", flush=True)
     print(subbar, flush=True)
     if count == 0:
         print("  No peaks fitted.", flush=True)
@@ -2718,13 +2801,22 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             fwhm_mult = float(query.get("fwhm_mult", [4.0])[0])
             bg_method = query.get("bg_method", ["peak_aware"])[0].lower()
             snip_iter_val = query.get("snip_iter", [None])[0]
-            snip_iter = int(snip_iter_val) if snip_iter_val is not None and snip_iter_val.isdigit() else None
+            region_str = query.get("region", [""])[0]
+            region_bounds = None
+            if region_str.strip():
+                try:
+                    parts = [float(v.strip()) for v in region_str.split(",") if v.strip()]
+                    if len(parts) >= 2:
+                        region_bounds = [parts[0], parts[1]]
+                except Exception:
+                    region_bounds = None
+
             t0 = time.time()
             try:
                 res = fit_all_peaks_1d(
                     spec, ch_min=ch_min, ch_max=ch_max, peak_channels=peak_channels,
                     fit_type=fit_type, fwhm_est=fwhm_est, cal=self.cal, fwhm_mult=fwhm_mult,
-                    bg_method=bg_method, snip_iter=snip_iter
+                    bg_method=bg_method, snip_iter=snip_iter, region=region_bounds
                 )
                 res["axis"] = axis
                 res["elapsed_ms"] = round((time.time() - t0) * 1000.0, 1)
