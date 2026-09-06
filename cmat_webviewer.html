@@ -421,9 +421,9 @@
       </div>
       <label>Search Method</label>
       <select id="peakSearchMethodSelect">
-        <option value="prominence" selected>Prominence (Poisson SNR - Recommended)</option>
+        <option value="cwt" selected>CWT (Continuous Wavelet Transform - Recommended)</option>
+        <option value="prominence">Prominence (Poisson SNR)</option>
         <option value="mariscotti">Mariscotti (GASPware Native 2nd Diff)</option>
-        <option value="cwt">CWT (Continuous Wavelet Transform)</option>
       </select>
       <label style="margin-top: 6px;">Search Range</label>
       <select id="peakSearchRangeSelect">
@@ -432,8 +432,8 @@
       </select>
       <label style="margin-top: 6px;">Expected Peak FWHM (ch) <span class="range-val" id="peakSearchFwhmLabel">4.0</span></label>
       <input type="range" id="peakSearchFwhmSlider" min="1.5" max="15.0" step="0.5" value="4.0">
-      <label style="margin-top: 6px;">Sensitivity / Min SNR <span class="range-val" id="peakSearchSnrLabel">5.0</span></label>
-      <input type="range" id="peakSearchSnrSlider" min="1.0" max="10.0" step="0.5" value="5.0">
+      <label style="margin-top: 6px;">Sensitivity / Min SNR <span class="range-val" id="peakSearchSnrLabel">9.0</span></label>
+      <input type="range" id="peakSearchSnrSlider" min="1.0" max="15.0" step="0.5" value="9.0">
       <div style="display: flex; gap: 6px; margin-top: 6px;">
         <button id="btnSidebarFindPeaksDet1" class="secondary" style="font-size: 0.75rem; flex: 1; color: #ffd54f; border-color: #ffb300;">Find Det 1 [P]</button>
         <button id="btnSidebarFindPeaksDet2" class="secondary" style="font-size: 0.75rem; flex: 1; color: #ffd54f; border-color: #ffb300;">Find Det 2 [P]</button>
@@ -994,6 +994,18 @@
     if (cfg.proj_scale) {
       projScale1D[0] = cfg.proj_scale;
       projScale1D[1] = cfg.proj_scale;
+    }
+    if (cfg.peak_search_method) {
+      const el = document.getElementById('peakSearchMethodSelect');
+      if (el) el.value = cfg.peak_search_method;
+    }
+    if (cfg.peak_search_snr !== undefined) {
+      const el = document.getElementById('peakSearchSnrSlider');
+      if (el) {
+        el.value = cfg.peak_search_snr;
+        const lbl = document.getElementById('peakSearchSnrLabel');
+        if (lbl) lbl.innerText = parseFloat(cfg.peak_search_snr).toFixed(1);
+      }
     }
 
     maxCountGlobal = Math.max(100, metadata.max_count || 1000);
@@ -1621,8 +1633,8 @@
     if (activeBtn) activeBtn.innerText = 'Searching...';
 
     const rangeMode = document.getElementById('peakSearchRangeSelect') ? document.getElementById('peakSearchRangeSelect').value : 'visible';
-    const method = document.getElementById('peakSearchMethodSelect') ? document.getElementById('peakSearchMethodSelect').value : 'prominence';
-    const minSnr = document.getElementById('peakSearchSnrSlider') ? document.getElementById('peakSearchSnrSlider').value : '5.0';
+    const method = document.getElementById('peakSearchMethodSelect') ? document.getElementById('peakSearchMethodSelect').value : 'cwt';
+    const minSnr = document.getElementById('peakSearchSnrSlider') ? document.getElementById('peakSearchSnrSlider').value : '9.0';
     const fwhmEst = document.getElementById('peakSearchFwhmSlider') ? document.getElementById('peakSearchFwhmSlider').value : '4.0';
     const x0 = Math.floor(Math.max(0, view.x0));
     const x1 = Math.ceil(Math.min(metadata.shape[0], view.x1));
@@ -1950,7 +1962,7 @@
     if (targetCluster && targetCluster.length >= 2) {
       document.getElementById('hudCoords').innerText = `Fitting multiplet of ${targetCluster.length} peaks on ${detLabel}...`;
       const peakChannels = targetCluster.map(p => p.channel.toFixed(2)).join(',');
-      const minSnr = parseFloat(document.getElementById('peakSearchSnrSlider')?.value || '5.0');
+      const minSnr = parseFloat(document.getElementById('peakSearchSnrSlider')?.value || '9.0');
       const minCluster = targetCluster[0].channel;
       const maxCluster = targetCluster[targetCluster.length - 1].channel;
       const padW = Math.max(12, Math.round(fwhmEst * 4.5));
@@ -2113,7 +2125,7 @@
     const peakChannels = visiblePeaks.map(p => p.channel.toFixed(2)).join(',');
     const fitType = getActiveFitType();
     const fwhmEst = parseFloat(document.getElementById('peakSearchFwhmSlider')?.value || '4.0');
-    const minSnr = parseFloat(document.getElementById('peakSearchSnrSlider')?.value || '5.0');
+    const minSnr = parseFloat(document.getElementById('peakSearchSnrSlider')?.value || '9.0');
     const detName = (axis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
 
     document.getElementById('hudCoords').innerText = `Fitting ${visiblePeaks.length} peaks on ${detName} (Peak-Aware Continuum Average)...`;
@@ -3347,6 +3359,8 @@
       vmax: currentVmax,
       vmin: parseInt(document.getElementById('vminSlider').value, 10) || 1,
       scroll_sensitivity: parseInt(document.getElementById('scrollSensSlider').value, 10) || 4,
+      peak_search_method: document.getElementById('peakSearchMethodSelect') ? document.getElementById('peakSearchMethodSelect').value : 'cwt',
+      peak_search_snr: parseFloat(document.getElementById('peakSearchSnrSlider')?.value || '9.0'),
       proj_range: document.getElementById('projRangeSelect').value,
       proj_scale: (projScale1D[0] === 'log' || projScale1D[1] === 'log') ? 'log' : 'linear',
     };

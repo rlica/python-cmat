@@ -65,6 +65,8 @@ DEFAULT_CONFIG = {
     "vmax": 500,
     "vmin": 1,
     "scroll_sensitivity": 4,
+    "peak_search_method": "cwt",
+    "peak_search_snr": 9.0,
     "proj_range": "synced",
     "proj_scale": "linear",
     "port": 8080,
@@ -125,6 +127,12 @@ vmin = {cfg.get('vmin', 1)}
 # Scroll Zoom Sensitivity percentage (1 to 15)
 scroll_sensitivity = {cfg.get('scroll_sensitivity', 4)}
 
+# 1D Automatic Peak Search Method: cwt, prominence, mariscotti
+peak_search_method = {cfg.get('peak_search_method', 'cwt')}
+
+# 1D Peak Search Sensitivity / Min SNR (e.g. 1.0 to 15.0)
+peak_search_snr = {cfg.get('peak_search_snr', 9.0)}
+
 # 1D Projection Display Range: synced, full
 proj_range = {cfg.get('proj_range', 'synced')}
 
@@ -161,7 +169,7 @@ def load_or_create_config(config_path: Path) -> dict:
                     key = key.strip().lower()
                     val = val.strip()
                     if key in cfg:
-                        if key == "fwhm_mult_1d":
+                        if key in ("fwhm_mult_1d", "peak_search_snr"):
                             try:
                                 cfg[key] = float(val)
                             except ValueError:
@@ -1573,9 +1581,9 @@ def find_peaks_1d(
     spec: np.ndarray,
     ch_min: int = 0,
     ch_max: int = None,
-    method: str = "prominence",
+    method: str = "cwt",
     widths: np.ndarray = None,
-    min_snr: float = 5.0,
+    min_snr: float = 9.0,
     min_counts: float = 10.0,
     fwhm_est: float = 4.0,
     cal: list = None,
@@ -1583,11 +1591,9 @@ def find_peaks_1d(
     """
     Modular 1D peak search engine for gamma-ray spectroscopy.
     Supports:
-      1. 'prominence' (Default & Recommended): Topographic prominence with local Poisson
-         statistical significance, doublet resolution checks, and Non-Maximum Suppression (NMS).
-      2. 'mariscotti': GASPware native 5-fold smoothed 2nd difference (trackn.F) with Poisson
-         variance normalization and NMS.
-      3. 'cwt': Continuous Wavelet Transform (Ricker wavelet) with local Poisson variance normalization.
+      1. 'cwt' (Default & Recommended): Continuous Wavelet Transform (Ricker wavelet) with local Poisson variance normalization.
+      2. 'prominence': Topographic prominence with local Poisson statistical significance, doublet resolution checks, and Non-Maximum Suppression (NMS).
+      3. 'mariscotti': GASPware native 5-fold smoothed 2nd difference (trackn.F) with Poisson variance normalization and NMS.
     """
     t0 = time.perf_counter()
     spec = np.asarray(spec, dtype=np.float64)
@@ -2098,7 +2104,7 @@ def fit_all_peaks_1d(
         valid_peaks = sorted([float(c) for c in peak_channels if ch_min <= c <= ch_max])
         if not valid_peaks:
             # Fallback to auto-detecting peaks in window if none passed
-            search_res = find_peaks_1d(spectrum, ch_min=ch_min, ch_max=ch_max, min_snr=5.0, fwhm_est=fwhm_est, cal=cal)
+            search_res = find_peaks_1d(spectrum, ch_min=ch_min, ch_max=ch_max, method="cwt", min_snr=9.0, fwhm_est=fwhm_est, cal=cal)
             valid_peaks = sorted([p["channel"] for p in search_res.get("peaks", []) if ch_min <= p["channel"] <= ch_max])
             if not valid_peaks:
                 return {"success": False, "error": f"No candidate peaks found within display range [{ch_min}..{ch_max}]."}
@@ -2674,8 +2680,8 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             from urllib.parse import urlparse, parse_qs
             query = parse_qs(urlparse(self.path).query)
             axis = int(query.get("axis", [0])[0])
-            method = query.get("method", ["prominence"])[0].lower()
-            min_snr = float(query.get("min_snr", [5.0])[0])
+            method = query.get("method", ["cwt"])[0].lower()
+            min_snr = float(query.get("min_snr", [9.0])[0])
             min_counts = float(query.get("min_counts", [10.0])[0])
             fwhm_est = float(query.get("fwhm_est", [4.0])[0])
             range_mode = query.get("range", ["visible"])[0].lower()
@@ -2739,7 +2745,7 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             axis = int(query.get("axis", [0])[0])
             fit_type = query.get("fit_type", ["gaussian"])[0].lower()
             fwhm_est = float(query.get("fwhm_est", [4.0])[0])
-            min_snr = float(query.get("min_snr", [5.0])[0])
+            min_snr = float(query.get("min_snr", [9.0])[0])
 
             x0 = max(0, min(self.matrix.shape[1] - 1, int(float(query.get("x0", [0])[0]))))
             x1 = max(x0 + 1, min(self.matrix.shape[1], int(float(query.get("x1", [self.matrix.shape[1]])[0]))))
@@ -2790,7 +2796,7 @@ class CMATWebHandler(BaseHTTPRequestHandler):
 
             # If no peaks provided or empty, auto-detect peaks in this display window first
             if not peak_channels:
-                search_method = query.get("search_method", ["prominence"])[0].lower()
+                search_method = query.get("search_method", ["cwt"])[0].lower()
                 search_res = find_peaks_1d(
                     spec, ch_min=ch_min, ch_max=ch_max, method=search_method,
                     min_snr=min_snr, fwhm_est=fwhm_est, cal=self.cal

@@ -21,9 +21,9 @@
     - **1D Multi-Gate Coincidence Slicing with Normalized Background Subtraction (`xtrackn W/B/Z`)**: Set arbitrary consecutive peak coincidence gate windows (`W`) and background windows (`B`) across any 1D projection spectrum. Slices the 2D matrix along the orthogonal axis, summing all peak slices ($\sum_k S_{W_k}$) and subtracting normalized background slices ($\text{Scale} \cdot \sum_m S_{B_m}$) where $\text{Scale} = \sum_k \Delta W_k / \sum_m \Delta B_m$. Renders visual shaded gate envelopes on the gated 1D spectrum, dual-color coincidence slice bands on the 2D matrix canvas, dynamic header badges with direct 1D clearing (`Clear Gate [Z]`), and dashed zero baselines for negative counts in over-subtracted continuum regions.
     - **True 2D Coincidence Peak Fitting (Gamba & Morhác Background Decomposition)**: Dedicated 2D nonlinear least-squares Levenberg-Marquardt fitting directly on the 2D coincidence matrix (`Ctrl+Click` or `G` on the 2D matrix) supporting all three peak profile models. Self-consistently decomposes gross counts into true net coincidence volume ($p|p^t$), orthogonal coincidence cross-ridges ($p|bg, bg|p$), and 2D Compton continuum + accidental random coincidences ($bg|bg$). Computes the discrete Gamba net area ($n^t_{p|p}$) and Peak-to-Total-Background ratio ($\Pi$). Displays a dedicated 2D coincidence results card and renders the 2D FWHM ellipse, crosshair, and ROI boundaries on the 2D matrix without interfering with 1D histogram fits.
     - **Automatic 1D Peak Search (CWT Wavelets & Prominence)**: Fast, robust automated photopeak search (`P` on focused 1D view or toolbar button) supporting three algorithms:
-      1. *CWT + Prominence (Default)*: Multi-scale Continuous Wavelet Transform ridge detection using Ricker wavelets combined with local topological prominence and Poisson noise estimation. Highly robust against Compton continuum slopes and statistical fluctuations.
-      2. *Wavelet (CWT Pure)*: Continuous Wavelet Transform ridge finding at user-specified expected peak FWHM.
-      3. *Prominence (Fast)*: Classical local maxima detection with minimum prominence and SNR thresholds.
+      1. *CWT (Continuous Wavelet Transform - Default)*: Continuous Wavelet Transform ridge detection using Ricker wavelets combined with local Poisson noise variance across scales. Highly robust against Compton continuum slopes, statistical fluctuations, and overlapping multiplets (default Sensitivity / Min SNR = 9.0).
+      2. *Prominence*: Topographic prominence with local Poisson statistical significance and Non-Maximum Suppression.
+      3. *GASPware Mariscotti*: 5-fold boxcar-smoothed second difference filtering (`trackn.F`).
       - Displays clean, non-interactive peak markers with 12px calibrated energy/channel text labels, downward carets, guide stems, collision avoidance, and hover details in the coordinate HUD.
     - **Manual Peak Marking (`J`) & Multiplet Deconvolution (`G`)**: Manually place peak markers at any channel with `J` (or remove if hovering an existing marker within 1.2 channels). Manual markers snap to the local peak summit with parabolic sub-channel centroid refinement, render in distinct cyan (`#00e5ff`), and are automatically merged with the list of automatically found peaks (`P`). When multiple markers (manual or automatic) form a multiplet cluster, pressing `G` within the cluster automatically fits all components simultaneously as a coupled multiplet with full parameter covariance.
     - **Automated 1D Multi-Peak Fitting with Peak-Aware Background (`H`)**: Following automatic peak search (`P`), pressing `H` automatically fits all visible candidate photopeaks on display. Clusters multiplets within $3.2 \times \text{FWHM}$, fits all components simultaneously (Gaussian, RadWare Left-Tail, or Hypermet), and uses a **Peak-Aware Continuum Average** engine that estimates the true expectation value of low-statistics counting noise grass without under-fit bias, bridging smoothly across peak clusters (with automatic fallback to SNIP for dense peak forests).
@@ -165,6 +165,12 @@ vmin = 1
 
 # Scroll Zoom Sensitivity percentage (1 to 15)
 scroll_sensitivity = 4
+
+# 1D Automatic Peak Search Method: cwt, prominence, mariscotti
+peak_search_method = cwt
+
+# 1D Peak Search Sensitivity / Min SNR (e.g. 1.0 to 15.0)
+peak_search_snr = 9.0
 
 # 1D Projection Display Range: synced, full
 proj_range = synced
