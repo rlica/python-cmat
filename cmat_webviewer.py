@@ -1278,7 +1278,10 @@ def generate_pdf_1d(spec, ch_start, ch_end, is_log=False, zoom_y=1.0, fit_res=No
         ax.set_ylim(bottom=log_min, top=y_max)
     else:
         y_max = (max_val * 1.1) * zoom_y
-        ax.set_ylim(bottom=0, top=max(1.0, y_max))
+        y_min = min(0.0, min_val * 1.1) if min_val < 0 else 0.0
+        ax.set_ylim(bottom=y_min, top=max(1.0, y_max))
+        if y_min < 0:
+            ax.axhline(0, color="#888888", linestyle=":", linewidth=0.8)
 
     ax.set_xlim(ch_start, ch_end)
     ax.set_xlabel("Energy (keV)", fontsize=12, labelpad=6)
@@ -1412,6 +1415,138 @@ def generate_pdf_2d(matrix, x0, x1, y0, y1, cmap_name="turbo", scale_mode="log",
     return buf.getvalue()
 
 
+def parse_gate_ranges(param_str: str) -> list:
+    """
+    Parses gate intervals from JSON string (e.g. [[100, 110], [120, 130]])
+    or semicolon/space/comma separated tokens.
+    """
+    if not param_str:
+        return []
+    param_str = param_str.strip()
+    if param_str.startswith("["):
+        try:
+            parsed = json.loads(param_str)
+            if isinstance(parsed, list):
+                res = []
+                for item in parsed:
+                    if isinstance(item, (list, tuple)) and len(item) == 2:
+                        res.append([float(item[0]), float(item[1])])
+                return res
+        except Exception:
+            pass
+    pairs = []
+    for chunk in param_str.replace(";", " ").replace("|", " ").split():
+        if "," in chunk:
+            parts = chunk.split(",")
+        elif "-" in chunk:
+            parts = chunk.split("-")
+        else:
+            continue
+        if len(parts) == 2:
+            try:
+                pairs.append([float(parts[0]), float(parts[1])])
+            except ValueError:
+                pass
+    return pairs
+
+
+def compute_1d_gate(matrix: np.ndarray, axis: int, w_gates: list, b_gates: list) -> dict:
+    """
+    Compute background-subtracted gated coincidence spectrum along the opposite axis.
+
+    Args:
+        matrix: 2D numpy array [res_y, res_x]
+        axis: 0 to gate on Det 1 (X) and produce coincidence on Det 2 (Y);
+              1 to gate on Det 2 (Y) and produce coincidence on Det 1 (X).
+        w_gates: list of [min_ch, max_ch] pairs for peak gates
+        b_gates: list of [min_ch, max_ch] pairs for background gates
+
+    Returns:
+        dict with net_spec, raw_spec, bg_spec, w_width, b_width, scale, etc.
+    """
+    res_y, res_x = matrix.shape
+    dest_len = res_y if axis == 0 else res_x
+    max_gate_ch = (res_x - 1) if axis == 0 else (res_y - 1)
+
+    raw_w = np.zeros(dest_len, dtype=np.float64)
+    raw_b = np.zeros(dest_len, dtype=np.float64)
+
+    valid_w = []
+    total_w_ch = 0
+    for w in w_gates:
+        c0 = max(0, min(int(round(float(w[0]))), int(round(float(w[1])))))
+        c1 = min(max_gate_ch, max(int(round(float(w[0]))), int(round(float(w[1])))))
+        if c1 >= c0:
+            if axis == 0:
+                raw_w += np.sum(matrix[:, c0:c1 + 1], axis=1, dtype=np.float64)
+            else:
+                raw_w += np.sum(matrix[c0:c1 + 1, :], axis=0, dtype=np.float64)
+            width = c1 - c0 + 1
+            total_w_ch += width
+            valid_w.append([c0, c1])
+
+    valid_b = []
+    total_b_ch = 0
+    for b in b_gates:
+        c0 = max(0, min(int(round(float(b[0]))), int(round(float(b[1])))))
+        c1 = min(max_gate_ch, max(int(round(float(b[0]))), int(round(float(b[1])))))
+        if c1 >= c0:
+            if axis == 0:
+                raw_b += np.sum(matrix[:, c0:c1 + 1], axis=1, dtype=np.float64)
+            else:
+                raw_b += np.sum(matrix[c0:c1 + 1, :], axis=0, dtype=np.float64)
+            width = c1 - c0 + 1
+            total_b_ch += width
+            valid_b.append([c0, c1])
+
+    if total_b_ch > 0 and total_w_ch > 0:
+        scale = float(total_w_ch) / float(total_b_ch)
+        bg_sub = raw_b * scale
+        net_spec = raw_w - bg_sub
+    else:
+        scale = 0.0
+        bg_sub = np.zeros_like(raw_w)
+        net_spec = raw_w.copy()
+
+    gross_counts = float(np.sum(raw_w))
+    bg_counts = float(np.sum(bg_sub))
+    net_counts = float(np.sum(net_spec))
+    net_err = float(np.sqrt(np.maximum(0.0, np.sum(raw_w + (scale ** 2) * raw_b))))
+
+    return {
+        "success": True,
+        "axis": axis,
+        "dest_axis": 1 - axis,
+        "valid_w": valid_w,
+        "valid_b": valid_b,
+        "total_w_ch": total_w_ch,
+        "total_b_ch": total_b_ch,
+        "scale": scale,
+        "gross_counts": gross_counts,
+        "bg_counts": bg_counts,
+        "net_counts": net_counts,
+        "net_err": net_err,
+        "net_spec": net_spec.tolist(),
+        "raw_spec": raw_w.tolist(),
+        "bg_spec": bg_sub.tolist(),
+    }
+
+
+def print_gate_terminal_report(gate_res: dict, matrix_name: str):
+    src_det = "Det 1 (X)" if gate_res["axis"] == 0 else "Det 2 (Y)"
+    dst_det = "Det 2 (Y)" if gate_res["axis"] == 0 else "Det 1 (X)"
+    w_strs = [f"[{w[0]}..{w[1]}]" for w in gate_res["valid_w"]] if gate_res["valid_w"] else ["None"]
+    b_strs = [f"[{b[0]}..{b[1]}]" for b in gate_res["valid_b"]] if gate_res["valid_b"] else ["None"]
+    w_text = ", ".join(w_strs)
+    b_text = ", ".join(b_strs)
+    scale_text = f"{gate_res['scale']:.4f}" if gate_res["total_b_ch"] > 0 else "0.0000"
+
+    print(f"\n[1D Gate Cut] {matrix_name} -> Gated {src_det} => {dst_det} Coincidence Spectrum:")
+    print(f"  • Gate W: {w_text} (total width: {gate_res['total_w_ch']} ch)")
+    print(f"  • Bg B:   {b_text} (total width: {gate_res['total_b_ch']} ch, scale: {scale_text})")
+    print(f"  • Counts: Gross={gate_res['gross_counts']:,.0f} | Bg={gate_res['bg_counts']:,.1f} | Net={gate_res['net_counts']:,.1f} ± {gate_res['net_err']:,.1f} cts\n", flush=True)
+
+
 class CMATWebHandler(BaseHTTPRequestHandler):
     reader: CMATReader = None
     matrix: np.ndarray = None
@@ -1491,7 +1626,18 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             y0 = max(0, min(self.matrix.shape[0] - 1, int(float(query.get("y0", [0])[0]))))
             y1 = max(y0 + 1, min(self.matrix.shape[0], int(float(query.get("y1", [self.matrix.shape[0]])[0]))))
 
-            if axis == 0:
+            w_str = query.get("w_gates", [""])[0]
+            b_str = query.get("b_gates", [""])[0]
+            w_gates = parse_gate_ranges(w_str)
+            b_gates = parse_gate_ranges(b_str)
+
+            if w_gates:
+                # Gated coincidence mode: gate was set on the other axis (1 - axis)
+                gate_axis = 1 - axis
+                gate_res = compute_1d_gate(self.matrix, gate_axis, w_gates, b_gates)
+                spec = np.array(gate_res["net_spec"], dtype=np.float64)
+                det_name = f"Det {axis + 1} ({'X' if axis == 0 else 'Y'} Gated Coincidence)"
+            elif axis == 0:
                 if y0 == 0 and y1 >= self.matrix.shape[0]:
                     spec = self.proj
                 else:
@@ -1517,6 +1663,23 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             self.send_header("Content-type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps(res).encode("utf-8"))
+
+        elif self.path.startswith("/api/gate_1d"):
+            from urllib.parse import urlparse, parse_qs
+            query = parse_qs(urlparse(self.path).query)
+            axis = int(query.get("axis", [0])[0])
+            w_str = query.get("w_gates", [""])[0]
+            b_str = query.get("b_gates", [""])[0]
+            w_gates = parse_gate_ranges(w_str)
+            b_gates = parse_gate_ranges(b_str)
+
+            gate_res = compute_1d_gate(self.matrix, axis, w_gates, b_gates)
+            print_gate_terminal_report(gate_res, self.reader.filename.name)
+
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(gate_res).encode("utf-8"))
 
         elif self.path.startswith("/api/projection_region"):
             from urllib.parse import urlparse, parse_qs
@@ -1625,7 +1788,19 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             fit_type = query.get("fit_type", ["gaussian"])[0]
             fwhm_mult = float(query.get("fwhm_mult", [4.0])[0])
 
-            if axis == 0:
+            w_str = query.get("w_gates", [""])[0]
+            b_str = query.get("b_gates", [""])[0]
+            w_gates = parse_gate_ranges(w_str)
+            b_gates = parse_gate_ranges(b_str)
+
+            if w_gates:
+                gate_axis = 1 - axis
+                gate_res = compute_1d_gate(self.matrix, gate_axis, w_gates, b_gates)
+                spec = np.array(gate_res["net_spec"], dtype=np.float64)
+                det_name = f"Det{axis + 1}_{'X' if axis == 0 else 'Y'}_Gated"
+                ch_start = (x0 if axis == 0 else y0) if is_synced else 0
+                ch_end = (x1 if axis == 0 else y1) if is_synced else len(spec) - 1
+            elif axis == 0:
                 if y0 == 0 and y1 >= self.matrix.shape[0]:
                     spec = self.proj
                 else:

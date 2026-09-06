@@ -18,6 +18,7 @@
   - **Simultaneous Dual 1D Projections**: Stacked top/bottom 1D histograms displaying Det 1 (X projection sliced over visible Y) and Det 2 (Y projection sliced over visible X) simultaneously.
   - **Classic Binned Histograms**: Nuclear physics stepped staircase histograms with dynamic auto-scaling, synchronized real-time cursor highlighting across 2D and 1D views, calibrated energy readouts (keV), and ASCII `.dat` export.
     - **1D Histogram Peak Fitting (`xtrackn AG`)**: Dedicated 1D nonlinear least-squares peak fitting with linear background subtraction (`Ctrl+Click` or `G` on any 1D projection spectrum). Supports three scientific models: Standard Symmetric Gaussian, RadWare / SAMPO Piecewise Exponential Left Tail, and Hypermet Convolved Tail + $\text{erfc}$ Compton Step. Calculates centroid, net area, FWHM, and amplitude with complete statistical covariance error propagation, printed directly to the terminal and rendered with fitted curves on the 1D spectrum canvas.
+    - **1D Multi-Gate Coincidence Slicing with Normalized Background Subtraction (`xtrackn W/B/Z`)**: Set arbitrary consecutive peak coincidence gate windows (`W`) and background windows (`B`) across any 1D projection spectrum. Slices the 2D matrix along the orthogonal axis, summing all peak slices ($\sum_k S_{W_k}$) and subtracting normalized background slices ($\text{Scale} \cdot \sum_m S_{B_m}$) where $\text{Scale} = \sum_k \Delta W_k / \sum_m \Delta B_m$. Renders visual shaded gate envelopes on the gated 1D spectrum, dual-color coincidence slice bands on the 2D matrix canvas, dynamic header badges with direct 1D clearing (`✕ Clear Gate [Z]`), and dashed zero baselines for negative counts in over-subtracted continuum regions.
     - **True 2D Coincidence Peak Fitting (Gamba & Morhác Background Decomposition)**: Dedicated 2D nonlinear least-squares Levenberg-Marquardt fitting directly on the 2D coincidence matrix (`Ctrl+Click` or `G` on the 2D matrix) supporting all three peak profile models. Self-consistently decomposes gross counts into true net coincidence volume ($p|p^t$), orthogonal coincidence cross-ridges ($p|bg, bg|p$), and 2D Compton continuum + accidental random coincidences ($bg|bg$). Computes the discrete Gamba net area ($n^t_{p|p}$) and Peak-to-Total-Background ratio ($\Pi$). Displays a dedicated 2D coincidence results card and renders the 2D FWHM ellipse, crosshair, and ROI boundaries on the 2D matrix without interfering with 1D histogram fits.
   - **Collapsible Sidebar & Resizable Panel Layout**: Easily collapse the left control menu (`M` or `☰ Menu`) to maximize screen area for the 2D matrix and 1D projections, and adjust the relative width between 2D and 1D panels using the interactive vertical divider bar (with double-click reset and persistent layout settings).
   - **Aligned Tabular Fit Reports**: Fit reports in both the terminal and Web UI are dynamically padded and tab-delimited, keeping Centroid, Area, and FWHM decimal separators and columns vertically aligned between rows.
@@ -71,6 +72,9 @@ python cmat_webviewer.py /path/to/matrix.cmat
 | **Full Zoom Out (1D)** | `Double Click` (1D) | Fully zoom out clicked 1D projection only (X range & Y scale; preserves other gate) |
 | **2D Coincidence Peak Fit** | `Ctrl / Cmd + Click` (2D) or `G` | True 2D coincidence peak fit (Gaussian/RadWare/Hypermet) with Gamba & Morhác 4-component BG decomposition |
 | **1D Histogram Peak Fit** | `Ctrl / Cmd + Click` (1D) or `G` | Fit 1D histogram peak (Gaussian/RadWare/Hypermet) + linear BG on Det 1 or Det 2 |
+| **Set Peak Gate Limits** | `W` or `w` (1D) | Set Left / Right peak coincidence gate limits ($W_k$) on 1D spectrum |
+| **Set Background Limits** | `B` or `b` (1D) | Set Left / Right background gate limits ($B_m$) for normalized subtraction |
+| **Clear Active 1D Gate** | `Z` or `z` (1D) | Clear active coincidence gate/background cut (or cancel in-progress limit) |
 | **Clear Peak Fits** | `=` (Equals) or `+` | Clear active peak fit curves and markers from 1D spectra and 2D matrix |
 | **Pan 2D View** | `Shift + Arrow Keys` (`←`, `→`, `↓`, `↑`) | Pan visible 2D matrix view in steps (uses Scroll Sensitivity) |
 | **Set Left Limit (Xmin)** | `Left Arrow (←)` | Set Left limit at cursor |
@@ -292,7 +296,30 @@ and the Peak-to-Total-Background ratio $\Pi = n^t_{p|p} / n^m_{p|p}$.
 
 ---
 
-### 4. Key References
+### 4. 1D Multi-Gate Coincidence Slicing & Normalized Background Subtraction (`xtrackn W/B/Z`)
+
+In $\gamma$-$\gamma$ coincidence analysis, setting an energy gate on a transition in Detector 1 (X) projects the coincident spectrum in Detector 2 (Y), isolating transitions belonging to the same cascade while suppressing unassociated photopeaks.
+
+Following the classic [GASPware](https://github.com/csteke/GASPware) `xtrackn` gate methodology:
+- **Peak Gate Intervals**: Users can define arbitrary consecutive peak windows $\{ [W_{k,\text{min}}, W_{k,\text{max}}] \}_{k=1}^K$ using the `W` key (setting left and right limits at the cursor). The total peak window width is:
+  $$\Delta W_{\text{tot}} = \sum_{k=1}^K (W_{k,\text{max}} - W_{k,\text{min}} + 1)$$
+- **Background Gate Intervals**: Users can define arbitrary consecutive background windows $\{ [B_{m,\text{min}}, B_{m,\text{max}}] \}_{m=1}^M$ using the `B` key on continuum regions adjacent to the peak. The total background window width is:
+  $$\Delta B_{\text{tot}} = \sum_{m=1}^M (B_{m,\text{max}} - B_{m,\text{min}} + 1)$$
+- **Coincidence Slicing**: Slicing the 2D matrix $M$ along the gated axis produces 1D projection vectors for each interval:
+  $$S_{W_k}(i) = \sum_{j = W_{k,\text{min}}}^{W_{k,\text{max}}} M_{i, j}, \quad S_{B_m}(i) = \sum_{j = B_{m,\text{min}}}^{B_{m,\text{max}}} M_{i, j}$$
+- **Normalized Background Subtraction**: When background regions are present ($\Delta B_{\text{tot}} > 0$), the net coincidence spectrum $S_{\text{net}}$ is computed by subtracting the background slices scaled by the channel width ratio:
+  $$\text{Scale} = \frac{\Delta W_{\text{tot}}}{\Delta B_{\text{tot}}}$$
+  $$S_{\text{net}}(i) = \sum_{k=1}^K S_{W_k}(i) - \text{Scale} \cdot \sum_{m=1}^M S_{B_m}(i)$$
+  *(When no background limits are set, $\text{Scale} = 0$ and $S_{\text{net}} = \sum_k S_{W_k}$ represents the raw coincident slice).*
+- **Visual Overlays & Negative Counts**:
+  - Gated peak windows are highlighted in semi-transparent green (`#22c55e30`) on the 1D spectrum, while background windows appear in semi-transparent amber (`#f59e0b30`).
+  - The 2D matrix canvas dynamically renders matching vertical/horizontal band overlays across the gated channels.
+  - On the resulting gated 1D projection, a distinct dashed zero-baseline is drawn whenever over-subtracted continuum channels drop below zero counts, with auto-scaling adjusting to show both negative fluctuations and positive photopeaks clearly.
+  - Active gates can be cleared at any time with the `Z` key or by clicking `✕ Clear Gate [Z]` in the 1D header.
+
+---
+
+### 5. Key References
 
 1. **Phillips, G. W., & Marlow, K. W.** (1976). *"Automatic analysis of gamma-ray spectra from germanium detectors"*. *Nuclear Instruments and Methods*, 137(3), 525–536. [link](https://doi.org/10.1016/0029-554X(76)90472-X).
    *(Original formulation of the Hypermet peak shape: Gaussian + convolved exponential tail + erfc step function).*

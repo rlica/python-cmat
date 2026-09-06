@@ -369,7 +369,20 @@
       </select>
     </div>
 
-    <!-- 4. Defaults & Configuration -->
+    <!-- 4. 1D Coincidence Gating -->
+    <div class="control-group">
+      <h3 style="color: #69f0ae;">✂ 1D Coincidence Gating</h3>
+      <div id="gateSidebarStatus" style="font-size: 0.72rem; color: #aaa; margin-bottom: 6px; line-height: 1.35;">
+        No active gate.<br>
+        <span style="color: #888;">Hover on 1D view:</span><br>
+        <span style="color: #00e676;">[W]</span>: Gate limits (L / R pairs)<br>
+        <span style="color: #ff5252;">[B]</span>: Background (L / R pairs)<br>
+        <span style="color: #ffd600;">[Z]</span>: Clear gate / Cancel
+      </div>
+      <button id="btnSidebarClearGate" class="secondary" style="display:none; background:#b71c1c; border-color:#d32f2f; margin-top:2px;">✕ Clear 1D Gate [Z]</button>
+    </div>
+
+    <!-- 5. Defaults & Configuration -->
     <div class="control-group">
       <h3 style="color: #80cbc4;">⚙ Configuration</h3>
       <button id="btnSaveConfig" class="secondary" style="background:#00838f; border-color:#00acc1; margin-top:2px;">💾 Save Config to File</button>
@@ -394,7 +407,10 @@
     <div class="panel-1d-container">
       <div class="panel-1d">
         <div class="panel-1d-header">
-          <span class="panel-1d-title" id="specTitleX" style="color: #00e5ff;">Det 1 (X Projection, Sliced Y)</span>
+          <div style="display: flex; align-items: center; gap: 8px; overflow: hidden;">
+            <span class="panel-1d-title" id="specTitleX" style="color: #00e5ff;">Det 1 (X Projection, Sliced Y)</span>
+            <button id="btnClearGateX" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem;" title="Clear Gate [Z / Esc]">✕ Clear Gate [Z]</button>
+          </div>
           <div style="display: flex; gap: 6px;">
             <button id="btnPrintPDF1DX" style="width: auto; padding: 2px 7px; font-size: 0.72rem; background: #1b5e20; border-color: #4caf50; color: #fff;">📄 Print PDF</button>
             <button id="btnExport1DX" style="width: auto; padding: 2px 7px; font-size: 0.72rem;">Export .dat</button>
@@ -404,7 +420,10 @@
       </div>
       <div class="panel-1d">
         <div class="panel-1d-header">
-          <span class="panel-1d-title" id="specTitleY" style="color: #ff9800;">Det 2 (Y Projection, Sliced X)</span>
+          <div style="display: flex; align-items: center; gap: 8px; overflow: hidden;">
+            <span class="panel-1d-title" id="specTitleY" style="color: #ff9800;">Det 2 (Y Projection, Sliced X)</span>
+            <button id="btnClearGateY" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem;" title="Clear Gate [Z / Esc]">✕ Clear Gate [Z]</button>
+          </div>
           <div style="display: flex; gap: 6px;">
             <button id="btnPrintPDF1DY" style="width: auto; padding: 2px 7px; font-size: 0.72rem; background: #1b5e20; border-color: #4caf50; color: #fff;">📄 Print PDF</button>
             <button id="btnExport1DY" style="width: auto; padding: 2px 7px; font-size: 0.72rem;">Export .dat</button>
@@ -491,10 +510,13 @@
     <tr><td>F / f</td><td>Full matrix view (zoom out)</td></tr>
     <tr><td>1 / 2 / 4 (or L)</td><td>Switch Linear, Sqrt, Log color scale</td></tr>
     <tr><td>C / c</td><td>Cycle colormaps</td></tr>
+    <tr><td>W / w</td><td>Set Gate limits (consecutive pairs: left &amp; right) on 1D spectrum</td></tr>
+    <tr><td>B / b</td><td>Set Background limits (consecutive pairs: left &amp; right) on 1D spectrum</td></tr>
+    <tr><td>Z / z</td><td>Cancel pending limit or clear active 1D coincidence gate</td></tr>
     <tr><td>M / m</td><td>Toggle left menu panel (collapse / expand)</td></tr>
     <tr><td>Drag Divider</td><td>Adjust width of 2D matrix vs 1D projections (double-click to reset)</td></tr>
     <tr><td>Q / q</td><td>Quit viewer (close browser tab and stop terminal server)</td></tr>
-    <tr><td>Esc / ?</td><td>Close Help</td></tr>
+    <tr><td>Esc / ?</td><td>Close Help / Cancel pending gate</td></tr>
   </table>
   <button onclick="document.getElementById('helpModal').style.display='none'" style="margin-top: 15px;">Close</button>
 </div>
@@ -532,6 +554,17 @@
   // Hovered channels for real-time inspection
   let cursor1DChannelX = null;
   let cursor1DChannelY = null;
+  let hovered1DAxis = null; // 0 for Det 1 (X), 1 for Det 2 (Y), null otherwise
+
+  // 1D Multi-Gate Coincidence State (xtrackn methodology)
+  let gate1DState = {
+    axis: null,        // Gated axis: 0 for Det 1 (cut coincidence on Det 2), 1 for Det 2 (cut on Det 1)
+    w_gates: [],       // List of completed peak gates [[w0, w1], ...]
+    b_gates: [],       // List of completed background gates [[b0, b1], ...]
+    pending_w: null,   // Left limit for W gate (waiting for 2nd press)
+    pending_b: null,   // Left limit for B gate (waiting for 2nd press)
+    last_res: null     // Full response from /api/gate_1d
+  };
 
   const canvas2d = document.getElementById('canvas2d');
   const ctx2d = canvas2d.getContext('2d');
@@ -895,6 +928,150 @@
     render2D();
   }
 
+  function updateGateUI() {
+    const d = gate1DState.last_res;
+    const btnClrX = document.getElementById('btnClearGateX');
+    const btnClrY = document.getElementById('btnClearGateY');
+    const btnSidebarClr = document.getElementById('btnSidebarClearGate');
+    const sideStatus = document.getElementById('gateSidebarStatus');
+
+    if (!d || gate1DState.axis === null || gate1DState.w_gates.length === 0) {
+      if (btnClrX) btnClrX.style.display = 'none';
+      if (btnClrY) btnClrY.style.display = 'none';
+      if (btnSidebarClr) btnSidebarClr.style.display = 'none';
+      if (sideStatus) {
+        sideStatus.innerHTML = `No active gate.<br><span style="color:#888;">Hover on 1D view:</span><br><span style="color:#00e676;">[W]</span>: Gate limits (L / R pairs)<br><span style="color:#ff5252;">[B]</span>: Background (L / R pairs)<br><span style="color:#ffd600;">[Z]</span>: Clear gate / Cancel`;
+      }
+      return;
+    }
+
+    const wStr = d.valid_w.map(w => `[${w[0]}..${w[1]}]`).join(', ');
+    const bStr = (d.valid_b && d.valid_b.length > 0) ? d.valid_b.map(b => `[${b[0]}..${b[1]}]`).join(', ') : 'None';
+    const scaleStr = (d.total_b_ch > 0) ? `k=${d.scale.toFixed(3)}` : 'No Bg';
+
+    const srcDet = (d.axis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
+    const dstDet = (d.dest_axis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
+
+    if (d.axis === 0) {
+      document.getElementById('specTitleX').innerText = `Det 1 (Gated: W=${wStr}, B=${bStr})`;
+      document.getElementById('specTitleY').innerText = `Det 2 (Coincidence Cut: ${scaleStr}, Net: ${d.net_counts.toLocaleString()} cts)`;
+      if (btnClrX) btnClrX.style.display = 'none';
+      if (btnClrY) btnClrY.style.display = 'inline-block';
+    } else {
+      document.getElementById('specTitleY').innerText = `Det 2 (Gated: W=${wStr}, B=${bStr})`;
+      document.getElementById('specTitleX').innerText = `Det 1 (Coincidence Cut: ${scaleStr}, Net: ${d.net_counts.toLocaleString()} cts)`;
+      if (btnClrX) btnClrX.style.display = 'inline-block';
+      if (btnClrY) btnClrY.style.display = 'none';
+    }
+
+    if (btnSidebarClr) btnSidebarClr.style.display = 'block';
+
+    if (sideStatus) {
+      sideStatus.innerHTML = `<strong style="color:#69f0ae;">Active Cut:</strong> ${srcDet} &rarr; ${dstDet}<br>`
+        + `<span style="color:#00e676;">• Gates (W):</span> ${wStr} (${d.total_w_ch} ch)<br>`
+        + `<span style="color:#ff5252;">• Bg (B):</span> ${bStr} (${d.total_b_ch} ch, ${scaleStr})<br>`
+        + `<span style="color:#ffd600;">• Net Cts:</span> ${d.net_counts.toLocaleString()} &plusmn; ${d.net_err.toFixed(1)}`;
+    }
+  }
+
+  async function fetchGatedProjection1D() {
+    if (gate1DState.axis === null || gate1DState.w_gates.length === 0) return;
+    const axis = gate1DState.axis;
+    const wStr = JSON.stringify(gate1DState.w_gates);
+    const bStr = JSON.stringify(gate1DState.b_gates);
+    const url = `/api/gate_1d?axis=${axis}&w_gates=${encodeURIComponent(wStr)}&b_gates=${encodeURIComponent(bStr)}`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.success) {
+      gate1DState.last_res = data;
+      if (data.dest_axis === 0) {
+        currentProjSpecX = data.net_spec;
+      } else {
+        currentProjSpecY = data.net_spec;
+      }
+      updateGateUI();
+      renderBoth1DSpectra();
+      render2D();
+    }
+  }
+
+  function handleGateKeyPress(type) {
+    if (hovered1DAxis === null) {
+      document.getElementById('hudCoords').innerText = `Hover cursor over Det 1 or Det 2 1D spectrum to set [${type.toUpperCase()}] gate.`;
+      return;
+    }
+    const axis = hovered1DAxis;
+    const curCh = (axis === 0) ? cursor1DChannelX : cursor1DChannelY;
+    if (curCh === null) return;
+
+    // If previously gated on the other axis, clear it first
+    if (gate1DState.axis !== null && gate1DState.axis !== axis) {
+      clear1DGates(false);
+    }
+    gate1DState.axis = axis;
+
+    const detLabel = (axis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
+    const oppLabel = (axis === 0) ? 'Det 2 (Y)' : 'Det 1 (X)';
+
+    if (type === 'w') {
+      if (gate1DState.pending_w === null) {
+        gate1DState.pending_w = curCh;
+        gate1DState.pending_b = null;
+        document.getElementById('hudCoords').innerText = `[${detLabel}] Gate W${gate1DState.w_gates.length + 1} Limit 1: ch ${curCh}. Move cursor and press 'W' for Limit 2.`;
+      } else {
+        const c0 = Math.min(gate1DState.pending_w, curCh);
+        const c1 = Math.max(gate1DState.pending_w, curCh);
+        gate1DState.w_gates.push([c0, c1]);
+        gate1DState.pending_w = null;
+        const wIdx = gate1DState.w_gates.length;
+        document.getElementById('hudCoords').innerText = `[${detLabel}] Gate W${wIdx} set: [${c0}..${c1}] (${c1 - c0 + 1} ch). Cutting coincidence on ${oppLabel}...`;
+        fetchGatedProjection1D();
+      }
+    } else if (type === 'b') {
+      if (gate1DState.pending_b === null) {
+        gate1DState.pending_b = curCh;
+        gate1DState.pending_w = null;
+        document.getElementById('hudCoords').innerText = `[${detLabel}] Background B${gate1DState.b_gates.length + 1} Limit 1: ch ${curCh}. Move cursor and press 'B' for Limit 2.`;
+      } else {
+        const c0 = Math.min(gate1DState.pending_b, curCh);
+        const c1 = Math.max(gate1DState.pending_b, curCh);
+        gate1DState.b_gates.push([c0, c1]);
+        gate1DState.pending_b = null;
+        const bIdx = gate1DState.b_gates.length;
+        document.getElementById('hudCoords').innerText = `[${detLabel}] Background B${bIdx} set: [${c0}..${c1}] (${c1 - c0 + 1} ch). Updating coincidence on ${oppLabel}...`;
+        if (gate1DState.w_gates.length > 0) {
+          fetchGatedProjection1D();
+        }
+      }
+    }
+    renderBoth1DSpectra();
+    render2D();
+  }
+
+  function clear1DGates(fetchNormal = true) {
+    if (gate1DState.pending_w !== null || gate1DState.pending_b !== null) {
+      gate1DState.pending_w = null;
+      gate1DState.pending_b = null;
+      document.getElementById('hudCoords').innerText = 'Pending gate limit cancelled.';
+      renderBoth1DSpectra();
+      return;
+    }
+    const hadGate = (gate1DState.axis !== null);
+    gate1DState.axis = null;
+    gate1DState.w_gates = [];
+    gate1DState.b_gates = [];
+    gate1DState.pending_w = null;
+    gate1DState.pending_b = null;
+    gate1DState.last_res = null;
+
+    updateGateUI();
+    if (hadGate && fetchNormal) {
+      fetch1DProjection();
+      document.getElementById('hudCoords').innerText = '1D Gates cleared. Reverted to standard 1D projection.';
+    }
+    render2D();
+  }
+
   async function fetch1DProjection() {
     const x0 = Math.floor(Math.max(0, view.x0));
     const x1 = Math.ceil(Math.min(metadata.shape[0], view.x1));
@@ -905,19 +1082,37 @@
     const isFullX = (y0 === 0 && y1 >= metadata.shape[1]);
     const isFullY = (x0 === 0 && x1 >= metadata.shape[0]);
 
-    document.getElementById('specTitleX').innerText = isFullX
-      ? `Det 1 (Total X Projection)`
-      : `Det 1 (X Projection, Sliced Y: [${y0}..${y1}])`;
+    if (gate1DState.axis === null || gate1DState.w_gates.length === 0) {
+      document.getElementById('specTitleX').innerText = isFullX
+        ? `Det 1 (Total X Projection)`
+        : `Det 1 (X Projection, Sliced Y: [${y0}..${y1}])`;
 
-    document.getElementById('specTitleY').innerText = isFullY
-      ? `Det 2 (Total Y Projection)`
-      : `Det 2 (Y Projection, Sliced X: [${x0}..${x1}])`;
+      document.getElementById('specTitleY').innerText = isFullY
+        ? `Det 2 (Total Y Projection)`
+        : `Det 2 (Y Projection, Sliced X: [${x0}..${x1}])`;
+      updateGateUI();
+    }
 
     const url = `/api/projection_region?x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}`;
     const res = await fetch(url);
     const data = await res.json();
-    currentProjSpecX = data.specX;
-    currentProjSpecY = data.specY;
+
+    if (gate1DState.axis === null || gate1DState.w_gates.length === 0) {
+      currentProjSpecX = data.specX;
+      currentProjSpecY = data.specY;
+    } else {
+      if (gate1DState.axis === 0) {
+        currentProjSpecX = data.specX;
+        if (gate1DState.last_res && gate1DState.last_res.net_spec) {
+          currentProjSpecY = gate1DState.last_res.net_spec;
+        }
+      } else {
+        currentProjSpecY = data.specY;
+        if (gate1DState.last_res && gate1DState.last_res.net_spec) {
+          currentProjSpecX = gate1DState.last_res.net_spec;
+        }
+      }
+    }
     renderBoth1DSpectra();
   }
 
@@ -1022,6 +1217,90 @@
       ctx2d.lineWidth = 1.8;
       ctx2d.fillRect(rx, ry, rw, rh);
       ctx2d.strokeRect(rx, ry, rw, rh);
+    }
+
+    // 4.5. Draw 1D Gating Slices on 2D Matrix
+    if (gate1DState.axis !== null && (gate1DState.w_gates.length > 0 || gate1DState.b_gates.length > 0 || gate1DState.pending_w !== null || gate1DState.pending_b !== null)) {
+      const spanX = Math.max(1, view.x1 - view.x0);
+      const spanY = Math.max(1, view.y1 - view.y0);
+
+      ctx2d.save();
+      ctx2d.beginPath();
+      ctx2d.rect(pr.x, pr.y, pr.w, pr.h);
+      ctx2d.clip();
+
+      if (gate1DState.axis === 0) {
+        for (const [w0, w1] of gate1DState.w_gates) {
+          const xL = pr.x + ((w0 - view.x0) / spanX) * pr.w;
+          const xR = pr.x + ((w1 + 1 - view.x0) / spanX) * pr.w;
+          ctx2d.fillStyle = 'rgba(0, 230, 118, 0.16)';
+          ctx2d.fillRect(xL, pr.y, Math.max(1.5, xR - xL), pr.h);
+          ctx2d.strokeStyle = 'rgba(0, 230, 118, 0.7)';
+          ctx2d.lineWidth = 1;
+          ctx2d.strokeRect(xL, pr.y, Math.max(1.5, xR - xL), pr.h);
+        }
+        for (const [b0, b1] of gate1DState.b_gates) {
+          const xL = pr.x + ((b0 - view.x0) / spanX) * pr.w;
+          const xR = pr.x + ((b1 + 1 - view.x0) / spanX) * pr.w;
+          ctx2d.fillStyle = 'rgba(255, 82, 82, 0.16)';
+          ctx2d.fillRect(xL, pr.y, Math.max(1.5, xR - xL), pr.h);
+          ctx2d.strokeStyle = 'rgba(255, 82, 82, 0.7)';
+          ctx2d.lineWidth = 1;
+          ctx2d.strokeRect(xL, pr.y, Math.max(1.5, xR - xL), pr.h);
+        }
+        if (gate1DState.pending_w !== null) {
+          const pX = pr.x + ((gate1DState.pending_w + 0.5 - view.x0) / spanX) * pr.w;
+          ctx2d.strokeStyle = '#00e676';
+          ctx2d.lineWidth = 1.5;
+          ctx2d.setLineDash([4, 4]);
+          ctx2d.beginPath(); ctx2d.moveTo(pX, pr.y); ctx2d.lineTo(pX, pr.y + pr.h); ctx2d.stroke();
+          ctx2d.setLineDash([]);
+        }
+        if (gate1DState.pending_b !== null) {
+          const pX = pr.x + ((gate1DState.pending_b + 0.5 - view.x0) / spanX) * pr.w;
+          ctx2d.strokeStyle = '#ff5252';
+          ctx2d.lineWidth = 1.5;
+          ctx2d.setLineDash([4, 4]);
+          ctx2d.beginPath(); ctx2d.moveTo(pX, pr.y); ctx2d.lineTo(pX, pr.y + pr.h); ctx2d.stroke();
+          ctx2d.setLineDash([]);
+        }
+      } else {
+        for (const [w0, w1] of gate1DState.w_gates) {
+          const yB = pr.y + pr.h - ((w0 - view.y0) / spanY) * pr.h;
+          const yT = pr.y + pr.h - ((w1 + 1 - view.y0) / spanY) * pr.h;
+          ctx2d.fillStyle = 'rgba(0, 230, 118, 0.16)';
+          ctx2d.fillRect(pr.x, yT, pr.w, Math.max(1.5, yB - yT));
+          ctx2d.strokeStyle = 'rgba(0, 230, 118, 0.7)';
+          ctx2d.lineWidth = 1;
+          ctx2d.strokeRect(pr.x, yT, pr.w, Math.max(1.5, yB - yT));
+        }
+        for (const [b0, b1] of gate1DState.b_gates) {
+          const yB = pr.y + pr.h - ((b0 - view.y0) / spanY) * pr.h;
+          const yT = pr.y + pr.h - ((b1 + 1 - view.y0) / spanY) * pr.h;
+          ctx2d.fillStyle = 'rgba(255, 82, 82, 0.16)';
+          ctx2d.fillRect(pr.x, yT, pr.w, Math.max(1.5, yB - yT));
+          ctx2d.strokeStyle = 'rgba(255, 82, 82, 0.7)';
+          ctx2d.lineWidth = 1;
+          ctx2d.strokeRect(pr.x, yT, pr.w, Math.max(1.5, yB - yT));
+        }
+        if (gate1DState.pending_w !== null) {
+          const pY = pr.y + pr.h - ((gate1DState.pending_w + 0.5 - view.y0) / spanY) * pr.h;
+          ctx2d.strokeStyle = '#00e676';
+          ctx2d.lineWidth = 1.5;
+          ctx2d.setLineDash([4, 4]);
+          ctx2d.beginPath(); ctx2d.moveTo(pr.x, pY); ctx2d.lineTo(pr.x + pr.w, pY); ctx2d.stroke();
+          ctx2d.setLineDash([]);
+        }
+        if (gate1DState.pending_b !== null) {
+          const pY = pr.y + pr.h - ((gate1DState.pending_b + 0.5 - view.y0) / spanY) * pr.h;
+          ctx2d.strokeStyle = '#ff5252';
+          ctx2d.lineWidth = 1.5;
+          ctx2d.setLineDash([4, 4]);
+          ctx2d.beginPath(); ctx2d.moveTo(pr.x, pY); ctx2d.lineTo(pr.x + pr.w, pY); ctx2d.stroke();
+          ctx2d.setLineDash([]);
+        }
+      }
+      ctx2d.restore();
     }
 
     // 5. Draw 2D Coincidence Peak Fit Indicator & FWHM Ellipse
@@ -1221,7 +1500,12 @@
     const fwhmMult = document.getElementById('fwhmMultSlider1D') ? document.getElementById('fwhmMultSlider1D').value : '4.0';
     const verbosity = document.getElementById('fitVerbositySelect') ? document.getElementById('fitVerbositySelect').value : 'compact';
 
-    const res = await fetch(`/api/fit_peak?axis=${axis}&channel=${ch}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}&fit_type=${fitType}&fwhm_mult=${fwhmMult}&verbosity=${verbosity}`);
+    let url = `/api/fit_peak?axis=${axis}&channel=${ch}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}&fit_type=${fitType}&fwhm_mult=${fwhmMult}&verbosity=${verbosity}`;
+    if (gate1DState.axis !== null && gate1DState.axis === (1 - axis) && gate1DState.w_gates.length > 0) {
+      url += `&w_gates=${encodeURIComponent(JSON.stringify(gate1DState.w_gates))}&b_gates=${encodeURIComponent(JSON.stringify(gate1DState.b_gates))}`;
+    }
+
+    const res = await fetch(url);
     const data = await res.json();
     if (data.success) {
       activeFit1D[axis] = data;
@@ -1500,12 +1784,133 @@
         ctx.restore();
       }
     }
+
+    // Zero baseline indicator if spectrum has negative counts
+    if (yMinDisplay < 0 && yMaxDisplay > 0 && !isLog) {
+      const y0Px = valToPx(0);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(pr.x, y0Px);
+      ctx.lineTo(pr.x + pr.w, y0Px);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // 1D Gating Overlays on the source axis
+    if (gate1DState.axis === axis) {
+      // Completed Peak Gates (W) - Semi-transparent vibrant green
+      for (let i = 0; i < gate1DState.w_gates.length; i++) {
+        const [w0, w1] = gate1DState.w_gates[i];
+        if (w1 >= chStart && w0 <= chEnd) {
+          const xL = pr.x + ((Math.max(w0, chStart) - chStart) / span) * pr.w;
+          const xR = pr.x + ((Math.min(w1, chEnd) + 1 - chStart) / span) * pr.w;
+          const wW = Math.max(2, xR - xL);
+          ctx.fillStyle = 'rgba(0, 230, 118, 0.22)';
+          ctx.fillRect(xL, pr.y, wW, pr.h);
+          ctx.strokeStyle = '#00e676';
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(xL, pr.y, wW, pr.h);
+
+          // Badge on top
+          ctx.save();
+          ctx.font = 'bold 9px monospace';
+          const badgeText = `W${i + 1}`;
+          ctx.fillStyle = 'rgba(12, 28, 16, 0.9)';
+          ctx.fillRect(xL, pr.y + 2, 22, 13);
+          ctx.strokeStyle = '#00e676';
+          ctx.strokeRect(xL, pr.y + 2, 22, 13);
+          ctx.fillStyle = '#00e676';
+          ctx.textAlign = 'center';
+          ctx.fillText(badgeText, xL + 11, pr.y + 11);
+          ctx.restore();
+        }
+      }
+
+      // Completed Background Gates (B) - Semi-transparent vibrant red
+      for (let i = 0; i < gate1DState.b_gates.length; i++) {
+        const [b0, b1] = gate1DState.b_gates[i];
+        if (b1 >= chStart && b0 <= chEnd) {
+          const xL = pr.x + ((Math.max(b0, chStart) - chStart) / span) * pr.w;
+          const xR = pr.x + ((Math.min(b1, chEnd) + 1 - chStart) / span) * pr.w;
+          const bW = Math.max(2, xR - xL);
+          ctx.fillStyle = 'rgba(255, 82, 82, 0.22)';
+          ctx.fillRect(xL, pr.y, bW, pr.h);
+          ctx.strokeStyle = '#ff5252';
+          ctx.lineWidth = 1.5;
+          ctx.strokeRect(xL, pr.y, bW, pr.h);
+
+          // Badge on top
+          ctx.save();
+          ctx.font = 'bold 9px monospace';
+          const badgeText = `B${i + 1}`;
+          ctx.fillStyle = 'rgba(28, 12, 12, 0.9)';
+          ctx.fillRect(xL, pr.y + 2, 22, 13);
+          ctx.strokeStyle = '#ff5252';
+          ctx.strokeRect(xL, pr.y + 2, 22, 13);
+          ctx.fillStyle = '#ff5252';
+          ctx.textAlign = 'center';
+          ctx.fillText(badgeText, xL + 11, pr.y + 11);
+          ctx.restore();
+        }
+      }
+
+      // Pending W limit
+      if (gate1DState.pending_w !== null && gate1DState.pending_w >= chStart && gate1DState.pending_w <= chEnd) {
+        const pX = pr.x + ((gate1DState.pending_w + 0.5 - chStart) / span) * pr.w;
+        ctx.strokeStyle = '#00e676';
+        ctx.lineWidth = 1.8;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(pX, pr.y);
+        ctx.lineTo(pX, pr.y + pr.h);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.save();
+        ctx.font = 'bold 9px monospace';
+        const txt = `W${gate1DState.w_gates.length + 1} L:${gate1DState.pending_w}`;
+        const tW = ctx.measureText(txt).width;
+        ctx.fillStyle = 'rgba(0, 230, 118, 0.92)';
+        ctx.fillRect(pX - 2, pr.y + 2, tW + 6, 14);
+        ctx.fillStyle = '#000000';
+        ctx.textAlign = 'left';
+        ctx.fillText(txt, pX + 1, pr.y + 12);
+        ctx.restore();
+      }
+
+      // Pending B limit
+      if (gate1DState.pending_b !== null && gate1DState.pending_b >= chStart && gate1DState.pending_b <= chEnd) {
+        const pX = pr.x + ((gate1DState.pending_b + 0.5 - chStart) / span) * pr.w;
+        ctx.strokeStyle = '#ff5252';
+        ctx.lineWidth = 1.8;
+        ctx.setLineDash([4, 3]);
+        ctx.beginPath();
+        ctx.moveTo(pX, pr.y);
+        ctx.lineTo(pX, pr.y + pr.h);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        ctx.save();
+        ctx.font = 'bold 9px monospace';
+        const txt = `B${gate1DState.b_gates.length + 1} L:${gate1DState.pending_b}`;
+        const tW = ctx.measureText(txt).width;
+        ctx.fillStyle = 'rgba(255, 82, 82, 0.92)';
+        ctx.fillRect(pX - 2, pr.y + 2, tW + 6, 14);
+        ctx.fillStyle = '#ffffff';
+        ctx.textAlign = 'left';
+        ctx.fillText(txt, pX + 1, pr.y + 12);
+        ctx.restore();
+      }
+    }
     ctx.restore();
 
     // E. On-Canvas HUD Badge
     const isCal = metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0);
     let hudText;
-    const detLabel = (axis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
+    const isGatedDest = (gate1DState.axis !== null && gate1DState.axis === (1 - axis) && gate1DState.w_gates.length > 0);
+    const detLabel = (axis === 0) ? (isGatedDest ? 'Det 1 [Coinc Cut]' : 'Det 1 (X)') : (isGatedDest ? 'Det 2 [Coinc Cut]' : 'Det 2 (Y)');
     if (cursorCh !== null && cursorCh >= 0 && cursorCh < spec.length) {
       const eVal = chToEnergy(cursorCh + 0.5).toFixed(1);
       const cVal = spec[cursorCh] || 0;
@@ -1513,7 +1918,7 @@
         ? `${detLabel} | Ch: ${cursorCh} | ${eVal} keV | Cts: ${cVal}`
         : `${detLabel} | Ch: ${cursorCh} | Cts: ${cVal}`;
     } else {
-      hudText = `${detLabel} Spectrum (Ctrl+Click to Fit)`;
+      hudText = isGatedDest ? `${detLabel} (Ctrl+Click to Fit)` : `${detLabel} Spectrum (Ctrl+Click to Fit)`;
     }
 
     ctx.save();
@@ -1711,20 +2116,25 @@
       }
     }
 
-    const detName = (axis === 0) ? 'Det1_X' : 'Det2_Y';
-    let content = `# 1D Binned Histogram Export from ${metadata.filename}
-`;
-    content += `# Spectrum: ${axis === 0 ? 'Det 1 (X Projection, Slice Y)' : 'Det 2 (Y Projection, Slice X)'}
-`;
-    content += `# Sliced 2D Window: X=[${currentProjSlice.x0}..${currentProjSlice.x1}], Y=[${currentProjSlice.y0}..${currentProjSlice.y1}]
-`;
-    content += `# Channel Energy_keV Counts
-`;
+    const isGatedCut = (gate1DState.axis !== null && gate1DState.axis === (1 - axis) && gate1DState.w_gates.length > 0);
+    const detName = (axis === 0) ? (isGatedCut ? 'Det1_X_Gated' : 'Det1_X') : (isGatedCut ? 'Det2_Y_Gated' : 'Det2_Y');
+    let content = `# 1D Binned Histogram Export from ${metadata.filename}\n`;
+    if (isGatedCut) {
+      const wStr = JSON.stringify(gate1DState.w_gates);
+      const bStr = JSON.stringify(gate1DState.b_gates);
+      const scaleStr = gate1DState.last_res ? gate1DState.last_res.scale.toFixed(4) : '0';
+      content += `# Spectrum: ${axis === 0 ? 'Det 1 (Gated Coincidence Cut)' : 'Det 2 (Gated Coincidence Cut)'}\n`;
+      content += `# Peak Gates (W): ${wStr}\n`;
+      content += `# Background Gates (B): ${bStr} (Scale factor: ${scaleStr})\n`;
+    } else {
+      content += `# Spectrum: ${axis === 0 ? 'Det 1 (X Projection, Slice Y)' : 'Det 2 (Y Projection, Slice X)'}\n`;
+      content += `# Sliced 2D Window: X=[${currentProjSlice.x0}..${currentProjSlice.x1}], Y=[${currentProjSlice.y0}..${currentProjSlice.y1}]\n`;
+    }
+    content += `# Channel Energy_keV Counts\n`;
 
     for (let i = chStart; i <= chEnd; i++) {
       let e = chToEnergy(i + 0.5).toFixed(3);
-      content += `${i} ${e} ${spec[i]}
-`;
+      content += `${i} ${e} ${spec[i]}\n`;
     }
 
     const blob = new Blob([content], { type: 'text/plain' });
@@ -1747,6 +2157,9 @@
     const fwhmMult = document.getElementById('fwhmMultSlider1D') ? document.getElementById('fwhmMultSlider1D').value : '4.0';
 
     let url = `/api/export_pdf_1d?axis=${axis}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}&is_synced=${isSynced ? 1 : 0}&is_log=${isLog}&zoom_y=${zoomY}`;
+    if (gate1DState.axis !== null && gate1DState.axis === (1 - axis) && gate1DState.w_gates.length > 0) {
+      url += `&w_gates=${encodeURIComponent(JSON.stringify(gate1DState.w_gates))}&b_gates=${encodeURIComponent(JSON.stringify(gate1DState.b_gates))}`;
+    }
     if (fit && fit.centroid_ch !== undefined) {
       url += `&has_fit=1&fit_ch=${fit.centroid_ch}&fit_type=${fitType}&fwhm_mult=${fwhmMult}`;
     }
@@ -1962,6 +2375,13 @@
     const btnClose2 = document.getElementById('btnCloseFit2D');
     if (btnClose2) btnClose2.addEventListener('click', clearFit2D);
 
+    const btnClrX = document.getElementById('btnClearGateX');
+    if (btnClrX) btnClrX.addEventListener('click', () => clear1DGates(true));
+    const btnClrY = document.getElementById('btnClearGateY');
+    if (btnClrY) btnClrY.addEventListener('click', () => clear1DGates(true));
+    const btnSidebarClr = document.getElementById('btnSidebarClearGate');
+    if (btnSidebarClr) btnSidebarClr.addEventListener('click', () => clear1DGates(true));
+
     const btnHelp = document.getElementById('btnHelp');
     if (btnHelp) btnHelp.addEventListener('click', () => { document.getElementById('helpModal').style.display = 'block'; });
 
@@ -1975,16 +2395,16 @@
       el.addEventListener('change', () => el.blur());
     });
 
-    canvas2d.addEventListener('mouseenter', unfocusControls);
+    canvas2d.addEventListener('mouseenter', () => { hovered1DAxis = null; unfocusControls(); });
     canvas2d.addEventListener('mousedown', unfocusControls);
-    canvas1dX.addEventListener('mouseenter', unfocusControls);
+    canvas1dX.addEventListener('mouseenter', () => { hovered1DAxis = 0; unfocusControls(); });
     canvas1dX.addEventListener('mousedown', unfocusControls);
-    canvas1dY.addEventListener('mouseenter', unfocusControls);
+    canvas1dY.addEventListener('mouseenter', () => { hovered1DAxis = 1; unfocusControls(); });
     canvas1dY.addEventListener('mousedown', unfocusControls);
 
     window.addEventListener('keydown', (e) => {
       const k = e.key.toLowerCase();
-      const isShortcut = ['arrowleft', 'arrowright', 'arrowdown', 'arrowup', 'e', 'f', 'q', '=', '+', 'g', 'c', '1', '2', '4', 'l', '?', 'h', 'escape', 'm'].includes(k);
+      const isShortcut = ['arrowleft', 'arrowright', 'arrowdown', 'arrowup', 'e', 'f', 'q', '=', '+', 'g', 'c', '1', '2', '4', 'l', '?', 'h', 'escape', 'm', 'w', 'b', 'z'].includes(k);
       if (isShortcut) {
         e.preventDefault();
         unfocusControls();
@@ -2011,6 +2431,9 @@
       else if (e.key === 'm' || e.key === 'M') toggleSidebar();
       else if (e.key === 'q' || e.key === 'Q') quitViewer();
       else if (e.key === '=' || e.key === '+') clearAllFits();
+      else if (e.key === 'w' || e.key === 'W') handleGateKeyPress('w');
+      else if (e.key === 'b' || e.key === 'B') handleGateKeyPress('b');
+      else if (e.key === 'z' || e.key === 'Z') clear1DGates(true);
       else if (e.key === 'g' || e.key === 'G') {
         if (isMouseOver2D) requestPeakFit2D(cursorChannel.x, cursorChannel.y);
         else if (cursor1DChannelX !== null) requestPeakFit(0, cursor1DChannelX);
@@ -2029,7 +2452,12 @@
         const hm = document.getElementById('helpModal');
         hm.style.display = hm.style.display === 'block' ? 'none' : 'block';
       } else if (e.key === 'Escape') {
-        document.getElementById('helpModal').style.display = 'none';
+        const hm = document.getElementById('helpModal');
+        if (hm && hm.style.display === 'block') {
+          hm.style.display = 'none';
+        } else if (gate1DState.pending_w !== null || gate1DState.pending_b !== null || gate1DState.axis !== null) {
+          clear1DGates(true);
+        }
       }
     });
 
@@ -2352,14 +2780,16 @@
       drag1DCurrentPos[axis] = { x: mouseX, y: mouseY };
     }
 
+    canvas1dX.addEventListener('mouseenter', () => { hovered1DAxis = 0; });
     canvas1dX.addEventListener('mousedown', (e) => handle1DMousedown(canvas1dX, 0, e));
-    canvas1dX.addEventListener('mousemove', (e) => handle1DHover(canvas1dX, currentProjSpecX, 0, e));
-    canvas1dX.addEventListener('mouseleave', () => { if (!is1DBoxZooming[0]) { cursor1DChannelX = null; renderBoth1DSpectra(); } });
+    canvas1dX.addEventListener('mousemove', (e) => { hovered1DAxis = 0; handle1DHover(canvas1dX, currentProjSpecX, 0, e); });
+    canvas1dX.addEventListener('mouseleave', () => { hovered1DAxis = null; if (!is1DBoxZooming[0]) { cursor1DChannelX = null; renderBoth1DSpectra(); } });
     canvas1dX.addEventListener('click', (e) => handle1DClick(canvas1dX, currentProjSpecX, 0, e));
 
+    canvas1dY.addEventListener('mouseenter', () => { hovered1DAxis = 1; });
     canvas1dY.addEventListener('mousedown', (e) => handle1DMousedown(canvas1dY, 1, e));
-    canvas1dY.addEventListener('mousemove', (e) => handle1DHover(canvas1dY, currentProjSpecY, 1, e));
-    canvas1dY.addEventListener('mouseleave', () => { if (!is1DBoxZooming[1]) { cursor1DChannelY = null; renderBoth1DSpectra(); } });
+    canvas1dY.addEventListener('mousemove', (e) => { hovered1DAxis = 1; handle1DHover(canvas1dY, currentProjSpecY, 1, e); });
+    canvas1dY.addEventListener('mouseleave', () => { hovered1DAxis = null; if (!is1DBoxZooming[1]) { cursor1DChannelY = null; renderBoth1DSpectra(); } });
     canvas1dY.addEventListener('click', (e) => handle1DClick(canvas1dY, currentProjSpecY, 1, e));
   }
 
