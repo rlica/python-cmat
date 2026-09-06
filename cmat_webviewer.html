@@ -37,6 +37,44 @@
     flex-direction: column;
     gap: 12px;
     overflow-y: auto;
+    flex-shrink: 0;
+  }
+  aside.collapsed {
+    display: none;
+  }
+  .btn-sidebar-toggle {
+    background: #212121;
+    color: #00e5ff;
+    border: 1px solid #3d3d3d;
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 0.88rem;
+    cursor: pointer;
+    width: auto;
+    margin: 0;
+    line-height: 1.2;
+    transition: all 0.15s;
+  }
+  .btn-sidebar-toggle:hover {
+    background: #2f2f2f;
+    border-color: #00e5ff;
+  }
+  .mini-btn-collapse {
+    background: transparent;
+    color: #888;
+    border: 1px solid #383838;
+    border-radius: 3px;
+    padding: 1px 6px;
+    font-size: 0.7rem;
+    cursor: pointer;
+    width: auto;
+    margin: 0;
+    transition: all 0.15s;
+  }
+  .mini-btn-collapse:hover {
+    background: #2a2a2a;
+    color: #00e5ff;
+    border-color: #00e5ff;
   }
   .control-group {
     background: #1f1f1f;
@@ -76,9 +114,10 @@
   button.secondary:hover { background: #546e7a; }
   .range-val { font-family: monospace; font-size: 0.78rem; color: #80d8ff; float: right; }
 
-  .workspace { flex: 1; display: flex; flex-direction: row; padding: 8px; gap: 8px; overflow: hidden; }
+  .workspace { flex: 1; display: flex; flex-direction: row; padding: 8px; gap: 6px; overflow: hidden; }
   .panel-2d {
     flex: 6;
+    min-width: 150px;
     background: #000;
     border-radius: 6px;
     position: relative;
@@ -101,8 +140,25 @@
     color: #00e5ff;
     flex-shrink: 0;
   }
+  .panel-resizer {
+    width: 6px;
+    cursor: col-resize;
+    background: #1e1e1e;
+    border: 1px solid #2c2c2c;
+    border-radius: 3px;
+    flex-shrink: 0;
+    z-index: 10;
+    position: relative;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .panel-resizer:hover, .panel-resizer.dragging {
+    background: #00e5ff;
+    border-color: #00e5ff;
+    box-shadow: 0 0 8px rgba(0, 229, 255, 0.6);
+  }
   .panel-1d-container {
     flex: 4.8;
+    min-width: 200px;
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -184,13 +240,14 @@
     flex-direction: column;
     gap: 3px;
     padding: 2px 0;
+    overflow-x: auto;
   }
   .fit-compact-line {
     font-family: monospace;
     font-size: 0.74rem;
     color: #eee;
-    white-space: normal;
-    word-break: break-word;
+    white-space: pre;
+    tab-size: 4;
     line-height: 1.4;
   }
   .fit-compact-line strong {
@@ -222,6 +279,7 @@
 
 <header>
   <div class="title">
+    <button id="btnToggleSidebar" class="btn-sidebar-toggle" title="Toggle Sidebar Menu [M]">☰ Menu</button>
     <span>⚛ GASPware 2D Matrix Visualizer</span>
     <span class="badge" id="matInfo">Loading...</span>
   </div>
@@ -229,10 +287,13 @@
 </header>
 
 <main>
-  <aside>
+  <aside id="sidebar">
     <!-- 1. Navigation & Scroll (Top) -->
     <div class="control-group">
-      <h3>Navigation &amp; Scroll</h3>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <h3 style="margin: 0;">Navigation &amp; Scroll</h3>
+        <button id="btnHideSidebar" class="mini-btn-collapse" title="Collapse Menu [M]">◀ Hide</button>
+      </div>
       <label>Scroll Zoom Step <span class="range-val" id="scrollSensLabel">4%</span></label>
       <input type="range" id="scrollSensSlider" min="1" max="15" value="4">
       <button id="btnHelp" class="secondary" style="background:#4a148c; margin-top:8px;">Help / Shortcuts [?]</button>
@@ -329,6 +390,7 @@
         </div>
       </div>
     </div>
+    <div class="panel-resizer" id="panelResizer" title="Drag to adjust 2D vs 1D panel width (Double-click to reset)"></div>
     <div class="panel-1d-container">
       <div class="panel-1d">
         <div class="panel-1d-header">
@@ -429,6 +491,8 @@
     <tr><td>F / f</td><td>Full matrix view (zoom out)</td></tr>
     <tr><td>1 / 2 / 4 (or L)</td><td>Switch Linear, Sqrt, Log color scale</td></tr>
     <tr><td>C / c</td><td>Cycle colormaps</td></tr>
+    <tr><td>M / m</td><td>Toggle left menu panel (collapse / expand)</td></tr>
+    <tr><td>Drag Divider</td><td>Adjust width of 2D matrix vs 1D projections (double-click to reset)</td></tr>
     <tr><td>Q / q</td><td>Quit viewer (close browser tab and stop terminal server)</td></tr>
     <tr><td>Esc / ?</td><td>Close Help</td></tr>
   </table>
@@ -623,7 +687,103 @@
     }
   }
 
+  function toggleSidebar() {
+    const sb = document.getElementById('sidebar');
+    if (!sb) return;
+    sb.classList.toggle('collapsed');
+    const isCollapsed = sb.classList.contains('collapsed');
+    const toggleBtn = document.getElementById('btnToggleSidebar');
+    if (toggleBtn) {
+      toggleBtn.title = isCollapsed ? 'Show Sidebar Menu [M]' : 'Hide Sidebar Menu [M]';
+      toggleBtn.style.color = isCollapsed ? '#ffd600' : '#00e5ff';
+    }
+    localStorage.setItem('cmat_sidebar_collapsed', isCollapsed ? '1' : '0');
+    resizeCanvases();
+    render2D();
+    renderBoth1DSpectra();
+  }
+
+  function initSidebar() {
+    const btnToggle = document.getElementById('btnToggleSidebar');
+    if (btnToggle) btnToggle.addEventListener('click', toggleSidebar);
+    const btnHide = document.getElementById('btnHideSidebar');
+    if (btnHide) btnHide.addEventListener('click', toggleSidebar);
+
+    if (localStorage.getItem('cmat_sidebar_collapsed') === '1') {
+      const sb = document.getElementById('sidebar');
+      if (sb) sb.classList.add('collapsed');
+      if (btnToggle) {
+        btnToggle.title = 'Show Sidebar Menu [M]';
+        btnToggle.style.color = '#ffd600';
+      }
+    }
+  }
+
+  function initPanelResizer() {
+    const resizer = document.getElementById('panelResizer');
+    const p2d = document.querySelector('.panel-2d');
+    const ws = document.querySelector('.workspace');
+    if (!resizer || !p2d || !ws) return;
+
+    const savedWidth = localStorage.getItem('cmat_panel2d_width');
+    if (savedWidth) {
+      p2d.style.flex = 'none';
+      p2d.style.width = savedWidth;
+    }
+
+    let isDragging = false;
+
+    resizer.addEventListener('mousedown', (e) => {
+      isDragging = true;
+      resizer.classList.add('dragging');
+      document.body.style.cursor = 'col-resize';
+      document.body.style.userSelect = 'none';
+      e.preventDefault();
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (!isDragging) return;
+      const wsRect = ws.getBoundingClientRect();
+      const offsetX = e.clientX - wsRect.left;
+      const minW = 150;
+      const maxW = wsRect.width - 200;
+      const clampedX = Math.max(minW, Math.min(maxW, offsetX));
+      const pct = ((clampedX / wsRect.width) * 100).toFixed(2);
+      p2d.style.flex = 'none';
+      p2d.style.width = `${pct}%`;
+      resizeCanvases();
+      render2D();
+      renderBoth1DSpectra();
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        resizer.classList.remove('dragging');
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        if (p2d.style.width) {
+          localStorage.setItem('cmat_panel2d_width', p2d.style.width);
+        }
+        resizeCanvases();
+        render2D();
+        renderBoth1DSpectra();
+      }
+    });
+
+    resizer.addEventListener('dblclick', () => {
+      p2d.style.flex = '6';
+      p2d.style.width = '';
+      localStorage.removeItem('cmat_panel2d_width');
+      resizeCanvases();
+      render2D();
+      renderBoth1DSpectra();
+    });
+  }
+
   async function init() {
+    initSidebar();
+    initPanelResizer();
     resizeCanvases();
     window.addEventListener('resize', () => {
       resizeCanvases();
@@ -928,6 +1088,29 @@
     return sel ? sel.value : 'gaussian';
   }
 
+  function formatAlignedPair(v1, e1, v2, e2, dec) {
+    const n1 = (typeof v1 === 'number') ? v1 : parseFloat(v1);
+    const n2 = (typeof v2 === 'number') ? v2 : parseFloat(v2);
+    const er1 = (typeof e1 === 'number') ? e1 : parseFloat(e1);
+    const er2 = (typeof e2 === 'number') ? e2 : parseFloat(e2);
+
+    const n1Str = isNaN(n1) ? '0' : n1.toFixed(dec);
+    const n2Str = isNaN(n2) ? '0' : n2.toFixed(dec);
+    const int1 = n1Str.split('.')[0];
+    const int2 = n2Str.split('.')[0];
+    const frac1 = n1Str.split('.')[1] || '';
+    const frac2 = n2Str.split('.')[1] || '';
+    const maxInt = Math.max(int1.length, int2.length);
+
+    const e1Str = isNaN(er1) ? '0' : er1.toFixed(dec);
+    const e2Str = isNaN(er2) ? '0' : er2.toFixed(dec);
+    const maxErr = Math.max(e1Str.length, e2Str.length);
+
+    const s1 = `${int1.padStart(maxInt, ' ')}.${frac1}(${e1Str.padStart(maxErr, ' ')})`;
+    const s2 = `${int2.padStart(maxInt, ' ')}.${frac2}(${e2Str.padStart(maxErr, ' ')})`;
+    return [s1, s2];
+  }
+
   async function requestPeakFit2D(x, y) {
     const fitType = getActiveFitType();
     const roiHW = document.getElementById('roiWidthSlider2D') ? parseInt(document.getElementById('roiWidthSlider2D').value, 10) : 16;
@@ -946,15 +1129,32 @@
 
       document.getElementById('fitTitle2D').innerText = `⚛ ${modelTag}: ${posTag}`;
 
-      // Compact format (one simple line for each axis + Gamba net summary)
-      const volStr = `${data.volume.toLocaleString()}(${data.volume_err.toLocaleString()})`;
-      const lineX = isCal
-        ? `<strong>Det 1 (X):</strong> Centroid: ${data.centroid_x_e}(${data.centroid_x_e_err}) keV &nbsp;&nbsp; Area: ${volStr} counts &nbsp;&nbsp; FWHM: ${data.fwhm_x_e}(${data.fwhm_x_e_err}) keV`
-        : `<strong>Det 1 (X):</strong> Centroid: ${data.centroid_x_ch}(${data.centroid_x_ch_err}) ch &nbsp;&nbsp; Area: ${volStr} counts &nbsp;&nbsp; FWHM: ${data.fwhm_x_ch}(${data.fwhm_x_ch_err}) ch`;
-      const lineY = isCal
-        ? `<strong>Det 2 (Y):</strong> Centroid: ${data.centroid_y_e}(${data.centroid_y_e_err}) keV &nbsp;&nbsp; Area: ${volStr} counts &nbsp;&nbsp; FWHM: ${data.fwhm_y_e}(${data.fwhm_y_e_err}) keV`
-        : `<strong>Det 2 (Y):</strong> Centroid: ${data.centroid_y_ch}(${data.centroid_y_ch_err}) ch &nbsp;&nbsp; Area: ${volStr} counts &nbsp;&nbsp; FWHM: ${data.fwhm_y_ch}(${data.fwhm_y_ch_err}) ch`;
-      const lineGamba = `<strong>Gamba Gate Net (p|p<sup>t</sup>):</strong> ${data.gamba_net.toLocaleString()} ± ${data.gamba_net_err.toLocaleString()} counts &nbsp;&nbsp; <strong>Π Ratio:</strong> ${data.pi_ratio_percent}%`;
+      // Compact format aligned with tabs and blank padding
+      const dec = isCal ? 2 : 3;
+      const unit = isCal ? 'keV' : 'ch';
+      const [c1Str, c2Str] = formatAlignedPair(
+        isCal ? data.centroid_x_e : data.centroid_x_ch,
+        isCal ? data.centroid_x_e_err : data.centroid_x_ch_err,
+        isCal ? data.centroid_y_e : data.centroid_y_ch,
+        isCal ? data.centroid_y_e_err : data.centroid_y_ch_err,
+        dec
+      );
+      const [f1Str, f2Str] = formatAlignedPair(
+        isCal ? data.fwhm_x_e : data.fwhm_x_ch,
+        isCal ? data.fwhm_x_e_err : data.fwhm_x_ch_err,
+        isCal ? data.fwhm_y_e : data.fwhm_y_ch,
+        isCal ? data.fwhm_y_e_err : data.fwhm_y_ch_err,
+        dec
+      );
+      const volVal = (typeof data.volume === 'number' ? data.volume : parseFloat(data.volume)).toFixed(1);
+      const volErr = (typeof data.volume_err === 'number' ? data.volume_err : parseFloat(data.volume_err)).toFixed(1);
+      const volStr = `${volVal}(${volErr})`;
+
+      const lineX = `<strong>Det 1 (X):</strong>\tCentroid: ${c1Str} ${unit}\tArea: ${volStr} counts\tFWHM: ${f1Str} ${unit}`;
+      const lineY = `<strong>Det 2 (Y):</strong>\tCentroid: ${c2Str} ${unit}\tArea: ${volStr} counts\tFWHM: ${f2Str} ${unit}`;
+      const gambaNet = (typeof data.gamba_net === 'number' ? data.gamba_net : parseFloat(data.gamba_net)).toFixed(1);
+      const gambaNetErr = (typeof data.gamba_net_err === 'number' ? data.gamba_net_err : parseFloat(data.gamba_net_err)).toFixed(1);
+      const lineGamba = `<strong>Gamba Gate Net (p|p<sup>t</sup>):</strong> ${gambaNet} ± ${gambaNetErr} counts\t<strong>Π Ratio:</strong> ${data.pi_ratio_percent}%`;
 
       document.getElementById('fitCompactLine2D_X').innerHTML = lineX;
       document.getElementById('fitCompactLine2D_Y').innerHTML = lineY;
@@ -1031,10 +1231,15 @@
       document.getElementById('fitTitle1D').innerText = `⚛ ${modelTag} [${detLabel}]: ${isCal ? data.centroid_e + ' keV' : 'ch ' + data.centroid_ch}`;
 
       // Compact line in format: centroid(err)   area(err)   fwhm(err)
-      const areaStr = `${data.area.toLocaleString()}(${data.area_err.toLocaleString()})`;
-      const compact1D = isCal
-        ? `Centroid: ${data.centroid_e}(${data.centroid_e_err}) keV &nbsp;&nbsp; Area: ${areaStr} counts &nbsp;&nbsp; FWHM: ${data.fwhm_e}(${data.fwhm_e_err}) keV`
-        : `Centroid: ${data.centroid_ch}(${data.centroid_ch_err}) ch &nbsp;&nbsp; Area: ${areaStr} counts &nbsp;&nbsp; FWHM: ${data.fwhm_ch}(${data.fwhm_ch_err}) ch`;
+      const dec1D = isCal ? 2 : 3;
+      const unit1D = isCal ? 'keV' : 'ch';
+      const c1DVal = (typeof (isCal ? data.centroid_e : data.centroid_ch) === 'number' ? (isCal ? data.centroid_e : data.centroid_ch) : parseFloat(isCal ? data.centroid_e : data.centroid_ch)).toFixed(dec1D);
+      const c1DErr = (typeof (isCal ? data.centroid_e_err : data.centroid_ch_err) === 'number' ? (isCal ? data.centroid_e_err : data.centroid_ch_err) : parseFloat(isCal ? data.centroid_e_err : data.centroid_ch_err)).toFixed(dec1D);
+      const f1DVal = (typeof (isCal ? data.fwhm_e : data.fwhm_ch) === 'number' ? (isCal ? data.fwhm_e : data.fwhm_ch) : parseFloat(isCal ? data.fwhm_e : data.fwhm_ch)).toFixed(dec1D);
+      const f1DErr = (typeof (isCal ? data.fwhm_e_err : data.fwhm_ch_err) === 'number' ? (isCal ? data.fwhm_e_err : data.fwhm_ch_err) : parseFloat(isCal ? data.fwhm_e_err : data.fwhm_ch_err)).toFixed(dec1D);
+      const areaVal = (typeof data.area === 'number' ? data.area : parseFloat(data.area)).toFixed(1);
+      const areaErr = (typeof data.area_err === 'number' ? data.area_err : parseFloat(data.area_err)).toFixed(1);
+      const compact1D = `Centroid: ${c1DVal}(${c1DErr}) ${unit1D}\tArea: ${areaVal}(${areaErr}) counts\tFWHM: ${f1DVal}(${f1DErr}) ${unit1D}`;
       document.getElementById('fitCompactLine1D').innerHTML = compact1D;
 
       // Detailed parameters grid
@@ -1779,7 +1984,7 @@
 
     window.addEventListener('keydown', (e) => {
       const k = e.key.toLowerCase();
-      const isShortcut = ['arrowleft', 'arrowright', 'arrowdown', 'arrowup', 'e', 'f', 'q', '=', '+', 'g', 'c', '1', '2', '4', 'l', '?', 'h', 'escape'].includes(k);
+      const isShortcut = ['arrowleft', 'arrowright', 'arrowdown', 'arrowup', 'e', 'f', 'q', '=', '+', 'g', 'c', '1', '2', '4', 'l', '?', 'h', 'escape', 'm'].includes(k);
       if (isShortcut) {
         e.preventDefault();
         unfocusControls();
@@ -1803,6 +2008,7 @@
       }
       else if (e.key === 'e' || e.key === 'E') expandMarkers();
       else if (e.key === 'f' || e.key === 'F') zoomFull();
+      else if (e.key === 'm' || e.key === 'M') toggleSidebar();
       else if (e.key === 'q' || e.key === 'Q') quitViewer();
       else if (e.key === '=' || e.key === '+') clearAllFits();
       else if (e.key === 'g' || e.key === 'G') {

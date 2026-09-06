@@ -568,9 +568,9 @@ def print_fit_terminal_report(res, det_name, filename, is_cal, verbosity="compac
     model_tag = "Hypermet" if ft == "hypermet" else ("RadWare" if ft == "gaussian_tail" else "Gaussian")
     if verbosity == "compact":
         if is_cal:
-            print(f"⚛ 1D Fit [{det_name}] ({model_tag}): Centroid: {res['centroid_e']:.2f}({res['centroid_e_err']:.2f}) keV   Area: {res['area']:.1f}({res['area_err']:.1f}) counts   FWHM: {res['fwhm_e']:.2f}({res['fwhm_e_err']:.2f}) keV", flush=True)
+            print(f"⚛ 1D Fit [{det_name}] ({model_tag}):\tCentroid: {res['centroid_e']:.2f}({res['centroid_e_err']:.2f}) keV\tArea: {res['area']:.1f}({res['area_err']:.1f}) counts\tFWHM: {res['fwhm_e']:.2f}({res['fwhm_e_err']:.2f}) keV", flush=True)
         else:
-            print(f"⚛ 1D Fit [{det_name}] ({model_tag}): Centroid: {res['centroid_ch']:.3f}({res['centroid_ch_err']:.3f}) ch   Area: {res['area']:.1f}({res['area_err']:.1f}) counts   FWHM: {res['fwhm_ch']:.3f}({res['fwhm_ch_err']:.3f}) ch", flush=True)
+            print(f"⚛ 1D Fit [{det_name}] ({model_tag}):\tCentroid: {res['centroid_ch']:.3f}({res['centroid_ch_err']:.3f}) ch\tArea: {res['area']:.1f}({res['area_err']:.1f}) counts\tFWHM: {res['fwhm_ch']:.3f}({res['fwhm_ch_err']:.3f}) ch", flush=True)
         return
 
     bar = "═" * 80
@@ -1147,16 +1147,49 @@ def print_fit_2d_terminal_report(res, filename, is_cal, verbosity="compact"):
     ft = res.get("fit_type", "gaussian")
     model_tag = "Hypermet" if ft == "hypermet" else ("RadWare" if ft == "gaussian_tail" else "Gaussian")
     if verbosity == "compact":
-        if is_cal:
-            print(f"⚛ 2D Fit [{filename}] ({model_tag} + Gamba BG):", flush=True)
-            print(f"  Det 1 (X): Centroid: {res['centroid_x_e']:.2f}({res['centroid_x_e_err']:.2f}) keV   Area: {res['volume']:.1f}({res['volume_err']:.1f}) counts   FWHM: {res['fwhm_x_e']:.2f}({res['fwhm_x_e_err']:.2f}) keV", flush=True)
-            print(f"  Det 2 (Y): Centroid: {res['centroid_y_e']:.2f}({res['centroid_y_e_err']:.2f}) keV   Area: {res['volume']:.1f}({res['volume_err']:.1f}) counts   FWHM: {res['fwhm_y_e']:.2f}({res['fwhm_y_e_err']:.2f}) keV", flush=True)
-            print(f"  Gamba Net Area (p|p^t): {res['gamba_net']:.1f} ± {res['gamba_net_err']:.1f} counts   Peak/Total-BG Ratio (Π): {res['pi_ratio_percent']:.1f}%\n", flush=True)
-        else:
-            print(f"⚛ 2D Fit [{filename}] ({model_tag} + Gamba BG):", flush=True)
-            print(f"  Det 1 (X): Centroid: {res['centroid_x_ch']:.3f}({res['centroid_x_ch_err']:.3f}) ch   Area: {res['volume']:.1f}({res['volume_err']:.1f}) counts   FWHM: {res['fwhm_x_ch']:.3f}({res['fwhm_x_ch_err']:.3f}) ch", flush=True)
-            print(f"  Det 2 (Y): Centroid: {res['centroid_y_ch']:.3f}({res['centroid_y_ch_err']:.3f}) ch   Area: {res['volume']:.1f}({res['volume_err']:.1f}) counts   FWHM: {res['fwhm_y_ch']:.3f}({res['fwhm_y_ch_err']:.3f}) ch", flush=True)
-            print(f"  Gamba Net Area (p|p^t): {res['gamba_net']:.1f} ± {res['gamba_net_err']:.1f} counts   Peak/Total-BG Ratio (Π): {res['pi_ratio_percent']:.1f}%\n", flush=True)
+        dec = 2 if is_cal else 3
+        unit = "keV" if is_cal else "ch"
+
+        cx_val = res['centroid_x_e'] if is_cal else res['centroid_x_ch']
+        cx_err = res['centroid_x_e_err'] if is_cal else res['centroid_x_ch_err']
+        cy_val = res['centroid_y_e'] if is_cal else res['centroid_y_ch']
+        cy_err = res['centroid_y_e_err'] if is_cal else res['centroid_y_ch_err']
+
+        fx_val = res['fwhm_x_e'] if is_cal else res['fwhm_x_ch']
+        fx_err = res['fwhm_x_e_err'] if is_cal else res['fwhm_x_ch_err']
+        fy_val = res['fwhm_y_e'] if is_cal else res['fwhm_y_ch']
+        fy_err = res['fwhm_y_e_err'] if is_cal else res['fwhm_y_ch_err']
+
+        # Align centroid integer part and error width so decimal points line up
+        cx_fmt = f"{cx_val:.{dec}f}"
+        cy_fmt = f"{cy_val:.{dec}f}"
+        cx_int, cx_dec = cx_fmt.split(".")
+        cy_int, cy_dec = cy_fmt.split(".")
+        max_c_int = max(len(cx_int), len(cy_int))
+        cx_err_s = f"{cx_err:.{dec}f}"
+        cy_err_s = f"{cy_err:.{dec}f}"
+        max_c_err = max(len(cx_err_s), len(cy_err_s))
+        cx_str = f"{cx_int:>{max_c_int}}.{cx_dec}({cx_err_s:>{max_c_err}})"
+        cy_str = f"{cy_int:>{max_c_int}}.{cy_dec}({cy_err_s:>{max_c_err}})"
+
+        # Align FWHM integer part and error width so decimal points line up
+        fx_fmt = f"{fx_val:.{dec}f}"
+        fy_fmt = f"{fy_val:.{dec}f}"
+        fx_int, fx_dec = fx_fmt.split(".")
+        fy_int, fy_dec = fy_fmt.split(".")
+        max_f_int = max(len(fx_int), len(fy_int))
+        fx_err_s = f"{fx_err:.{dec}f}"
+        fy_err_s = f"{fy_err:.{dec}f}"
+        max_f_err = max(len(fx_err_s), len(fy_err_s))
+        fx_str = f"{fx_int:>{max_f_int}}.{fx_dec}({fx_err_s:>{max_f_err}})"
+        fy_str = f"{fy_int:>{max_f_int}}.{fy_dec}({fy_err_s:>{max_f_err}})"
+
+        vol_str = f"{res['volume']:.1f}({res['volume_err']:.1f})"
+
+        print(f"⚛ 2D Fit [{filename}] ({model_tag} + Gamba BG):", flush=True)
+        print(f"  Det 1 (X):\tCentroid: {cx_str} {unit}\tArea: {vol_str} counts\tFWHM: {fx_str} {unit}", flush=True)
+        print(f"  Det 2 (Y):\tCentroid: {cy_str} {unit}\tArea: {vol_str} counts\tFWHM: {fy_str} {unit}", flush=True)
+        print(f"  Gamba Net Area (p|p^t): {res['gamba_net']:.1f} ± {res['gamba_net_err']:.1f} counts\tPeak/Total-BG Ratio (Π): {res['pi_ratio_percent']:.1f}%\n", flush=True)
         return
 
     bar = "═" * 80
@@ -1176,7 +1209,7 @@ def print_fit_2d_terminal_report(res, filename, is_cal, verbosity="compact"):
         print(f"  2D Centroid (Energy): ({res['centroid_x_e']:.2f} ± {res['centroid_x_e_err']:.2f}, {res['centroid_y_e']:.2f} ± {res['centroid_y_e_err']:.2f}) keV")
         print(f"  2D Centroid (ch)    : ({res['centroid_x_ch']:.3f} ± {res['centroid_x_ch_err']:.3f}, {res['centroid_y_ch']:.3f} ± {res['centroid_y_ch_err']:.3f}) ch")
         print(f"  FWHM (Energy)       : Det 1 (X) = {res['fwhm_x_e']:.2f} ± {res['fwhm_x_e_err']:.2f} keV | Det 2 (Y) = {res['fwhm_y_e']:.2f} ± {res['fwhm_y_e_err']:.2f} keV")
-        print(f"  FWHM (ch)           : Det 1 (X) = {res['fwhm_x_ch']:.3f} ± {res['fwhm_x_ch_err']:.3f} ch  | Det 2 (Y) = {res['fwhm_y_ch']:.3f} ± {res['fwhm_y_ch_err']:.3f} ch")
+        print(f"  FWHM (ch)           : Det 1 (X) = {res['fwhm_x_ch']:.3f} ± {res['fwhm_x_ch_err']:.3f} ch | Det 2 (Y) = {res['fwhm_y_ch']:.3f} ± {res['fwhm_y_ch_err']:.3f} ch")
     else:
         print(f"  2D Centroid (ch)    : ({res['centroid_x_ch']:.3f} ± {res['centroid_x_ch_err']:.3f}, {res['centroid_y_ch']:.3f} ± {res['centroid_y_ch_err']:.3f}) ch")
         print(f"  FWHM (ch)           : Det 1 (X) = {res['fwhm_x_ch']:.3f} ± {res['fwhm_x_ch_err']:.3f} ch | Det 2 (Y) = {res['fwhm_y_ch']:.3f} ± {res['fwhm_y_ch_err']:.3f} ch")

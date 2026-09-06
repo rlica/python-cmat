@@ -19,6 +19,8 @@
   - **Classic Binned Histograms**: Nuclear physics stepped staircase histograms with dynamic auto-scaling, synchronized real-time cursor highlighting across 2D and 1D views, calibrated energy readouts (keV), and ASCII `.dat` export.
     - **1D Histogram Peak Fitting (`xtrackn AG`)**: Dedicated 1D nonlinear least-squares peak fitting with linear background subtraction (`Ctrl+Click` or `G` on any 1D projection spectrum). Supports three scientific models: Standard Symmetric Gaussian, RadWare / SAMPO Piecewise Exponential Left Tail, and Hypermet Convolved Tail + $\text{erfc}$ Compton Step. Calculates centroid, net area, FWHM, and amplitude with complete statistical covariance error propagation, printed directly to the terminal and rendered with fitted curves on the 1D spectrum canvas.
     - **True 2D Coincidence Peak Fitting (Gamba & Morhác Background Decomposition)**: Dedicated 2D nonlinear least-squares Levenberg-Marquardt fitting directly on the 2D coincidence matrix (`Ctrl+Click` or `G` on the 2D matrix) supporting all three peak profile models. Self-consistently decomposes gross counts into true net coincidence volume ($p|p^t$), orthogonal coincidence cross-ridges ($p|bg, bg|p$), and 2D Compton continuum + accidental random coincidences ($bg|bg$). Computes the discrete Gamba net area ($n^t_{p|p}$) and Peak-to-Total-Background ratio ($\Pi$). Displays a dedicated 2D coincidence results card and renders the 2D FWHM ellipse, crosshair, and ROI boundaries on the 2D matrix without interfering with 1D histogram fits.
+  - **Collapsible Sidebar & Resizable Panel Layout**: Easily collapse the left control menu (`M` or `☰ Menu`) to maximize screen area for the 2D matrix and 1D projections, and adjust the relative width between 2D and 1D panels using the interactive vertical divider bar (with double-click reset and persistent layout settings).
+  - **Aligned Tabular Fit Reports**: Fit reports in both the terminal and Web UI are dynamically padded and tab-delimited, keeping Centroid, Area, and FWHM decimal separators and columns vertically aligned between rows.
 
 ---
 
@@ -79,6 +81,8 @@ python cmat_webviewer.py /path/to/matrix.cmat
 | **Full Matrix View** | `F` or `f` | Reset zoom to the full 4096 × 4096 matrix |
 | **Color Scale** | `1` (Linear), `2` (Sqrt), `4`/`L` (Log) | Switch 2D intensity scaling mode |
 | **Cycle Colormap** | `C` or `c` | Cycle through Turbo, Viridis, Plasma, Inferno, Hot, Jet, Gray |
+| **Toggle Sidebar Menu** | `M` or `m` (or `☰ Menu`) | Collapse/expand the left control panel to maximize viewing area |
+| **Adjust 2D/1D Panels** | `Drag Divider` | Adjust relative width of 2D matrix vs 1D projections (double-click to reset) |
 | **Save Config** | `💾 Save Config` (Sidebar) | Save active viewer parameters to `python-cmat-config.txt` in working directory |
 | **Quit Viewer** | `Q` or `q` | Close browser tab and terminate terminal server process |
 | **Print 2D PDF** | `📄 Print PDF` (2D footer) | Export publication-quality vector PDF of current 2D matrix (Times New Roman, Energy keV axes, colorbar) |
