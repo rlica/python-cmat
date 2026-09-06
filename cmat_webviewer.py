@@ -2801,6 +2801,7 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             fwhm_mult = float(query.get("fwhm_mult", [4.0])[0])
             bg_method = query.get("bg_method", ["peak_aware"])[0].lower()
             snip_iter_val = query.get("snip_iter", [None])[0]
+            snip_iter = int(snip_iter_val) if snip_iter_val is not None and str(snip_iter_val).isdigit() else None
             region_str = query.get("region", [""])[0]
             region_bounds = None
             if region_str.strip():
