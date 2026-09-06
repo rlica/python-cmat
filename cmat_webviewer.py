@@ -32,6 +32,7 @@ Usage:
 
 import os
 import sys
+import time
 import math
 import json
 import argparse
@@ -568,9 +569,9 @@ def print_fit_terminal_report(res, det_name, filename, is_cal, verbosity="compac
     model_tag = "Hypermet" if ft == "hypermet" else ("RadWare" if ft == "gaussian_tail" else "Gaussian")
     if verbosity == "compact":
         if is_cal:
-            print(f"⚛ 1D Fit [{det_name}] ({model_tag}):\tCentroid: {res['centroid_e']:.2f}({res['centroid_e_err']:.2f}) keV\tArea: {res['area']:.1f}({res['area_err']:.1f}) counts\tFWHM: {res['fwhm_e']:.2f}({res['fwhm_e_err']:.2f}) keV", flush=True)
+            print(f"[1D Fit] [{det_name}] ({model_tag}):\tCentroid: {res['centroid_e']:.2f}({res['centroid_e_err']:.2f}) keV\tArea: {res['area']:.1f}({res['area_err']:.1f}) counts\tFWHM: {res['fwhm_e']:.2f}({res['fwhm_e_err']:.2f}) keV", flush=True)
         else:
-            print(f"⚛ 1D Fit [{det_name}] ({model_tag}):\tCentroid: {res['centroid_ch']:.3f}({res['centroid_ch_err']:.3f}) ch\tArea: {res['area']:.1f}({res['area_err']:.1f}) counts\tFWHM: {res['fwhm_ch']:.3f}({res['fwhm_ch_err']:.3f}) ch", flush=True)
+            print(f"[1D Fit] [{det_name}] ({model_tag}):\tCentroid: {res['centroid_ch']:.3f}({res['centroid_ch_err']:.3f}) ch\tArea: {res['area']:.1f}({res['area_err']:.1f}) counts\tFWHM: {res['fwhm_ch']:.3f}({res['fwhm_ch_err']:.3f}) ch", flush=True)
         return
 
     bar = "═" * 80
@@ -583,7 +584,7 @@ def print_fit_terminal_report(res, det_name, filename, is_cal, verbosity="compac
         model_name = "Standard Symmetric Gaussian"
 
     print(f"\n{bar}")
-    print(f"⚛ GASPware 1D Peak Fit [{det_name}] - {filename} ({model_name})")
+    print(f"[GASPware 1D Peak Fit] [{det_name}] - {filename} ({model_name})")
     print(subbar)
     if is_cal:
         print(f"  Peak Centroid     : {res['centroid_e']:10.2f} ± {res['centroid_e_err']:<6.2f} keV  (ch: {res['centroid_ch']:.3f} ± {res['centroid_ch_err']:.3f})")
@@ -1186,7 +1187,7 @@ def print_fit_2d_terminal_report(res, filename, is_cal, verbosity="compact"):
 
         vol_str = f"{res['volume']:.1f}({res['volume_err']:.1f})"
 
-        print(f"⚛ 2D Fit [{filename}] ({model_tag} + Gamba BG):", flush=True)
+        print(f"[2D Fit] [{filename}] ({model_tag} + Gamba BG):", flush=True)
         print(f"  Det 1 (X):\tCentroid: {cx_str} {unit}\tArea: {vol_str} counts\tFWHM: {fx_str} {unit}", flush=True)
         print(f"  Det 2 (Y):\tCentroid: {cy_str} {unit}\tArea: {vol_str} counts\tFWHM: {fy_str} {unit}", flush=True)
         print(f"  Gamba Net Area (p|p^t): {res['gamba_net']:.1f} ± {res['gamba_net_err']:.1f} counts\tPeak/Total-BG Ratio (Π): {res['pi_ratio_percent']:.1f}%\n", flush=True)
@@ -1202,7 +1203,7 @@ def print_fit_2d_terminal_report(res, filename, is_cal, verbosity="compact"):
         model_name = "Standard Symmetric Gaussian"
 
     print(f"\n{bar}")
-    print(f"⚛ GASPware 2D Coincidence Peak Fit - {filename} ({model_name})")
+    print(f"[GASPware 2D Coincidence Peak Fit] - {filename} ({model_name})")
     print(f"   [Self-Consistent 4-Component BG Decomposition: Gamba et al., NIM A 928 (2019) 93]")
     print(subbar)
     if is_cal:
@@ -1547,6 +1548,272 @@ def print_gate_terminal_report(gate_res: dict, matrix_name: str):
     print(f"  • Counts: Gross={gate_res['gross_counts']:,.0f} | Bg={gate_res['bg_counts']:,.1f} | Net={gate_res['net_counts']:,.1f} ± {gate_res['net_err']:,.1f} cts\n", flush=True)
 
 
+def ricker_wavelet(points: int, a: float) -> np.ndarray:
+    """Analytical Ricker (Mexican Hat) wavelet for CWT convolution."""
+    A = 2.0 / (np.sqrt(3.0 * a) * (np.pi ** 0.25))
+    wsq = a ** 2
+    vec = np.arange(0, points) - (points - 1.0) / 2.0
+    xsq = vec ** 2
+    mod = (1.0 - xsq / wsq)
+    gauss = np.exp(-xsq / (2.0 * wsq))
+    return A * mod * gauss
+
+
+def find_peaks_1d(
+    spec: np.ndarray,
+    ch_min: int = 0,
+    ch_max: int = None,
+    method: str = "prominence",
+    widths: np.ndarray = None,
+    min_snr: float = 5.0,
+    min_counts: float = 10.0,
+    fwhm_est: float = 4.0,
+    cal: list = None,
+) -> dict:
+    """
+    Modular 1D peak search engine for gamma-ray spectroscopy.
+    Supports:
+      1. 'prominence' (Default & Recommended): Topographic prominence with local Poisson
+         statistical significance, doublet resolution checks, and Non-Maximum Suppression (NMS).
+      2. 'mariscotti': GASPware native 5-fold smoothed 2nd difference (trackn.F) with Poisson
+         variance normalization and NMS.
+      3. 'cwt': Continuous Wavelet Transform (Ricker wavelet) with local Poisson variance normalization.
+    """
+    t0 = time.perf_counter()
+    spec = np.asarray(spec, dtype=np.float64)
+    tot_len = len(spec)
+    c_start = max(0, min(tot_len - 1, int(ch_min)))
+    c_end = min(tot_len, max(c_start + 1, int(ch_max if ch_max is not None else tot_len)))
+
+    if tot_len < 5:
+        return {
+            "success": True,
+            "method": method,
+            "engine": "none",
+            "ch_min": c_start,
+            "ch_max": c_end,
+            "peaks": [],
+            "count": 0,
+            "elapsed_ms": 0.0,
+        }
+
+    fwhm_val = max(1.5, float(fwhm_est))
+    min_dist = max(3, int(round(fwhm_val * 0.8)))
+    doublet_dist = max(min_dist + 1, int(round(fwhm_val * 1.4)))
+
+    # 3-point binomial smoothing [0.25, 0.5, 0.25] to suppress single-channel Poisson noise spikes
+    sm = np.convolve(spec, [0.25, 0.5, 0.25], mode="same")
+
+    # Expanded search range with margin so boundary peaks have complete local context
+    margin = max(16, int(round(fwhm_val * 4.0)))
+    search_start = max(2, c_start - margin)
+    search_end = min(tot_len - 2, c_end + margin)
+
+    candidates = []
+    used_engine = "numpy"
+
+    if method == "mariscotti":
+        # GASPware Native trackn.F 5-fold boxcar smoothed 2nd difference with Poisson variance
+        m = max(1, int(round(fwhm_val * 0.3)))
+        k_size = 65
+        IC = np.zeros(k_size, dtype=np.float64)
+        mid = 32
+        IC[mid - 1] = 1.0; IC[mid] = -2.0; IC[mid + 1] = 1.0
+        for _ in range(5):
+            IB = np.zeros(k_size, dtype=np.float64)
+            for ii in range(mid - 1 - 5 * m, mid + 1):
+                if 0 <= ii - m and ii + m < k_size:
+                    IB[ii] = np.sum(IC[max(0, ii - m):min(k_size, ii + m + 1)])
+            for ii in range(mid + 1):
+                IC[ii] = IB[ii]; IC[k_size - 1 - ii] = IB[ii]
+
+        kernel = IC[IC != 0]
+        ss = np.convolve(spec, kernel, mode="same")
+        ff_sq = np.convolve(np.maximum(0.0, spec), kernel ** 2, mode="same")
+        ff = np.sqrt(np.maximum(1e-6, ff_sq))
+        poisson_snr = -ss / ff
+
+        for i in range(search_start, search_end):
+            if poisson_snr[i] >= min_snr and spec[i] >= min_counts:
+                if (sm[i] > sm[i - 1] and sm[i] >= sm[i + 1]) or (spec[i] > spec[i - 1] and spec[i] >= spec[i + 1]):
+                    candidates.append({
+                        "channel": float(i),
+                        "counts": int(round(spec[i])),
+                        "snr": float(poisson_snr[i]),
+                        "score": float(poisson_snr[i])
+                    })
+
+    elif method == "cwt":
+        # CWT with local Poisson noise variance across scales (prevents global noise skew)
+        sigma_est = max(1.0, fwhm_val / 2.355)
+        if widths is None:
+            widths = np.linspace(max(1.5, sigma_est * 0.8), min(10.0, sigma_est * 2.0), 6)
+
+        cwt_matrix = np.zeros((len(widths), tot_len), dtype=np.float64)
+        var_matrix = np.zeros((len(widths), tot_len), dtype=np.float64)
+
+        for i, w in enumerate(widths):
+            pts = min(int(round(6.0 * w)), tot_len)
+            if pts % 2 == 0:
+                pts += 1
+            wav = ricker_wavelet(pts, w)
+            wav -= np.mean(wav)
+            w_norm = np.sum(np.abs(wav)) or 1.0
+            wav /= w_norm
+            cwt_matrix[i, :] = np.convolve(spec, wav, mode="same")
+            var_matrix[i, :] = np.convolve(np.maximum(0.0, spec), wav ** 2, mode="same")
+
+        snr_matrix = cwt_matrix / np.sqrt(np.maximum(1e-6, var_matrix))
+        best_snr = np.max(snr_matrix, axis=0)
+
+        for i in range(search_start, search_end):
+            if best_snr[i] >= min_snr and spec[i] >= min_counts:
+                if (sm[i] > sm[i - 1] and sm[i] >= sm[i + 1]) or (spec[i] > spec[i - 1] and spec[i] >= spec[i + 1]):
+                    candidates.append({
+                        "channel": float(i),
+                        "counts": int(round(spec[i])),
+                        "snr": float(best_snr[i]),
+                        "score": float(best_snr[i])
+                    })
+
+    else:
+        # 'prominence' (Default & Recommended for Gamma Spectra)
+        # Topographic prominence with local Poisson noise normalization
+        w_rad = max(12, int(round(fwhm_val * 3.5)))
+        for i in range(search_start, search_end):
+            if spec[i] >= min_counts:
+                if (sm[i] > sm[i - 1] and sm[i] >= sm[i + 1]) or (spec[i] > spec[i - 1] and spec[i] >= spec[i + 1]):
+                    i_l = max(0, i - w_rad)
+                    i_r = min(tot_len, i + w_rad + 1)
+                    l_min = spec[i]; l_idx = i - 1
+                    while l_idx >= i_l and spec[l_idx] <= spec[i]:
+                        if spec[l_idx] < l_min:
+                            l_min = spec[l_idx]
+                        l_idx -= 1
+                    if l_idx >= i_l and spec[l_idx] > spec[i]:
+                        l_min = np.min(spec[l_idx:i])
+
+                    r_min = spec[i]; r_idx = i + 1
+                    while r_idx < i_r and spec[r_idx] <= spec[i]:
+                        if spec[r_idx] < r_min:
+                            r_min = spec[r_idx]
+                        r_idx += 1
+                    if r_idx < i_r and spec[r_idx] > spec[i]:
+                        r_min = np.min(spec[i+1:r_idx+1])
+
+                    base = max(l_min, r_min)
+                    prom = spec[i] - base
+                    snr = prom / np.sqrt(max(1.0, base))
+
+                    if snr >= min_snr and prom >= max(5.0, 1.2 * np.sqrt(spec[i])):
+                        candidates.append({
+                            "channel": float(i),
+                            "counts": int(round(spec[i])),
+                            "snr": float(snr),
+                            "score": float(prom)
+                        })
+
+    # Non-Maximum Suppression (NMS) & Doublet Separation Filter:
+    # Solves:
+    #   1. Intra-peak noise ripples on top/shoulders of real peaks (< 12% dip suppressed)
+    #   2. Resolves true close doublets if valley dip >= 12% of peak height
+    candidates.sort(key=lambda c: (c["score"], c["counts"]), reverse=True)
+    kept = []
+    for c in candidates:
+        ch = c["channel"]
+        y_c = c["counts"]
+        is_sub = False
+        for k in kept:
+            k_ch = k["channel"]
+            k_y = k["counts"]
+            dist = abs(ch - k_ch)
+            if dist < min_dist:
+                is_sub = True
+                break
+            if dist <= doublet_dist:
+                c1 = int(round(min(ch, k_ch)))
+                c2 = int(round(max(ch, k_ch)))
+                valley = np.min(spec[c1:c2+1])
+                min_h = min(y_c, k_y)
+                dip = min_h - valley
+                if dip < 0.12 * min_h:  # Intra-peak noise ripple
+                    is_sub = True
+                    break
+
+        if not is_sub:
+            # Centroid refinement via 3-point parabolic interpolation
+            c_int = int(round(ch))
+            if 1 <= c_int < tot_len - 1:
+                y0, y1, y2 = spec[c_int - 1], spec[c_int], spec[c_int + 1]
+                denom = y0 - 2.0 * y1 + y2
+                if denom < 0:
+                    delta = 0.5 * (y0 - y2) / denom
+                    if -0.6 <= delta <= 0.6:
+                        ch += delta
+
+            # Calibrated energy
+            if cal and len(cal) >= 2:
+                energy = cal[0] + cal[1] * ch + (cal[2] * (ch ** 2) if len(cal) > 2 else 0.0)
+            else:
+                energy = ch
+
+            kept.append({
+                "channel": round(float(ch), 2),
+                "energy": round(float(energy), 2),
+                "counts": int(round(spec[c_int])),
+                "snr": round(float(c["snr"]), 1),
+            })
+
+    # Filter to requested viewport [c_start, c_end]
+    peaks = [p for p in kept if c_start <= p["channel"] <= c_end]
+    peaks.sort(key=lambda p: p["channel"])
+    elapsed_ms = (time.perf_counter() - t0) * 1000.0
+
+    return {
+        "success": True,
+        "method": method,
+        "engine": used_engine,
+        "ch_min": c_start,
+        "ch_max": c_end,
+        "peaks": peaks,
+        "count": len(peaks),
+        "elapsed_ms": round(elapsed_ms, 2),
+    }
+
+
+def print_peaks_terminal_report(peaks_res: dict, det_name: str, matrix_name: str, is_cal: bool):
+    """Print aligned tabular summary of found peaks to the terminal."""
+    peaks = peaks_res.get("peaks", [])
+    count = len(peaks)
+    method_name = peaks_res.get("method", "prominence").capitalize()
+    engine = peaks_res.get("engine", "numpy").upper()
+    elapsed = peaks_res.get("elapsed_ms", 0.0)
+    ch_range = f"[{peaks_res.get('ch_min', 0)}..{peaks_res.get('ch_max', 4095)}]"
+
+    print(f"\n[1D Peak Search] {matrix_name} -> {det_name} (Range: {ch_range}, Method: {method_name}, {engine} engine):", flush=True)
+    if count == 0:
+        print(f"  No peaks detected above SNR threshold in {elapsed:.1f} ms.\n", flush=True)
+        return
+
+    print(f"  Detected {count} candidate peaks in {elapsed:.1f} ms:", flush=True)
+    unit = "keV" if is_cal else "ch"
+    print(f"  {'#':<4} {'Centroid (ch)':<15} {'Energy (' + unit + ')':<15} {'Counts':<10} {'SNR':<8}", flush=True)
+    print(f"  {'-'*4} {'-'*15} {'-'*15} {'-'*10} {'-'*8}", flush=True)
+
+    # Show up to top 20 peaks by count
+    top_peaks = sorted(peaks, key=lambda p: p["counts"], reverse=True)[:20]
+    # Re-sort top 20 by channel for readability
+    top_peaks.sort(key=lambda p: p["channel"])
+    for idx, p in enumerate(top_peaks, 1):
+        e_str = f"{p['energy']:.2f}"
+        print(f"  {idx:<4} {p['channel']:<15.2f} {e_str:<15} {p['counts']:<10d} {p['snr']:<8.1f}", flush=True)
+
+    if count > 20:
+        print(f"  ... and {count - 20} more peaks (displayed in Web Viewer).\n", flush=True)
+    else:
+        print("", flush=True)
+
+
 class CMATWebHandler(BaseHTTPRequestHandler):
     reader: CMATReader = None
     matrix: np.ndarray = None
@@ -1680,6 +1947,69 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             self.send_header("Content-type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps(gate_res).encode("utf-8"))
+
+        elif self.path.startswith("/api/search_peaks"):
+            from urllib.parse import urlparse, parse_qs
+            query = parse_qs(urlparse(self.path).query)
+            axis = int(query.get("axis", [0])[0])
+            method = query.get("method", ["prominence"])[0].lower()
+            min_snr = float(query.get("min_snr", [5.0])[0])
+            min_counts = float(query.get("min_counts", [10.0])[0])
+            fwhm_est = float(query.get("fwhm_est", [4.0])[0])
+            range_mode = query.get("range", ["visible"])[0].lower()
+
+            x0 = max(0, min(self.matrix.shape[1] - 1, int(float(query.get("x0", [0])[0]))))
+            x1 = max(x0 + 1, min(self.matrix.shape[1], int(float(query.get("x1", [self.matrix.shape[1]])[0]))))
+            y0 = max(0, min(self.matrix.shape[0] - 1, int(float(query.get("y0", [0])[0]))))
+            y1 = max(y0 + 1, min(self.matrix.shape[0], int(float(query.get("y1", [self.matrix.shape[0]])[0]))))
+
+            w_str = query.get("w_gates", [""])[0]
+            b_str = query.get("b_gates", [""])[0]
+            w_gates = parse_gate_ranges(w_str)
+            b_gates = parse_gate_ranges(b_str)
+
+            if w_gates:
+                gate_axis = 1 - axis
+                gate_res = compute_1d_gate(self.matrix, gate_axis, w_gates, b_gates)
+                spec = np.array(gate_res["net_spec"], dtype=np.float64)
+                det_name = f"Det {axis + 1} ({'X' if axis == 0 else 'Y'} Gated Coincidence)"
+            elif axis == 0:
+                if y0 == 0 and y1 >= self.matrix.shape[0]:
+                    spec = self.proj
+                else:
+                    spec = np.sum(self.matrix[y0:y1, :], axis=0, dtype=np.float64)
+                det_name = "Det 1 (X Projection)"
+            else:
+                if x0 == 0 and x1 >= self.matrix.shape[1]:
+                    spec = np.sum(self.matrix, axis=1, dtype=np.float64)
+                else:
+                    spec = np.sum(self.matrix[:, x0:x1], axis=1, dtype=np.float64)
+                det_name = "Det 2 (Y Projection)"
+
+            if range_mode == "visible":
+                if axis == 0:
+                    ch_min, ch_max = x0, x1
+                else:
+                    ch_min, ch_max = y0, y1
+            else:
+                ch_min, ch_max = 0, len(spec)
+
+            is_cal = self.cal and (self.cal[0] != 0.0 or self.cal[1] != 1.0 or self.cal[2] != 0.0)
+            try:
+                res = find_peaks_1d(
+                    spec, ch_min=ch_min, ch_max=ch_max, method=method,
+                    min_snr=min_snr, min_counts=min_counts, fwhm_est=fwhm_est, cal=self.cal
+                )
+                res["axis"] = axis
+                print_peaks_terminal_report(res, det_name, self.reader.filename.name, is_cal)
+            except Exception as e:
+                res = {"success": False, "error": str(e), "axis": axis, "peaks": [], "count": 0}
+                print(f"[!] Peak search error: {e}", file=sys.stderr)
+
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(res).encode("utf-8"))
 
         elif self.path.startswith("/api/projection_region"):
             from urllib.parse import urlparse, parse_qs
