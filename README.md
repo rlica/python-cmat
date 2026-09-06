@@ -21,6 +21,7 @@
     - **1D Multi-Gate Coincidence Slicing with Normalized Background Subtraction (`xtrackn W/B/Z`)**: Set arbitrary consecutive peak coincidence gate windows (`W`) and background windows (`B`) across any 1D projection spectrum. Slices the 2D matrix along the orthogonal axis, summing all peak slices ($\sum_k S_{W_k}$) and subtracting normalized background slices ($\text{Scale} \cdot \sum_m S_{B_m}$) where $\text{Scale} = \sum_k \Delta W_k / \sum_m \Delta B_m$. Renders visual shaded gate envelopes on the gated 1D spectrum, dual-color coincidence slice bands on the 2D matrix canvas, dynamic header badges with direct 1D clearing (`✕ Clear Gate [Z]`), and dashed zero baselines for negative counts in over-subtracted continuum regions.
     - **True 2D Coincidence Peak Fitting (Gamba & Morhác Background Decomposition)**: Dedicated 2D nonlinear least-squares Levenberg-Marquardt fitting directly on the 2D coincidence matrix (`Ctrl+Click` or `G` on the 2D matrix) supporting all three peak profile models. Self-consistently decomposes gross counts into true net coincidence volume ($p|p^t$), orthogonal coincidence cross-ridges ($p|bg, bg|p$), and 2D Compton continuum + accidental random coincidences ($bg|bg$). Computes the discrete Gamba net area ($n^t_{p|p}$) and Peak-to-Total-Background ratio ($\Pi$). Displays a dedicated 2D coincidence results card and renders the 2D FWHM ellipse, crosshair, and ROI boundaries on the 2D matrix without interfering with 1D histogram fits.
   - **Collapsible Sidebar & Resizable Panel Layout**: Easily collapse the left control menu (`M` or `☰ Menu`) to maximize screen area for the 2D matrix and 1D projections, and adjust the relative width between 2D and 1D panels using the interactive vertical divider bar (with double-click reset and persistent layout settings).
+  - **Direct Scale Toggles & Contextual `L` Cycling**: Clickable scale toggle buttons are embedded directly into each panel (`LIN` / `LOG` on Det 1 & Det 2 projection headers, and `LOG` / `LIN` / `PWR` in the 2D status bar), eliminating redundant sidebar menu selectors. Pressing `L` contextually cycles the scale of whichever panel is currently under the cursor (2D: Log $\rightarrow$ Linear $\rightarrow$ Power; 1D: Linear $\leftrightarrow$ Log).
   - **Aligned Tabular Fit Reports**: Fit reports in both the terminal and Web UI are dynamically padded and tab-delimited, keeping Centroid, Area, and FWHM decimal separators and columns vertically aligned between rows.
 
 ---
@@ -83,7 +84,9 @@ python cmat_webviewer.py /path/to/matrix.cmat
 | **Set Up Limit (Ymax)** | `Up Arrow (↑)` | Set Up limit at cursor |
 | **Expand to Limits** | `E` or `e` | Zoom into the region bounded by limit markers |
 | **Full Matrix View** | `F` or `f` | Reset zoom to the full 4096 × 4096 matrix |
-| **Color Scale** | `1` (Linear), `2` (Sqrt), `4`/`L` (Log) | Switch 2D intensity scaling mode |
+| **Contextual Scale Cycle** | `L` or `l` | Cycle vertical scale for focused panel under cursor (2D: Log $\rightarrow$ Lin $\rightarrow$ Power; 1D: Linear $\leftrightarrow$ Log) |
+| **2D Direct Color Scale** | `1` (Lin), `2` (Pwr), `4` (Log) | Directly select 2D intensity scaling mode |
+| **Interactive Scale Badges** | `LIN`/`LOG` (1D), `LOG`/`LIN`/`PWR` (2D) | Clickable buttons on panel headers/footers to toggle scales directly |
 | **Cycle Colormap** | `C` or `c` | Cycle through Turbo, Viridis, Plasma, Inferno, Hot, Jet, Gray |
 | **Toggle Sidebar Menu** | `M` or `m` (or `☰ Menu`) | Collapse/expand the left control panel to maximize viewing area |
 | **Adjust 2D/1D Panels** | `Drag Divider` | Adjust relative width of 2D matrix vs 1D projections (double-click to reset) |

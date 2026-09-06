@@ -235,6 +235,21 @@
     margin-top: 0;
   }
   .fit-btn-toggle:hover { background: #333; color: #fff; }
+  .scale-toggle-btn {
+    background: #252525;
+    border: 1px solid #444;
+    color: #aaa;
+    padding: 2px 7px;
+    font-size: 0.68rem;
+    font-family: monospace;
+    font-weight: bold;
+    border-radius: 3px;
+    cursor: pointer;
+    width: auto;
+    margin-top: 0;
+    transition: all 0.15s ease;
+  }
+  .scale-toggle-btn:hover { background: #383838; color: #fff; border-color: #666; }
   .fit-compact-box {
     display: flex;
     flex-direction: column;
@@ -343,13 +358,6 @@
         <option value="gray">Grayscale</option>
       </select>
 
-      <label style="margin-top: 6px;">2D Scale Mode [1, 2, 4]</label>
-      <select id="scaleSelect">
-        <option value="log" selected>Logarithmic (LogNorm)</option>
-        <option value="sqrt">Power / Sqrt</option>
-        <option value="linear">Linear</option>
-      </select>
-
       <label style="margin-top: 6px;">Max Contrast <span class="range-val" id="vmaxLabel">500</span></label>
       <input type="range" id="vmaxSlider" min="0" max="1000" step="1" value="500">
 
@@ -360,12 +368,6 @@
       <select id="projRangeSelect">
         <option value="synced" selected>Synced with 2D Window Zoom</option>
         <option value="full">Full 0..4095 Range</option>
-      </select>
-
-      <label style="margin-top: 6px;">1D Vertical Scale</label>
-      <select id="projScaleSelect">
-        <option value="linear" selected>Linear</option>
-        <option value="log">Logarithmic</option>
       </select>
     </div>
 
@@ -393,11 +395,12 @@
   </aside>
 
   <div class="workspace">
-    <div class="panel-2d">
+    <div class="panel-2d" id="panel2D">
       <canvas id="canvas2d" tabindex="0"></canvas>
       <div class="panel-2d-footer">
         <span id="overlayStatus">Limits: [L: - | R: - | D: - | U: -] &nbsp;•&nbsp; 'E' Expand &nbsp;•&nbsp; 'F' Full View</span>
         <div style="display: flex; gap: 8px; align-items: center;">
+          <button id="btnScaleToggle2D" class="scale-toggle-btn" title="Cycle 2D Scale Mode: Logarithmic → Linear → Power [L]">LOG</button>
           <button id="btnPrintPDF2D" style="width: auto; padding: 2px 8px; font-size: 0.72rem; background: #1b5e20; border-color: #4caf50; color: #fff;">📄 Print PDF</button>
           <span style="color: #777;">Click &amp; Drag to box-zoom</span>
         </div>
@@ -405,10 +408,11 @@
     </div>
     <div class="panel-resizer" id="panelResizer" title="Drag to adjust 2D vs 1D panel width (Double-click to reset)"></div>
     <div class="panel-1d-container">
-      <div class="panel-1d">
+      <div class="panel-1d" id="panel1DX">
         <div class="panel-1d-header">
           <div style="display: flex; align-items: center; gap: 8px; overflow: hidden;">
             <span class="panel-1d-title" id="specTitleX" style="color: #00e5ff;">Det 1 (X Projection, Sliced Y)</span>
+            <button id="btnScaleToggleX" class="scale-toggle-btn" title="Det 1 Vertical Scale: Linear (Click or press 'L' to toggle)">LIN</button>
             <button id="btnClearGateX" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem;" title="Clear Gate [Z / Esc]">✕ Clear Gate [Z]</button>
           </div>
           <div style="display: flex; gap: 6px;">
@@ -418,10 +422,11 @@
         </div>
         <canvas id="canvas1dX"></canvas>
       </div>
-      <div class="panel-1d">
+      <div class="panel-1d" id="panel1DY">
         <div class="panel-1d-header">
           <div style="display: flex; align-items: center; gap: 8px; overflow: hidden;">
             <span class="panel-1d-title" id="specTitleY" style="color: #ff9800;">Det 2 (Y Projection, Sliced X)</span>
+            <button id="btnScaleToggleY" class="scale-toggle-btn" title="Det 2 Vertical Scale: Linear (Click or press 'L' to toggle)">LIN</button>
             <button id="btnClearGateY" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem;" title="Clear Gate [Z / Esc]">✕ Clear Gate [Z]</button>
           </div>
           <div style="display: flex; gap: 6px;">
@@ -508,7 +513,8 @@
     <tr><td>Up Arrow (↑)</td><td>Set Up limit (Ymax) at cursor</td></tr>
     <tr><td>E / e</td><td>Expand / Zoom into set limits</td></tr>
     <tr><td>F / f</td><td>Full matrix view (zoom out)</td></tr>
-    <tr><td>1 / 2 / 4 (or L)</td><td>Switch Linear, Sqrt, Log color scale</td></tr>
+    <tr><td>L / l</td><td>Cycle scale for focused panel: 2D (Log → Lin → Power) or 1D (Lin ↔ Log)</td></tr>
+    <tr><td>1 / 2 / 4</td><td>Direct 2D scale: 1 (Linear), 2 (Power / Sqrt), 4 (Log)</td></tr>
     <tr><td>C / c</td><td>Cycle colormaps</td></tr>
     <tr><td>W / w</td><td>Set Gate limits (consecutive pairs: left &amp; right) on 1D spectrum</td></tr>
     <tr><td>B / b</td><td>Set Background limits (consecutive pairs: left &amp; right) on 1D spectrum</td></tr>
@@ -555,6 +561,15 @@
   let cursor1DChannelX = null;
   let cursor1DChannelY = null;
   let hovered1DAxis = null; // 0 for Det 1 (X), 1 for Det 2 (Y), null otherwise
+
+  // 2D Scale Mode: 'log', 'linear', 'sqrt' (Power)
+  let scaleMode2D = 'log';
+
+  // 1D Vertical Scales: { 0: 'linear', 1: 'linear' }
+  let projScale1D = { 0: 'linear', 1: 'linear' };
+
+  // Current Focused / Hovered Panel for contextual shortcuts ('2d', '1d-0', '1d-1')
+  let currentHoveredPanel = '2d';
 
   // 1D Multi-Gate Coincidence State (xtrackn methodology)
   let gate1DState = {
@@ -838,8 +853,7 @@
     updateColorLUT();
 
     if (cfg.scale_mode) {
-      const el = document.getElementById('scaleSelect');
-      if (el) el.value = cfg.scale_mode;
+      scaleMode2D = cfg.scale_mode;
     }
     if (cfg.fit_type) {
       const el = document.getElementById('fitTypeSelect');
@@ -879,8 +893,8 @@
       if (el) el.value = cfg.proj_range;
     }
     if (cfg.proj_scale) {
-      const el = document.getElementById('projScaleSelect');
-      if (el) el.value = cfg.proj_scale;
+      projScale1D[0] = cfg.proj_scale;
+      projScale1D[1] = cfg.proj_scale;
     }
 
     maxCountGlobal = Math.max(100, metadata.max_count || 1000);
@@ -903,6 +917,8 @@
     }
 
     setupEvents();
+    updateScaleBadge2D();
+    updateScaleBadges1D();
     await fetchTileAndRender();
     await fetch1DProjection();
   }
@@ -1117,6 +1133,7 @@
   }
 
   function render2D() {
+    updateScaleBadge2D();
     const cw = canvas2d.width, ch = canvas2d.height;
     ctx2d.clearRect(0, 0, cw, ch);
     const pr = getPlotRect2D();
@@ -1129,7 +1146,7 @@
       const vmin = parseInt(document.getElementById('vminSlider').value) || 0;
       let vmax = currentVmax || 100;
       if (vmax <= vmin) vmax = vmin + 1;
-      const scaleMode = document.getElementById('scaleSelect').value;
+      const scaleMode = scaleMode2D;
 
       const isLog = (scaleMode === 'log');
       const isSqrt = (scaleMode === 'sqrt');
@@ -1577,7 +1594,7 @@
 
     const pr = getPlotRect1D(canvas);
     const isSynced = (document.getElementById('projRangeSelect').value === 'synced');
-    const isLog = (document.getElementById('projScaleSelect').value === 'log');
+    const isLog = (projScale1D[axis] === 'log');
 
     let chStart = 0;
     let chEnd = spec.length - 1;
@@ -1986,8 +2003,67 @@
   }
 
   function renderBoth1DSpectra() {
+    updateScaleBadges1D();
     render1DSpectrum(canvas1dX, ctx1dX, currentProjSpecX, 0, cursor1DChannelX);
     render1DSpectrum(canvas1dY, ctx1dY, currentProjSpecY, 1, cursor1DChannelY);
+  }
+
+  function updateScaleBadge2D() {
+    const btn2D = document.getElementById('btnScaleToggle2D');
+    if (!btn2D) return;
+    const mode = scaleMode2D;
+    if (mode === 'log') {
+      btn2D.textContent = 'LOG';
+      btn2D.style.color = '#ffd600';
+      btn2D.style.borderColor = '#ffd600';
+      btn2D.title = '2D Scale: Logarithmic (Click or press \'L\' to cycle)';
+    } else if (mode === 'linear') {
+      btn2D.textContent = 'LIN';
+      btn2D.style.color = '#00e5ff';
+      btn2D.style.borderColor = '#00e5ff';
+      btn2D.title = '2D Scale: Linear (Click or press \'L\' to cycle)';
+    } else {
+      btn2D.textContent = 'PWR';
+      btn2D.style.color = '#69f0ae';
+      btn2D.style.borderColor = '#69f0ae';
+      btn2D.title = '2D Scale: Power / Sqrt (Click or press \'L\' to cycle)';
+    }
+  }
+
+  function updateScaleBadges1D() {
+    const btnX = document.getElementById('btnScaleToggleX');
+    const btnY = document.getElementById('btnScaleToggleY');
+    if (btnX) {
+      const isLogX = (projScale1D[0] === 'log');
+      btnX.textContent = isLogX ? 'LOG' : 'LIN';
+      btnX.style.color = isLogX ? '#ffd600' : '#aaa';
+      btnX.style.borderColor = isLogX ? '#ffd600' : '#444';
+      btnX.title = `Det 1 Vertical Scale: ${isLogX ? 'Logarithmic' : 'Linear'} (Click or press 'L' to toggle)`;
+    }
+    if (btnY) {
+      const isLogY = (projScale1D[1] === 'log');
+      btnY.textContent = isLogY ? 'LOG' : 'LIN';
+      btnY.style.color = isLogY ? '#ffd600' : '#aaa';
+      btnY.style.borderColor = isLogY ? '#ffd600' : '#444';
+      btnY.title = `Det 2 Vertical Scale: ${isLogY ? 'Logarithmic' : 'Linear'} (Click or press 'L' to toggle)`;
+    }
+  }
+
+  function cycle2DScale() {
+    const modes = ['log', 'linear', 'sqrt'];
+    const cur = scaleMode2D;
+    const nextIdx = (modes.indexOf(cur) + 1) % modes.length;
+    scaleMode2D = modes[nextIdx];
+    updateScaleBadge2D();
+    render2D();
+  }
+
+  function cycle1DScale(axis) {
+    const cur = projScale1D[axis] || 'linear';
+    const next = (cur === 'log') ? 'linear' : 'log';
+    projScale1D[axis] = next;
+    updateScaleBadges1D();
+    renderBoth1DSpectra();
   }
 
   function updateMarkerStatus() {
@@ -2146,7 +2222,7 @@
 
   function printPDF1D(axis) {
     const isSynced = (document.getElementById('projRangeSelect').value === 'synced');
-    const isLog = (document.getElementById('projScaleSelect').value === 'log') ? 1 : 0;
+    const isLog = (projScale1D[axis] === 'log') ? 1 : 0;
     const x0 = Math.floor(Math.max(0, view.x0));
     const x1 = Math.ceil(Math.min(metadata.shape[0], view.x1));
     const y0 = Math.floor(Math.max(0, view.y0));
@@ -2172,7 +2248,7 @@
     const y0 = Math.floor(Math.max(0, view.y0));
     const y1 = Math.ceil(Math.min(metadata.shape[1], view.y1));
     const cmap = document.getElementById('cmapSelect').value;
-    const scale = document.getElementById('scaleSelect').value;
+    const scale = scaleMode2D;
     const vmin = document.getElementById('vminSlider').value;
     const vmax = currentVmax || 100;
     const f2d = activeFit2D;
@@ -2245,12 +2321,12 @@
       roi_half_width_2d: parseInt(document.getElementById('roiWidthSlider2D').value, 10),
       fit_verbosity: document.getElementById('fitVerbositySelect').value,
       colormap: document.getElementById('cmapSelect').value,
-      scale_mode: document.getElementById('scaleSelect').value,
+      scale_mode: scaleMode2D,
       vmax: currentVmax,
       vmin: parseInt(document.getElementById('vminSlider').value, 10) || 1,
       scroll_sensitivity: parseInt(document.getElementById('scrollSensSlider').value, 10) || 4,
       proj_range: document.getElementById('projRangeSelect').value,
-      proj_scale: document.getElementById('projScaleSelect').value,
+      proj_scale: (projScale1D[0] === 'log' || projScale1D[1] === 'log') ? 'log' : 'linear',
     };
 
     if (metadata && metadata.cal) {
@@ -2292,7 +2368,6 @@
     if (btnSaveCfg) btnSaveCfg.addEventListener('click', saveConfig);
 
     document.getElementById('cmapSelect').addEventListener('change', () => { updateColorLUT(); render2D(); });
-    document.getElementById('scaleSelect').addEventListener('change', render2D);
     const vmaxSlider = document.getElementById('vmaxSlider');
     if (vmaxSlider) {
       vmaxSlider.addEventListener('input', (e) => {
@@ -2323,7 +2398,30 @@
     });
     document.getElementById('btnQuit').addEventListener('click', quitViewer);
     document.getElementById('projRangeSelect').addEventListener('change', renderBoth1DSpectra);
-    document.getElementById('projScaleSelect').addEventListener('change', renderBoth1DSpectra);
+
+    const btnScaleToggle2D = document.getElementById('btnScaleToggle2D');
+    if (btnScaleToggle2D) btnScaleToggle2D.addEventListener('click', () => { cycle2DScale(); unfocusControls(); });
+    const btnScaleToggleX = document.getElementById('btnScaleToggleX');
+    if (btnScaleToggleX) btnScaleToggleX.addEventListener('click', () => { cycle1DScale(0); unfocusControls(); });
+    const btnScaleToggleY = document.getElementById('btnScaleToggleY');
+    if (btnScaleToggleY) btnScaleToggleY.addEventListener('click', () => { cycle1DScale(1); unfocusControls(); });
+
+    const p2D = document.getElementById('panel2D');
+    const p1DX = document.getElementById('panel1DX');
+    const p1DY = document.getElementById('panel1DY');
+    if (p2D) {
+      p2D.addEventListener('mouseenter', () => { currentHoveredPanel = '2d'; });
+      p2D.addEventListener('mousemove', () => { currentHoveredPanel = '2d'; });
+    }
+    if (p1DX) {
+      p1DX.addEventListener('mouseenter', () => { currentHoveredPanel = '1d-0'; });
+      p1DX.addEventListener('mousemove', () => { currentHoveredPanel = '1d-0'; });
+    }
+    if (p1DY) {
+      p1DY.addEventListener('mouseenter', () => { currentHoveredPanel = '1d-1'; });
+      p1DY.addEventListener('mousemove', () => { currentHoveredPanel = '1d-1'; });
+    }
+
     const btnFull = document.getElementById('btnFull');
     if (btnFull) btnFull.addEventListener('click', zoomFull);
     const btnExpand = document.getElementById('btnExpand');
@@ -2395,12 +2493,25 @@
       el.addEventListener('change', () => el.blur());
     });
 
-    canvas2d.addEventListener('mouseenter', () => { hovered1DAxis = null; unfocusControls(); });
+    canvas2d.addEventListener('mouseenter', () => { currentHoveredPanel = '2d'; isMouseOver2D = true; hovered1DAxis = null; unfocusControls(); });
     canvas2d.addEventListener('mousedown', unfocusControls);
-    canvas1dX.addEventListener('mouseenter', () => { hovered1DAxis = 0; unfocusControls(); });
+    canvas1dX.addEventListener('mouseenter', () => { currentHoveredPanel = '1d-0'; isMouseOver2D = false; hovered1DAxis = 0; unfocusControls(); });
     canvas1dX.addEventListener('mousedown', unfocusControls);
-    canvas1dY.addEventListener('mouseenter', () => { hovered1DAxis = 1; unfocusControls(); });
+    canvas1dY.addEventListener('mouseenter', () => { currentHoveredPanel = '1d-1'; isMouseOver2D = false; hovered1DAxis = 1; unfocusControls(); });
     canvas1dY.addEventListener('mousedown', unfocusControls);
+
+    window.addEventListener('mousemove', (e) => {
+      const el = document.elementFromPoint(e.clientX, e.clientY);
+      if (el) {
+        if (el.closest('#panel2D') || el.closest('.panel-2d')) {
+          currentHoveredPanel = '2d';
+        } else if (el.closest('#panel1DX')) {
+          currentHoveredPanel = '1d-0';
+        } else if (el.closest('#panel1DY')) {
+          currentHoveredPanel = '1d-1';
+        }
+      }
+    }, { passive: true });
 
     window.addEventListener('keydown', (e) => {
       const k = e.key.toLowerCase();
@@ -2443,11 +2554,38 @@
         sel.selectedIndex = (sel.selectedIndex + 1) % sel.options.length;
         updateColorLUT(); render2D();
       } else if (e.key === '1') {
-        document.getElementById('scaleSelect').value = 'linear'; render2D();
+        scaleMode2D = 'linear';
+        updateScaleBadge2D();
+        render2D();
       } else if (e.key === '2') {
-        document.getElementById('scaleSelect').value = 'sqrt'; render2D();
-      } else if (e.key === '4' || e.key === 'l' || e.key === 'L') {
-        document.getElementById('scaleSelect').value = 'log'; render2D();
+        scaleMode2D = 'sqrt';
+        updateScaleBadge2D();
+        render2D();
+      } else if (e.key === '4') {
+        scaleMode2D = 'log';
+        updateScaleBadge2D();
+        render2D();
+      } else if (e.key === 'l' || e.key === 'L') {
+        let targetPanel = '2d';
+        if (isMouseOver2D) {
+          targetPanel = '2d';
+        } else if (hovered1DAxis === 0) {
+          targetPanel = '1d-0';
+        } else if (hovered1DAxis === 1) {
+          targetPanel = '1d-1';
+        } else if (currentHoveredPanel) {
+          targetPanel = currentHoveredPanel;
+        } else {
+          targetPanel = '2d';
+        }
+
+        if (targetPanel === '1d-0') {
+          cycle1DScale(0);
+        } else if (targetPanel === '1d-1') {
+          cycle1DScale(1);
+        } else {
+          cycle2DScale();
+        }
       } else if (e.key === '?' || e.key === 'h' || e.key === 'H') {
         const hm = document.getElementById('helpModal');
         hm.style.display = hm.style.display === 'block' ? 'none' : 'block';
@@ -2584,6 +2722,9 @@
     });
 
     canvas2d.addEventListener('mousemove', (e) => {
+      isMouseOver2D = true;
+      currentHoveredPanel = '2d';
+      hovered1DAxis = null;
       wheelCenterCh = null;
       const rect = canvas2d.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
@@ -2780,15 +2921,15 @@
       drag1DCurrentPos[axis] = { x: mouseX, y: mouseY };
     }
 
-    canvas1dX.addEventListener('mouseenter', () => { hovered1DAxis = 0; });
+    canvas1dX.addEventListener('mouseenter', () => { currentHoveredPanel = '1d-0'; hovered1DAxis = 0; });
     canvas1dX.addEventListener('mousedown', (e) => handle1DMousedown(canvas1dX, 0, e));
-    canvas1dX.addEventListener('mousemove', (e) => { hovered1DAxis = 0; handle1DHover(canvas1dX, currentProjSpecX, 0, e); });
+    canvas1dX.addEventListener('mousemove', (e) => { currentHoveredPanel = '1d-0'; hovered1DAxis = 0; handle1DHover(canvas1dX, currentProjSpecX, 0, e); });
     canvas1dX.addEventListener('mouseleave', () => { hovered1DAxis = null; if (!is1DBoxZooming[0]) { cursor1DChannelX = null; renderBoth1DSpectra(); } });
     canvas1dX.addEventListener('click', (e) => handle1DClick(canvas1dX, currentProjSpecX, 0, e));
 
-    canvas1dY.addEventListener('mouseenter', () => { hovered1DAxis = 1; });
+    canvas1dY.addEventListener('mouseenter', () => { currentHoveredPanel = '1d-1'; hovered1DAxis = 1; });
     canvas1dY.addEventListener('mousedown', (e) => handle1DMousedown(canvas1dY, 1, e));
-    canvas1dY.addEventListener('mousemove', (e) => { hovered1DAxis = 1; handle1DHover(canvas1dY, currentProjSpecY, 1, e); });
+    canvas1dY.addEventListener('mousemove', (e) => { currentHoveredPanel = '1d-1'; hovered1DAxis = 1; handle1DHover(canvas1dY, currentProjSpecY, 1, e); });
     canvas1dY.addEventListener('mouseleave', () => { hovered1DAxis = null; if (!is1DBoxZooming[1]) { cursor1DChannelY = null; renderBoth1DSpectra(); } });
     canvas1dY.addEventListener('click', (e) => handle1DClick(canvas1dY, currentProjSpecY, 1, e));
   }
