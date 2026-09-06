@@ -25,6 +25,7 @@
       2. *Wavelet (CWT Pure)*: Continuous Wavelet Transform ridge finding at user-specified expected peak FWHM.
       3. *Prominence (Fast)*: Classical local maxima detection with minimum prominence and SNR thresholds.
       - Displays clean, non-interactive peak markers with 12px calibrated energy/channel text labels, downward carets, guide stems, collision avoidance, and hover details in the coordinate HUD.
+    - **Automated 1D Multi-Peak Fitting with Peak-Aware Background (`H`)**: Following automatic peak search (`P`), pressing `H` automatically fits all visible candidate photopeaks on display. Clusters multiplets within $3.2 \times \text{FWHM}$, fits all components simultaneously (Gaussian, RadWare Left-Tail, or Hypermet), and uses a **Peak-Aware Continuum Average** engine that estimates the true expectation value of low-statistics counting noise grass without under-fit bias, bridging smoothly across peak clusters (with automatic fallback to SNIP for dense peak forests).
   - **Collapsible Sidebar & Resizable Panel Layout**: Easily collapse the left control menu (`M` or `Menu`) to maximize screen area for the 2D matrix and 1D projections, and adjust the relative width between 2D and 1D panels using the interactive vertical divider bar (with double-click reset and persistent layout settings).
   - **Context-Aware Arrow Navigation**: Arrow keys automatically adapt to whichever panel has focus:
     - *1D Spectrum Focus*: Left/Right (`←`/`→`) pans channels horizontally (`Shift` for 2× speed); Up/Down (`↑`/`↓`) pans and magnifies the vertical counts scale.
@@ -81,7 +82,8 @@ python cmat_webviewer.py /path/to/matrix.cmat
 | **Full Zoom Out (1D)** | `Double Click` (1D) | Fully zoom out clicked 1D projection only (X range & Y scale; preserves other gate) |
 | **2D Coincidence Peak Fit** | `Ctrl / Cmd + Click` (2D) or `G` | True 2D coincidence peak fit (Gaussian/RadWare/Hypermet) with Gamba & Morhác 4-component BG decomposition |
 | **1D Histogram Peak Fit** | `Ctrl / Cmd + Click` (1D) or `G` | Fit 1D histogram peak (Gaussian/RadWare/Hypermet) + linear BG on Det 1 or Det 2 |
-| **Automatic 1D Peak Search** | `P` or `p` | Automatically find peaks in focused 1D spectrum (CWT + Prominence methods) |
+| **Automatic 1D Peak Search** | `P` or `p` | Automatically find peaks in focused 1D spectrum (Prominence / CWT / Mariscotti methods) |
+| **Fit All Displayed Peaks** | `H` or `h` | Fit all visible candidate peaks on Peak-Aware Continuum Background (averages low-statistics noise grass, connects smoothly under multiplets) |
 | **Clear Peak Fits & Markers** | `=` (Equals) or `+` | Clear active peak fit curves and found peak markers from 1D spectra and 2D matrix |
 | **Set Peak Gate Limits** | `W` or `w` (1D) | Set Left / Right peak coincidence gate limits ($W_k$) on 1D spectrum |
 | **Set Background Limits** | `B` or `b` (1D) | Set Left / Right background gate limits ($B_m$) for normalized subtraction |
@@ -105,7 +107,7 @@ python cmat_webviewer.py /path/to/matrix.cmat
 | **Quit Viewer** | `Q` or `q` | Close browser tab and terminate terminal server process |
 | **Print 2D PDF** | `Print PDF` (2D footer) | Export publication-quality vector PDF of current 2D matrix (Times New Roman, Energy keV axes, colorbar) |
 | **Print 1D PDF** | `Print PDF` (1D header) | Export publication-quality vector PDF of active 1D spectrum (Times New Roman, Energy keV axis, stepped histogram, fit curves) |
-| **Help Modal** | `?` or `H` | Open keyboard shortcuts reference |
+| **Help Modal** | `?` | Open keyboard shortcuts reference |
 
 ---
 
@@ -346,26 +348,54 @@ Automated peak finding in $\gamma$-ray spectra is challenged by Poisson statisti
 
 ---
 
-### 6. Key References
+### 6. Automated Multi-Peak Fitting with Peak-Aware Background Estimation
 
-1. **Du, P., Kibbe, W. A., & Lin, S. M.** (2006). *"Improved peak detection in mass spectrometry by incorporating continuous wavelet transform-based pattern matching"*. *Bioinformatics*, 22(17), 2059–2065. [link](https://doi.org/10.1093/bioinformatics/btl355).
+Following automatic peak identification (`P`), pressing **`H`** (or clicking `Fit All [H]`) executes automated multi-peak fitting across all visible candidate photopeaks on display. The continuum baseline is estimated using a **Peak-Aware Continuum Average** engine designed specifically to handle both high-statistics projections and low-statistics / coincidence-gated spectra without noise-clipping bias:
+
+- **The Low-Statistics Under-Fit Problem & Peak-Aware Solution**:
+  Standard morphological baseline filters like plain SNIP rely on concave lower-envelope clipping ($v_i = \min(v_i, \frac{v_{i-p} + v_{i+p}}{2})$). In low-statistics spectra or background-subtracted coincidence cuts ($S_{\text{net}} = S_{\text{gross}} - k S_{\text{bg}}$), large Poisson and Gaussian noise grass fluctuations cause plain SNIP to clip down to the lower noise envelope ($\approx \bar{y} - 2\sigma$), severely under-fitting the continuum and treating random fluctuations as if they were peaks.
+  
+  Because the peak search routine (`P`) has already identified candidate photopeaks, all channels outside the candidate peak clusters are known *a priori* to be pure continuum. The Peak-Aware background engine leverages this information directly:
+  1. **Peak Exclusion Masking**: Defines exclusion zones around each candidate peak cluster:
+     $$\text{ROI}_{\text{cl}} = \left[ \min(\text{cluster}) - 2.0 \times \text{FWHM}, \ \max(\text{cluster}) + 2.0 \times \text{FWHM} \right]$$
+  2. **Continuum Rolling Average**: Across all pure background channels ($\mathbb{E}[\epsilon_i] = 0$), the continuum is smoothed using a rolling Bartlett filter with window $W \approx 5.0 \times \text{FWHM}$. This estimates the exact central mathematical expectation value ($\bar{y}$) directly through the center of the noise grass ($< 0.1$ count bias), with full tolerance for arbitrary positive, zero, or negative count bins.
+  3. **Cluster Baseline Bridging**: Across each peak cluster, the baseline connects the smoothed left continuum to the smoothed right continuum linearly without clipping or artificial bowing.
+  4. **Dense Forest Fallback**: If peak coverage exceeds 92% of the display window (continuous peak forest without continuum gaps), the engine automatically falls back to SNIP.
+- **Multiplet Clustering & Adaptive ROIs**:
+  Adjacent peaks separated by $\le 3.2 \times \text{FWHM}$ are grouped into multiplets. Each cluster is fitted simultaneously with Levenberg-Marquardt optimization using variance weights $w_i = 1 / \sqrt{\max(1.0, |y_i|)}$, supporting Standard Gaussian, RadWare / SAMPO Left Exponential Tail, or Hypermet profiles. Centroids are constrained within $\pm 2.5$ channels of markers to prevent line migration.
+- **Full Parameter Covariance & Aligned Terminal Reports**:
+  Exact error propagation from the parameter covariance matrix ($\text{Cov} = (J^T J)^{-1} \chi^2_\nu$) yields standard errors for centroids, FWHMs, amplitudes, and net peak areas including off-diagonal correlations. Results are formatted into a clean, decimal-aligned tabular terminal report and an interactive multi-fit results card with click-to-center navigation.
+- **Visual Display & Vector PDF Export**:
+  The continuum baseline is rendered in dashed amber (`#ffa726`), the composite multi-peak model is drawn in vibrant neon green (`#00e676`), and fitted peak markers switch to green with updated net areas. Exporting to PDF (`Print PDF`) incorporates both the continuous baseline and composite multi-peak curves into publication-quality vector plots.
+
+---
+
+### 7. Key References
+
+1. **Ryan, C. G., Clayton, E., Griffin, W. L., Sie, S. H., & Cousens, D. R.** (1988). *"SNIP, a statistics-sensitive background treatment for the quantitative analysis of PIXE spectra in geoscience applications"*. *Nuclear Instruments and Methods in Physics Research Section B*, 34(3), 396–402. [link](https://doi.org/10.1016/0168-583X(88)90063-8).
+   *(Original formulation of the Statistics-sensitive Non-linear Iterative Peak-clipping [SNIP] background estimation algorithm).*
+2. **Morhác, M., Kliman, J., Jandel, M., Krupa, L., & Matoušek, V.** (1997). *"Study of background and peak decomposition in multidimensional coincidence $\gamma$-ray spectra"*. *Nuclear Instruments and Methods in Physics Research Section A*, 401(1), 113–131. [link](https://doi.org/10.1016/S0168-9002(97)01023-1).
+   *(Foundational background estimation using LLS transformation and decreasing-order SNIP in ROOT TSpectrum and gamma-ray coincidence analysis).*
+3. **Du, P., Kibbe, W. A., & Lin, S. M.** (2006). *"Improved peak detection in mass spectrometry by incorporating continuous wavelet transform-based pattern matching"*. *Bioinformatics*, 22(17), 2059–2065. [link](https://doi.org/10.1093/bioinformatics/btl355).
    *(Foundational algorithm for multi-scale Continuous Wavelet Transform ridge detection and noise estimation in counting spectra).*
-2. **Phillips, G. W., & Marlow, K. W.** (1976). *"Automatic analysis of gamma-ray spectra from germanium detectors"*. *Nuclear Instruments and Methods*, 137(3), 525–536. [link](https://doi.org/10.1016/0029-554X(76)90472-X).
+4. **Phillips, G. W., & Marlow, K. W.** (1976). *"Automatic analysis of gamma-ray spectra from germanium detectors"*. *Nuclear Instruments and Methods*, 137(3), 525–536. [link](https://doi.org/10.1016/0029-554X(76)90472-X).
    *(Original formulation of the Hypermet peak shape: Gaussian + convolved exponential tail + erfc step function).*
-3. **Campbell, J. L., & Maxwell, J. A.** (1993). *"Analytical representation of Si(Li) and HPGe detector response functions"*. *Nuclear Instruments and Methods in Physics Research Section B*, 73(4), 545–551. [link](https://doi.org/10.1016/0168-583X(93)95837-K).
+5. **Campbell, J. L., & Maxwell, J. A.** (1993). *"Analytical representation of Si(Li) and HPGe detector response functions"*. *Nuclear Instruments and Methods in Physics Research Section B*, 73(4), 545–551. [link](https://doi.org/10.1016/0168-583X(93)95837-K).
    *(Comprehensive evaluation of analytical detector response functions and physical origin of peak tailing components).*
-4. **Gamba, E. R., Bruce, A. M., & Rudigier, M.** (2019). *"Treatment of background in $\gamma$-$\gamma$ fast-timing measurements"*. *Nuclear Instruments and Methods in Physics Research Section A*, 928, 93–103. [link](https://doi.org/10.1016/j.nima.2019.03.028).
+6. **Gamba, E. R., Bruce, A. M., & Rudigier, M.** (2019). *"Treatment of background in $\gamma$-$\gamma$ fast-timing measurements"*. *Nuclear Instruments and Methods in Physics Research Section A*, 928, 93–103. [link](https://doi.org/10.1016/j.nima.2019.03.028).
    *(Mathematical formulation of the 4-component coincidence background decomposition, ridge extraction, and Peak-to-Total-Background ratio $\Pi$).*
-5. **Morhác, M., Kliman, J., Jandel, M., Krupa, L., & Matoušek, V.** (1997). *"Study of background and peak decomposition in multidimensional coincidence $\gamma$-ray spectra"*. *Nuclear Instruments and Methods in Physics Research Section A*, 401(1), 113–131. [link](https://doi.org/10.1016/S0168-9002(97)01023-1).
-   *(Foundational 2D coincidence background estimation and non-linear peak decomposition algorithms).*
-6. **Radford, D. C.** (1995). *"ESCL8R and LEVIT8R: Software for interactive analysis of HPGe coincidence data sets"*. *Nuclear Instruments and Methods in Physics Research Section A*, 361(1-2), 297–305. [link](https://www.sciencedirect.com/science/article/abs/pii/0168900295001832).
+7. **Radford, D. C.** (1995). *"ESCL8R and LEVIT8R: Software for interactive analysis of HPGe coincidence data sets"*. *Nuclear Instruments and Methods in Physics Research Section A*, 361(1-2), 297–305. [link](https://www.sciencedirect.com/science/article/abs/pii/0168900295001832).
    *(Foundational reference for the RadWare analysis package and the `gf3` peak fitting algorithms used throughout modern nuclear structure coincidence analysis).*
-7. **Helmer, R. G., & Lee, M. A.** (1980). *"Analytical functions for fitting peaks from Ge semiconductor detectors"*. *Nuclear Instruments and Methods*, 178(2-3), 499–512. [link](https://www.sciencedirect.com/science/article/abs/pii/0029554X80908307).
+8. **Helmer, R. G., & Lee, M. A.** (1980). *"Analytical functions for fitting peaks from Ge semiconductor detectors"*. *Nuclear Instruments and Methods*, 178(2-3), 499–512. [link](https://www.sciencedirect.com/science/article/abs/pii/0029554X80908307).
    *(Systematic comparison of analytical peak fitting formulations for germanium semiconductor detectors).*
-8. **Routti, J. T., & Prussin, S. G.** (1969). *"Photopeak method for the computer analysis of gamma-ray spectra from semiconductor detectors"*. *Nuclear Instruments and Methods*, 72(2), 125–142. [link](https://doi.org/10.1016/0029-554X(69)90148-7).
+9. **Routti, J. T., & Prussin, S. G.** (1969). *"Photopeak method for the computer analysis of gamma-ray spectra from semiconductor detectors"*. *Nuclear Instruments and Methods*, 72(2), 125–142. [link](https://doi.org/10.1016/0029-554X(69)90148-7).
    *(Original formulation of the Gaussian peak with continuous exponential tails in the SAMPO program).*
-9. **Knoll, G. F.** (2010). *"Radiation Detection and Measurement"*, 4th Edition, John Wiley & Sons, New York. ISBN: 978-0-470-13148-0.
+10. **Knoll, G. F.** (2010). *"Radiation Detection and Measurement"*, 4th Edition, John Wiley & Sons, New York. ISBN: 978-0-470-13148-0.
    *(Chapters 12 & 18: Germanium gamma-ray detectors, pulse height defect, hole trapping, and peak shape asymmetry).*
+11. **Mariscotti, M. A.** (1967). *"A method for automatic identification of peaks in the presence of background"*. *Nuclear Instruments and Methods*, 50(2), 309–320. [link](https://doi.org/10.1016/0029-554X(67)90058-4).
+   *(Pioneering method for automated peak detection and continuum background estimation using generalized second-difference filtering).*
+12. **Morhác, M.** (2009). *"Sophisticated algorithms of analysis of spectrometric data"*. *Nuclear Instruments and Methods in Physics Research Section A*, 600(2), 478–487. [link](https://doi.org/10.1016/j.nima.2008.11.132).
+   *(Comprehensive analysis of peak clipping, multi-scale smoothing, deconvolution, and multidimensional background estimation in gamma-ray spectroscopy).*
 
 ---
 

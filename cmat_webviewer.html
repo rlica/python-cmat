@@ -218,6 +218,9 @@
   .fit-card-1d {
     border: 1px solid #00e5ff;
   }
+  .fit-card-multi-1d {
+    border: 1px solid #00e676;
+  }
   .fit-card-2d {
     border: 1px solid #ffd600;
   }
@@ -435,7 +438,11 @@
         <button id="btnSidebarFindPeaksDet1" class="secondary" style="font-size: 0.75rem; flex: 1; color: #ffd54f; border-color: #ffb300;">Find Det 1 [P]</button>
         <button id="btnSidebarFindPeaksDet2" class="secondary" style="font-size: 0.75rem; flex: 1; color: #ffd54f; border-color: #ffb300;">Find Det 2 [P]</button>
       </div>
-      <button id="btnSidebarClearPeaks" class="fit-btn-close" style="display: none; width: 100%; margin-top: 5px;">Clear Found Peaks [=]</button>
+      <div style="display: flex; gap: 6px; margin-top: 5px;">
+        <button id="btnSidebarFitAllPeaksDet1" class="secondary" style="font-size: 0.75rem; flex: 1; color: #00e676; border-color: #00c853;">Fit All Det 1 [H]</button>
+        <button id="btnSidebarFitAllPeaksDet2" class="secondary" style="font-size: 0.75rem; flex: 1; color: #00e676; border-color: #00c853;">Fit All Det 2 [H]</button>
+      </div>
+      <button id="btnSidebarClearPeaks" class="fit-btn-close" style="display: none; width: 100%; margin-top: 5px;">Clear Found Peaks &amp; Fits [=]</button>
     </div>
 
     <!-- 5. Defaults & Configuration -->
@@ -471,7 +478,8 @@
           </div>
           <div style="display: flex; gap: 6px;">
             <button id="btnFindPeaksX" class="secondary" style="width: auto; padding: 2px 7px; font-size: 0.72rem; color: #ffd54f; border-color: #ffb300;" title="Automatic Peak Search [P]">Find Peaks [P]</button>
-            <button id="btnClearPeaksX" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem;" title="Clear Found Peaks [=]">Clear Peaks</button>
+            <button id="btnFitAllPeaksX" class="secondary" style="width: auto; padding: 2px 7px; font-size: 0.72rem; color: #00e676; border-color: #00c853;" title="Fit All Displayed Peaks (Peak-Aware Background) [H]">Fit All [H]</button>
+            <button id="btnClearPeaksX" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem;" title="Clear Found Peaks &amp; Fits [=]">Clear Peaks</button>
             <button id="btnPrintPDF1DX" style="width: auto; padding: 2px 7px; font-size: 0.72rem; background: #1b5e20; border-color: #4caf50; color: #fff;">Print PDF</button>
             <button id="btnExport1DX" style="width: auto; padding: 2px 7px; font-size: 0.72rem;">Export .dat</button>
           </div>
@@ -487,7 +495,8 @@
           </div>
           <div style="display: flex; gap: 6px;">
             <button id="btnFindPeaksY" class="secondary" style="width: auto; padding: 2px 7px; font-size: 0.72rem; color: #ffd54f; border-color: #ffb300;" title="Automatic Peak Search [P]">Find Peaks [P]</button>
-            <button id="btnClearPeaksY" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem;" title="Clear Found Peaks [=]">Clear Peaks</button>
+            <button id="btnFitAllPeaksY" class="secondary" style="width: auto; padding: 2px 7px; font-size: 0.72rem; color: #00e676; border-color: #00c853;" title="Fit All Displayed Peaks (Peak-Aware Background) [H]">Fit All [H]</button>
+            <button id="btnClearPeaksY" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem;" title="Clear Found Peaks &amp; Fits [=]">Clear Peaks</button>
             <button id="btnPrintPDF1DY" style="width: auto; padding: 2px 7px; font-size: 0.72rem; background: #1b5e20; border-color: #4caf50; color: #fff;">Print PDF</button>
             <button id="btnExport1DY" style="width: auto; padding: 2px 7px; font-size: 0.72rem;">Export .dat</button>
           </div>
@@ -517,6 +526,30 @@
           <div class="fit-item"><span class="lbl">Gross / Bg:</span><span class="val" id="fitGrossBg1D">-</span></div>
           <div class="fit-item"><span class="lbl">Reduced χ²:</span><span class="val" id="fitChi21D">-</span></div>
         </div>
+      </div>
+
+      <!-- 1D Multi-Peak Fit Results Card -->
+      <div class="fit-results-card fit-card-multi-1d" id="fitCardMulti1D" style="display: none; max-height: 220px; overflow-y: auto;">
+        <div class="fit-header" style="color: #00e676; position: sticky; top: 0; background: #191c20; z-index: 2; padding-bottom: 4px;">
+          <span id="fitTitleMulti1D">1D Multi-Peak Fit (Local Linear Baselines)</span>
+          <div style="display: flex; gap: 6px;">
+            <button class="fit-btn-close" id="btnCloseMultiFit1D">Clear Multi-Fit [=]</button>
+          </div>
+        </div>
+        <div id="fitSummaryMulti1D" style="font-size: 0.73rem; color: #aaa; margin: 4px 0 6px 0;">-</div>
+        <table id="fitTableMulti1D" style="width: 100%; border-collapse: collapse; font-size: 0.72rem; font-family: monospace;">
+          <thead>
+            <tr style="color: #888; border-bottom: 1px solid #333; text-align: right;">
+              <th style="text-align: left; padding: 2px 4px;">#</th>
+              <th style="padding: 2px 4px;">Centroid (ch)</th>
+              <th style="padding: 2px 4px;">Energy (keV)</th>
+              <th style="padding: 2px 4px;">FWHM</th>
+              <th style="padding: 2px 4px;">Net Area (cts)</th>
+              <th style="padding: 2px 4px;">Peak/BG</th>
+            </tr>
+          </thead>
+          <tbody id="fitTableBodyMulti1D"></tbody>
+        </table>
       </div>
 
       <!-- 2D Coincidence Fit Results Card -->
@@ -564,6 +597,7 @@
     <tr><td>Ctrl / Cmd + Click (1D)</td><td>1D Histogram Peak Fit + Linear Background (Det 1 or Det 2)</td></tr>
     <tr><td>G / g</td><td>Fit peak at current cursor position (2D coincidence or 1D histogram)</td></tr>
     <tr><td>P / p</td><td>Automatic 1D Peak Search on focused spectrum (CWT method)</td></tr>
+    <tr><td>H / h</td><td>Fit all visible peaks on focused 1D display (Peak-Aware Background)</td></tr>
     <tr><td>= (Equals) / +</td><td>Clear active peak fits (1D and 2D) and found peak markers</td></tr>
     <tr><td>Arrows in 1D (←, →)</td><td>Pan 1D spectrum channels left / right (Shift + Arrow for 2× fast pan)</td></tr>
     <tr><td>Arrows in 1D (↑, ↓)</td><td>Pan / zoom 1D vertical counts scale (↑ taller peaks, ↓ shorter peaks)</td></tr>
@@ -1440,6 +1474,8 @@
 
   let activeFit1D = { 0: null, 1: null };
   let activeFit2D = null;
+  let activeMultiFit1D = { 0: null, 1: null };
+  let isFittingAllPeaks = false;
 
   function getActiveFitType() {
     const sel = document.getElementById('fitTypeSelect') || document.getElementById('fitTypeSelect1D') || document.getElementById('fitTypeSelect2D');
@@ -1625,10 +1661,12 @@
     if (axis === null || axis === undefined) {
       foundPeaks1D[0] = [];
       foundPeaks1D[1] = [];
+      clearMultiFit1D(null);
       updateFoundPeaksUI(0);
       updateFoundPeaksUI(1);
     } else {
       foundPeaks1D[axis] = [];
+      clearMultiFit1D(axis);
       updateFoundPeaksUI(axis);
     }
     renderBoth1DSpectra();
@@ -1649,8 +1687,9 @@
     const sideClear = document.getElementById('btnSidebarClearPeaks');
     if (sideClear) {
       const tot = (foundPeaks1D[0] || []).length + (foundPeaks1D[1] || []).length;
-      sideClear.style.display = (tot > 0) ? 'block' : 'none';
-      if (tot > 0) sideClear.innerText = `Clear ${tot} Found Peaks [=]`;
+      const hasMulti = (activeMultiFit1D[0] !== null || activeMultiFit1D[1] !== null);
+      sideClear.style.display = (tot > 0 || hasMulti) ? 'block' : 'none';
+      if (tot > 0) sideClear.innerText = `Clear ${tot} Found Peaks & Fits [=]`;
     }
   }
 
@@ -1731,6 +1770,183 @@
       console.warn("Peak fit failed:", data.error);
     }
     renderBoth1DSpectra();
+  }
+
+  async function fitAllPeaks1D(axis) {
+    if (isFittingAllPeaks) return;
+    isFittingAllPeaks = true;
+
+    const x0 = Math.floor(Math.max(0, view.x0));
+    const x1 = Math.ceil(Math.min(metadata.shape[0], view.x1));
+    const y0 = Math.floor(Math.max(0, view.y0));
+    const y1 = Math.ceil(Math.min(metadata.shape[1], view.y1));
+    const chMin = (axis === 0) ? x0 : y0;
+    const chMax = (axis === 0) ? x1 : y1;
+
+    // Check visible found peaks in current display range
+    let visiblePeaks = (foundPeaks1D[axis] || []).filter(p => p.channel >= chMin && p.channel <= chMax);
+
+    // If no peaks found yet on display, automatically perform peak search first!
+    if (visiblePeaks.length === 0) {
+      document.getElementById('hudCoords').innerText = `No peak markers in visible window [${chMin}..${chMax}]. Searching peaks first...`;
+      await searchPeaks1D(axis);
+      visiblePeaks = (foundPeaks1D[axis] || []).filter(p => p.channel >= chMin && p.channel <= chMax);
+    }
+
+    if (visiblePeaks.length === 0) {
+      document.getElementById('hudCoords').innerText = `No peaks found on display [${chMin}..${chMax}] to fit. Try adjusting peak search sensitivity (SNR/FWHM).`;
+      isFittingAllPeaks = false;
+      return;
+    }
+
+    const peakChannels = visiblePeaks.map(p => p.channel.toFixed(2)).join(',');
+    const fitType = getActiveFitType();
+    const fwhmEst = parseFloat(document.getElementById('peakSearchFwhmSlider')?.value || '4.0');
+    const minSnr = parseFloat(document.getElementById('peakSearchSnrSlider')?.value || '5.0');
+    const detName = (axis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
+
+    document.getElementById('hudCoords').innerText = `Fitting ${visiblePeaks.length} peaks on ${detName} (Peak-Aware Continuum Average)...`;
+
+    const btn = (axis === 0) ? document.getElementById('btnFitAllPeaksX') : document.getElementById('btnFitAllPeaksY');
+    const origText = btn ? btn.innerText : '';
+    if (btn) btn.innerText = 'Fitting...';
+
+    let url = `/api/fit_all_peaks_1d?axis=${axis}&ch_min=${chMin}&ch_max=${chMax}&peaks=${encodeURIComponent(peakChannels)}&fit_type=${fitType}&fwhm_est=${fwhmEst}&min_snr=${minSnr}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}`;
+    if (gate1DState.axis !== null && gate1DState.axis === (1 - axis) && gate1DState.w_gates.length > 0) {
+      url += `&w_gates=${encodeURIComponent(JSON.stringify(gate1DState.w_gates))}&b_gates=${encodeURIComponent(JSON.stringify(gate1DState.b_gates))}`;
+    }
+
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.success) {
+        activeMultiFit1D[axis] = data;
+
+        // Update markers in foundPeaks1D[axis] with fitted centroid and net area
+        if (data.peaks && data.peaks.length > 0) {
+          const fittedMarkers = data.peaks.map(p => ({
+            channel: p.centroid_ch,
+            energy: p.centroid_e,
+            counts: p.amplitude,
+            fwhm: p.fwhm_ch,
+            area: p.area,
+            area_err: p.area_err,
+            fitted: true
+          }));
+          const outside = (foundPeaks1D[axis] || []).filter(p => p.channel < chMin || p.channel > chMax);
+          foundPeaks1D[axis] = [...outside, ...fittedMarkers].sort((a, b) => a.channel - b.channel);
+          updateFoundPeaksUI(axis);
+        }
+
+        showMultiFitCard(data, axis);
+        renderBoth1DSpectra();
+        const bgDesc = (data.bg_method === 'snip') ? 'SNIP BG' : 'Peak-Aware BG';
+        document.getElementById('hudCoords').innerText = `1D Multi-Fit [${detName}]: Fitted ${data.peaks_fitted} peaks | χ²_red = ${data.red_chi2} (${data.fit_type}, ${bgDesc} | ${data.elapsed_ms} ms)`;
+      } else {
+        console.warn("Multi-peak fit failed:", data.error);
+        document.getElementById('hudCoords').innerText = `Multi-peak fit error: ${data.error}`;
+      }
+    } catch (err) {
+      console.error("Multi-peak fit request error:", err);
+      document.getElementById('hudCoords').innerText = 'Multi-peak fit network error.';
+    } finally {
+      isFittingAllPeaks = false;
+      if (btn) btn.innerText = origText;
+    }
+  }
+
+  function showMultiFitCard(data, axis) {
+    const card = document.getElementById('fitCardMulti1D');
+    if (!card) return;
+
+    const isCal = metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0);
+    const detLabel = (axis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
+    const modelTag = (data.fit_type === 'hypermet') ? 'Hypermet' : ((data.fit_type === 'gaussian_tail') ? 'Left-Tail' : 'Gaussian');
+    const bgMethodTag = (data.bg_method === 'snip') ? `SNIP BG (M=${data.snip_iterations || 6})` : 'Peak-Aware BG';
+
+    document.getElementById('fitTitleMulti1D').innerText = `1D Multi-Fit [${detLabel}]: ${data.peaks_fitted} Peaks (${modelTag} + ${bgMethodTag})`;
+    document.getElementById('fitSummaryMulti1D').innerText = `Window [${data.ch_min}..${data.ch_max}] ch | χ²_red = ${data.red_chi2} (NDF=${data.ndf}) | ${bgMethodTag} | Clusters: ${data.total_clusters || 1} | Time: ${data.elapsed_ms} ms`;
+
+    const tbody = document.getElementById('fitTableBodyMulti1D');
+    if (tbody) {
+      tbody.innerHTML = '';
+      (data.peaks || []).forEach((pk, idx) => {
+        const tr = document.createElement('tr');
+        tr.style.borderBottom = '1px solid #252830';
+        tr.style.cursor = 'pointer';
+        tr.title = 'Click to center spectrum on this peak';
+
+        tr.addEventListener('mouseenter', () => { tr.style.background = '#252930'; });
+        tr.addEventListener('mouseleave', () => { tr.style.background = 'transparent'; });
+        tr.addEventListener('click', () => {
+          centerOnChannel(axis, pk.centroid_ch);
+        });
+
+        const chStr = `${pk.centroid_ch.toFixed(2)} ± ${pk.centroid_ch_err.toFixed(2)}`;
+        const eStr = isCal ? `${pk.centroid_e.toFixed(2)} ± ${pk.centroid_e_err.toFixed(2)}` : '-';
+        const fwhmStr = isCal ? `${pk.fwhm_e.toFixed(2)} keV` : `${pk.fwhm_ch.toFixed(2)} ch`;
+        const areaStr = `${Math.round(pk.area).toLocaleString()} ± ${Math.round(pk.area_err).toLocaleString()}`;
+        const pbgStr = (pk.peak_to_bg !== undefined && pk.peak_to_bg !== null && !isNaN(pk.peak_to_bg)) ? pk.peak_to_bg.toFixed(1) : '-';
+
+        tr.innerHTML = `
+          <td style="text-align: left; padding: 3px 4px; color: #00e676; font-weight: bold;">${idx + 1}</td>
+          <td style="text-align: right; padding: 3px 4px; color: #fff;">${chStr}</td>
+          <td style="text-align: right; padding: 3px 4px; color: ${isCal ? '#81c784' : '#666'};">${eStr}</td>
+          <td style="text-align: right; padding: 3px 4px; color: #aaa;">${fwhmStr}</td>
+          <td style="text-align: right; padding: 3px 4px; color: #ffd54f; font-weight: bold;">${areaStr}</td>
+          <td style="text-align: right; padding: 3px 4px; color: #888;">${pbgStr}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    card.style.display = 'block';
+  }
+
+  function clearMultiFit1D(axis) {
+    if (axis === null || axis === undefined) {
+      activeMultiFit1D[0] = null;
+      activeMultiFit1D[1] = null;
+    } else {
+      activeMultiFit1D[axis] = null;
+    }
+    const hasAny = (activeMultiFit1D[0] !== null || activeMultiFit1D[1] !== null);
+    const card = document.getElementById('fitCardMulti1D');
+    if (card && !hasAny) {
+      card.style.display = 'none';
+    }
+    renderBoth1DSpectra();
+  }
+
+  function centerOnChannel(axis, ch) {
+    if (!metadata) return;
+    if (axis === 0) {
+      const spanX = Math.max(10, view.x1 - view.x0);
+      const half = Math.floor(spanX / 2);
+      const maxSpanX = metadata.shape[0];
+      let nx0 = Math.max(0, Math.floor(ch - half));
+      let nx1 = nx0 + spanX;
+      if (nx1 > maxSpanX) {
+        nx1 = maxSpanX;
+        nx0 = Math.max(0, nx1 - spanX);
+      }
+      view.x0 = nx0;
+      view.x1 = nx1;
+    } else {
+      const spanY = Math.max(10, view.y1 - view.y0);
+      const half = Math.floor(spanY / 2);
+      const maxSpanY = metadata.shape[1];
+      let ny0 = Math.max(0, Math.floor(ch - half));
+      let ny1 = ny0 + spanY;
+      if (ny1 > maxSpanY) {
+        ny1 = maxSpanY;
+        ny0 = Math.max(0, ny1 - spanY);
+      }
+      view.y0 = ny0;
+      view.y1 = ny1;
+    }
+    fetchTileAndRender();
+    fetch1DProjection();
   }
 
   function render1DSpectrum(canvas, ctx, spec, axis, cursorCh) {
@@ -1883,6 +2099,57 @@
           ctx.moveTo(cX, pr.y);
           ctx.lineTo(cX, pr.y + pr.h);
           ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
+    }
+
+    // B2. Multi-Peak Fit Curves (Local Linear Baselines + Multi-Peak Fitted Model)
+    const mFit = activeMultiFit1D[axis];
+    if (mFit && mFit.curve_x && mFit.curve_x.length > 0) {
+      if (mFit.ch_max >= chStart && mFit.ch_min <= chEnd) {
+        // Local Linear Baseline Background Curve (Dashed Amber #ffa726)
+        if (mFit.curve_bg && mFit.curve_bg.length > 0) {
+          ctx.beginPath();
+          ctx.strokeStyle = '#ffa726';
+          ctx.lineWidth = 1.8;
+          ctx.setLineDash([5, 4]);
+          for (let k = 0; k < mFit.curve_x.length; k++) {
+            const cx = pr.x + ((mFit.curve_x[k] - chStart) / span) * pr.w;
+            const cy = valToPx(mFit.curve_bg[k]);
+            if (k === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
+          }
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+
+        // Multi-Peak Fitted Composite Model Curve (Vibrant Neon Green #00e676)
+        if (mFit.curve_fit && mFit.curve_fit.length > 0) {
+          ctx.beginPath();
+          ctx.strokeStyle = '#00e676';
+          ctx.lineWidth = 2.2;
+          for (let k = 0; k < mFit.curve_x.length; k++) {
+            const cx = pr.x + ((mFit.curve_x[k] - chStart) / span) * pr.w;
+            const cy = valToPx(mFit.curve_fit[k]);
+            if (k === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
+          }
+          ctx.stroke();
+        }
+
+        // Dotted Centroid Lines for Multi-Fitted Peaks
+        if (mFit.peaks && mFit.peaks.length > 0) {
+          ctx.strokeStyle = 'rgba(0, 230, 118, 0.6)';
+          ctx.lineWidth = 1.0;
+          ctx.setLineDash([2, 2]);
+          for (const pk of mFit.peaks) {
+            const cX = pr.x + ((pk.centroid_ch - chStart) / span) * pr.w;
+            if (cX >= pr.x && cX <= pr.x + pr.w) {
+              ctx.beginPath();
+              ctx.moveTo(cX, pr.y);
+              ctx.lineTo(cX, pr.y + pr.h);
+              ctx.stroke();
+            }
+          }
           ctx.setLineDash([]);
         }
       }
@@ -2096,7 +2363,8 @@
       // 1. Draw carets ▼ and guide stems for all visible peaks
       for (const vp of visiblePeaks) {
         const tipY = vp.caretTipY;
-        ctx.fillStyle = vp.isNearCursor ? '#ffffff' : '#ffd54f';
+        const isFitted = Boolean(vp.p && vp.p.fitted);
+        ctx.fillStyle = vp.isNearCursor ? '#ffffff' : (isFitted ? '#00e676' : '#ffd54f');
         ctx.beginPath();
         ctx.moveTo(vp.px, tipY);
         ctx.lineTo(vp.px - 5, tipY - 8);
@@ -2104,7 +2372,7 @@
         ctx.closePath();
         ctx.fill();
 
-        ctx.strokeStyle = vp.isNearCursor ? '#ffffff' : 'rgba(255, 213, 79, 0.75)';
+        ctx.strokeStyle = vp.isNearCursor ? '#ffffff' : (isFitted ? 'rgba(0, 230, 118, 0.85)' : 'rgba(255, 213, 79, 0.75)');
         ctx.lineWidth = 1.2;
         ctx.beginPath();
         ctx.moveTo(vp.px, tipY);
@@ -2164,8 +2432,9 @@
         ctx.lineJoin = 'round';
         ctx.strokeText(vp.pLbl, lblX, lblY);
 
-        // Vibrant gold text (white on hover)
-        ctx.fillStyle = isHovered ? '#ffffff' : '#ffd54f';
+        // Vibrant gold text for candidate peaks, soft green for fitted peaks (white on hover)
+        const isFitted = Boolean(vp.p && vp.p.fitted);
+        ctx.fillStyle = isHovered ? '#ffffff' : (isFitted ? '#81c784' : '#ffd54f');
         ctx.fillText(vp.pLbl, lblX, lblY);
       }
 
@@ -2550,7 +2819,11 @@
     if (gate1DState.axis !== null && gate1DState.axis === (1 - axis) && gate1DState.w_gates.length > 0) {
       url += `&w_gates=${encodeURIComponent(JSON.stringify(gate1DState.w_gates))}&b_gates=${encodeURIComponent(JSON.stringify(gate1DState.b_gates))}`;
     }
-    if (fit && fit.centroid_ch !== undefined) {
+    const mFit = activeMultiFit1D[axis];
+    if (mFit && mFit.peaks && mFit.peaks.length > 0) {
+      const pchs = mFit.peaks.map(p => p.centroid_ch.toFixed(2)).join(',');
+      url += `&has_multi_fit=1&multi_peaks=${encodeURIComponent(pchs)}&multi_fit_type=${encodeURIComponent(mFit.fit_type || fitType)}`;
+    } else if (fit && fit.centroid_ch !== undefined) {
       url += `&has_fit=1&fit_ch=${fit.centroid_ch}&fit_type=${fitType}&fwhm_mult=${fwhmMult}`;
     }
     window.open(url, '_blank');
@@ -2604,6 +2877,7 @@
   function clearAllFits() {
     clearFit1D();
     clearFit2D();
+    clearMultiFit1D();
     clearFoundPeaks(0);
     clearFoundPeaks(1);
   }
@@ -2813,6 +3087,19 @@
     const btnSideClrPk = document.getElementById('btnSidebarClearPeaks');
     if (btnSideClrPk) btnSideClrPk.addEventListener('click', () => clearFoundPeaks(null));
 
+    const btnFitAllX = document.getElementById('btnFitAllPeaksX');
+    if (btnFitAllX) btnFitAllX.addEventListener('click', () => fitAllPeaks1D(0));
+    const btnFitAllY = document.getElementById('btnFitAllPeaksY');
+    if (btnFitAllY) btnFitAllY.addEventListener('click', () => fitAllPeaks1D(1));
+
+    const btnSideFitAll1 = document.getElementById('btnSidebarFitAllPeaksDet1');
+    if (btnSideFitAll1) btnSideFitAll1.addEventListener('click', () => fitAllPeaks1D(0));
+    const btnSideFitAll2 = document.getElementById('btnSidebarFitAllPeaksDet2');
+    if (btnSideFitAll2) btnSideFitAll2.addEventListener('click', () => fitAllPeaks1D(1));
+
+    const btnCloseMulti = document.getElementById('btnCloseMultiFit1D');
+    if (btnCloseMulti) btnCloseMulti.addEventListener('click', () => clearMultiFit1D(null));
+
     const snrSlider = document.getElementById('peakSearchSnrSlider');
     if (snrSlider) {
       snrSlider.addEventListener('input', (e) => {
@@ -2970,9 +3257,16 @@
         } else {
           cycle2DScale();
         }
-      } else if (e.key === '?' || e.key === 'h' || e.key === 'H') {
+      } else if (e.key === '?') {
         const hm = document.getElementById('helpModal');
         hm.style.display = hm.style.display === 'block' ? 'none' : 'block';
+      } else if (e.key === 'h' || e.key === 'H') {
+        let activeAxis = (targetPanel === '1d-1') ? 1 : 0;
+        if (targetPanel === '2d') {
+          if (foundPeaks1D[1].length > 0 && foundPeaks1D[0].length === 0) activeAxis = 1;
+          else if (foundPeaks1D[0].length > 0) activeAxis = 0;
+        }
+        fitAllPeaks1D(activeAxis);
       } else if (e.key === 'Escape') {
         const hm = document.getElementById('helpModal');
         if (hm && hm.style.display === 'block') {
@@ -3263,7 +3557,13 @@
         if (foundPeaks1D[axis] && foundPeaks1D[axis].length > 0) {
           const nearP = foundPeaks1D[axis].find(p => Math.abs(p.channel - ch) <= 2.5);
           if (nearP) {
-            peakInfo = ` | Peak: ${isCal ? nearP.energy + ' keV' : 'ch ' + nearP.channel} (SNR: ${nearP.snr})`;
+            if (nearP.fitted) {
+              const aStr = nearP.area ? Math.round(nearP.area).toLocaleString() : '0';
+              const fStr = nearP.fwhm ? nearP.fwhm.toFixed(2) : '-';
+              peakInfo = ` | Fitted Peak: ${isCal ? nearP.energy + ' keV' : 'ch ' + nearP.channel} (Net Area: ${aStr} cts, FWHM: ${fStr})`;
+            } else {
+              peakInfo = ` | Peak: ${isCal ? nearP.energy + ' keV' : 'ch ' + nearP.channel} (SNR: ${nearP.snr || '-'})`;
+            }
           }
         }
         document.getElementById('hudCoords').innerText = `${detName}: ch ${ch} (${energy} keV) | Proj Counts: ${val}${peakInfo}`;
