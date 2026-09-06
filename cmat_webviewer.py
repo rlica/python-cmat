@@ -2042,27 +2042,33 @@ def fit_all_peaks_1d(
     fwhm_clean = max(1.5, float(fwhm_est))
 
     # Clean candidate peaks: suppress duplicate candidates closer than 0.8 * FWHM without >= 10% dip
+    # When explicit peaks were supplied (e.g. user set up peaks with 'J' to fit a multiplet with 'G'),
+    # preserve all distinct peaks (>= 0.6 channels apart) so user-marked multiplets are never discarded.
+    is_explicit_peaks = bool(peak_channels and len(peak_channels) > 0)
+    min_spacing = 0.6 if is_explicit_peaks else (0.8 * fwhm_clean)
     clean_peaks = []
     for p in valid_peaks:
         if not clean_peaks:
             clean_peaks.append(p)
         else:
             prev = clean_peaks[-1]
-            if p - prev < 0.8 * fwhm_clean:
+            if p - prev < min_spacing:
                 ch1 = int(np.clip(round(prev), 0, len(spectrum) - 1))
                 ch2 = int(np.clip(round(p), 0, len(spectrum) - 1))
                 if ch2 > ch1:
                     mid_val = np.min(spectrum[ch1:ch2 + 1])
                     peak_val = min(spectrum[ch1], spectrum[ch2])
-                    if mid_val > 0.90 * peak_val:
+                    if mid_val > 0.90 * peak_val and not is_explicit_peaks:
                         if spectrum[ch2] > spectrum[ch1]:
                             clean_peaks[-1] = p
                         continue
             clean_peaks.append(p)
 
-    # Cluster peaks: peaks within 3.2 * FWHM are grouped into the same multiplet
+    # Cluster peaks: peaks within threshold are grouped into the same multiplet
+    # When explicit multiplet peaks (<= 6 peaks) are passed to be fitted together,
+    # expand grouping threshold to 4.5 * FWHM to ensure all components fit as one cluster.
     clusters = []
-    c_threshold = 3.2 * fwhm_clean
+    c_threshold = (4.5 * fwhm_clean) if (is_explicit_peaks and len(clean_peaks) <= 6) else (3.2 * fwhm_clean)
     for p in clean_peaks:
         if not clusters or p - clusters[-1][-1] > c_threshold:
             clusters.append([p])

@@ -594,9 +594,9 @@
     <tr><td>Double Click (2D)</td><td>Fully zoom out 2D matrix and both 1D spectra (Full View)</td></tr>
     <tr><td>Double Click (1D)</td><td>Fully zoom out clicked 1D projection only (X range &amp; Y scale)</td></tr>
     <tr><td>Ctrl / Cmd + Click (2D)</td><td>2D Coincidence Peak Fit (Gaussian/HPGe + BG &amp; Random Subtraction)</td></tr>
-    <tr><td>Ctrl / Cmd + Click (1D)</td><td>1D Histogram Peak Fit + Linear Background (Det 1 or Det 2)</td></tr>
-    <tr><td>G / g</td><td>Fit peak at current cursor position (2D coincidence or 1D histogram)</td></tr>
+    <tr><td>G / g</td><td>Fit peak or multiplet at current cursor position (2D coincidence or 1D histogram)</td></tr>
     <tr><td>P / p</td><td>Automatic 1D Peak Search on focused spectrum (CWT method)</td></tr>
+    <tr><td>J / j</td><td>Add / remove manual peak marker at cursor (on Det 1 or Det 2)</td></tr>
     <tr><td>H / h</td><td>Fit all visible peaks on focused 1D display (Peak-Aware Background)</td></tr>
     <tr><td>= (Equals) / +</td><td>Clear active peak fits (1D and 2D) and found peak markers</td></tr>
     <tr><td>Arrows in 1D (←, →)</td><td>Pan 1D spectrum channels left / right (Shift + Arrow for 2× fast pan)</td></tr>
@@ -1693,16 +1693,179 @@
     }
   }
 
+  function addManualPeakMarker(axis, rawCh) {
+    if (rawCh === null || rawCh === undefined || isNaN(rawCh)) return;
+    const spec = (axis === 0) ? currentProjSpecX : currentProjSpecY;
+    if (!spec || spec.length === 0) return;
+
+    let cInt = Math.round(rawCh);
+    cInt = Math.max(0, Math.min(spec.length - 1, cInt));
+
+    // Search within +/- 2 channels for local maximum summit
+    let bestCh = cInt;
+    let maxVal = spec[cInt];
+    for (let dc = -2; dc <= 2; dc++) {
+      const c = cInt + dc;
+      if (c >= 0 && c < spec.length) {
+        if (spec[c] > maxVal) {
+          maxVal = spec[c];
+          bestCh = c;
+        }
+      }
+    }
+
+    // Parabolic sub-channel refinement
+    let ch = bestCh;
+    if (bestCh > 0 && bestCh < spec.length - 1) {
+      const y0 = spec[bestCh - 1], y1 = spec[bestCh], y2 = spec[bestCh + 1];
+      const denom = y0 - 2.0 * y1 + y2;
+      if (denom < 0) {
+        const delta = 0.5 * (y0 - y2) / denom;
+        if (Math.abs(delta) <= 0.6) ch = bestCh + delta;
+      }
+    }
+    ch = Math.round(ch * 100) / 100;
+
+    // Calibrated energy
+    let energy = ch;
+    if (metadata && metadata.cal && metadata.cal.length >= 2) {
+      const [a0, a1, a2] = metadata.cal;
+      energy = Math.round((a0 + a1 * ch + (a2 ? a2 * ch * ch : 0.0)) * 100) / 100;
+    }
+
+    if (!foundPeaks1D[axis]) foundPeaks1D[axis] = [];
+    const isCal = metadata && metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0);
+    const detName = (axis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
+
+    // Toggle: if user presses 'j' on an existing marker (within 1.2 channels), remove it
+    const existingIdx = foundPeaks1D[axis].findIndex(p => Math.abs(p.channel - ch) < 1.2);
+    if (existingIdx >= 0) {
+      const removed = foundPeaks1D[axis].splice(existingIdx, 1)[0];
+      updateFoundPeaksUI(axis);
+      renderBoth1DSpectra();
+      const rLbl = isCal ? `${removed.energy} keV` : `ch ${removed.channel}`;
+      document.getElementById('hudCoords').innerText = `Removed peak marker at ${rLbl} on ${detName} (${foundPeaks1D[axis].length} remaining)`;
+      return;
+    }
+
+    const newPeak = {
+      channel: ch,
+      energy: energy,
+      counts: Math.round(spec[bestCh] || 0),
+      snr: 'Manual',
+      manual: true
+    };
+    foundPeaks1D[axis].push(newPeak);
+    foundPeaks1D[axis].sort((a, b) => a.channel - b.channel);
+
+    updateFoundPeaksUI(axis);
+    renderBoth1DSpectra();
+    const pLbl = isCal ? `${energy} keV` : `ch ${ch}`;
+    document.getElementById('hudCoords').innerText = `Added peak marker at ${pLbl} on ${detName} (Total: ${foundPeaks1D[axis].length} peaks | Press 'G' to fit)`;
+  }
+
   async function requestPeakFit(axis, ch) {
+    if (ch === null || ch === undefined || isNaN(ch)) return;
+
     const x0 = Math.floor(Math.max(0, view.x0));
     const x1 = Math.ceil(Math.min(metadata.shape[0], view.x1));
     const y0 = Math.floor(Math.max(0, view.y0));
     const y1 = Math.ceil(Math.min(metadata.shape[1], view.y1));
     const fitType = getActiveFitType();
+    const fwhmEst = parseFloat(document.getElementById('peakSearchFwhmSlider')?.value || '4.0');
     const fwhmMult = document.getElementById('fwhmMultSlider1D') ? document.getElementById('fwhmMultSlider1D').value : '4.0';
-    const verbosity = document.getElementById('fitVerbositySelect') ? document.getElementById('fitVerbositySelect').value : 'compact';
+    const detLabel = (axis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
 
-    let url = `/api/fit_peak?axis=${axis}&channel=${ch}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}&fit_type=${fitType}&fwhm_mult=${fwhmMult}&verbosity=${verbosity}`;
+    // Check if there are peak markers in foundPeaks1D[axis] forming a multiplet near ch
+    const allPeaks = foundPeaks1D[axis] || [];
+    const clusterThresh = Math.max(14, 3.8 * fwhmEst);
+    const halfW = Math.max(7, 2.8 * fwhmEst);
+
+    const sortedPeaks = [...allPeaks].sort((a, b) => a.channel - b.channel);
+    const clusters = [];
+    for (const p of sortedPeaks) {
+      if (!clusters.length || p.channel - clusters[clusters.length - 1][clusters[clusters.length - 1].length - 1].channel > clusterThresh) {
+        clusters.push([p]);
+      } else {
+        clusters[clusters.length - 1].push(p);
+      }
+    }
+
+    let targetCluster = null;
+    for (const cl of clusters) {
+      const minC = cl[0].channel;
+      const maxC = cl[cl.length - 1].channel;
+      if (ch >= minC - halfW && ch <= maxC + halfW) {
+        targetCluster = cl;
+        break;
+      }
+    }
+
+    // MULTIPLET FIT: If cluster has 2 or more peaks, fit all of them together!
+    if (targetCluster && targetCluster.length >= 2) {
+      document.getElementById('hudCoords').innerText = `Fitting multiplet of ${targetCluster.length} peaks on ${detLabel}...`;
+      const peakChannels = targetCluster.map(p => p.channel.toFixed(2)).join(',');
+      const minSnr = parseFloat(document.getElementById('peakSearchSnrSlider')?.value || '5.0');
+      const minCluster = targetCluster[0].channel;
+      const maxCluster = targetCluster[targetCluster.length - 1].channel;
+      const padW = Math.max(12, Math.round(fwhmEst * 4.5));
+      const specLen = (axis === 0) ? (currentProjSpecX ? currentProjSpecX.length : 4096) : (currentProjSpecY ? currentProjSpecY.length : 4096);
+      const chMin = Math.max(0, Math.floor(minCluster - padW));
+      const chMax = Math.min(specLen - 1, Math.ceil(maxCluster + padW));
+
+      let url = `/api/fit_all_peaks_1d?axis=${axis}&ch_min=${chMin}&ch_max=${chMax}&peaks=${encodeURIComponent(peakChannels)}&fit_type=${fitType}&fwhm_est=${fwhmEst}&min_snr=${minSnr}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}&fwhm_mult=${fwhmMult}`;
+      if (gate1DState.axis !== null && gate1DState.axis === (1 - axis) && gate1DState.w_gates.length > 0) {
+        url += `&w_gates=${encodeURIComponent(JSON.stringify(gate1DState.w_gates))}&b_gates=${encodeURIComponent(JSON.stringify(gate1DState.b_gates))}`;
+      }
+
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.success) {
+          activeFit1D[axis] = null;
+          const fitCard1D = document.getElementById('fitCard1D');
+          if (fitCard1D) fitCard1D.style.display = 'none';
+
+          activeMultiFit1D[axis] = data;
+
+          if (data.peaks && data.peaks.length > 0) {
+            const fittedMarkers = data.peaks.map(p => ({
+              channel: p.centroid_ch,
+              energy: p.centroid_e,
+              counts: p.amplitude,
+              fwhm: p.fwhm_ch,
+              area: p.area,
+              area_err: p.area_err,
+              fitted: true
+            }));
+            const clusterChs = new Set(targetCluster.map(p => p.channel));
+            const outside = (foundPeaks1D[axis] || []).filter(p => !clusterChs.has(p.channel));
+            foundPeaks1D[axis] = [...outside, ...fittedMarkers].sort((a, b) => a.channel - b.channel);
+            updateFoundPeaksUI(axis);
+          }
+
+          showMultiFitCard(data, axis);
+          renderBoth1DSpectra();
+          const bgDesc = (data.bg_method === 'snip') ? 'SNIP BG' : 'Peak-Aware BG';
+          document.getElementById('hudCoords').innerText = `1D Multiplet Fit [${detLabel}]: Fitted ${data.peaks_fitted} peaks | χ²_red = ${data.red_chi2} (${data.fit_type}, ${bgDesc} | ${data.elapsed_ms} ms)`;
+        } else {
+          console.warn("Multiplet fit failed:", data.error);
+          document.getElementById('hudCoords').innerText = `Multiplet fit error: ${data.error}`;
+        }
+      } catch (err) {
+        console.error("Multiplet fit network error:", err);
+        document.getElementById('hudCoords').innerText = 'Multiplet fit network error.';
+      }
+      return;
+    }
+
+    // SINGLE PEAK FIT: Proceed with standard single peak fit
+    let fitCh = ch;
+    if (targetCluster && targetCluster.length === 1) {
+      fitCh = targetCluster[0].channel;
+    }
+    const verbosity = document.getElementById('fitVerbositySelect') ? document.getElementById('fitVerbositySelect').value : 'compact';
+    let url = `/api/fit_peak?axis=${axis}&channel=${fitCh}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}&fit_type=${fitType}&fwhm_mult=${fwhmMult}&verbosity=${verbosity}`;
     if (gate1DState.axis !== null && gate1DState.axis === (1 - axis) && gate1DState.w_gates.length > 0) {
       url += `&w_gates=${encodeURIComponent(JSON.stringify(gate1DState.w_gates))}&b_gates=${encodeURIComponent(JSON.stringify(gate1DState.b_gates))}`;
     }
@@ -1710,9 +1873,12 @@
     const res = await fetch(url);
     const data = await res.json();
     if (data.success) {
+      activeMultiFit1D[axis] = null;
+      const fitCardMulti = document.getElementById('fitCardMulti1D');
+      if (fitCardMulti) fitCardMulti.style.display = 'none';
+
       activeFit1D[axis] = data;
       const isCal = metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0);
-      const detLabel = (axis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
       const modelTag = (data.fit_type === 'hypermet') ? '1D Hypermet Fit (Convolved Tail + Step)' : ((data.fit_type === 'gaussian_tail') ? '1D Peak Fit (Left-Tail RadWare)' : '1D Gaussian Fit');
       document.getElementById('fitTitle1D').innerText = `${modelTag} [${detLabel}]: ${isCal ? data.centroid_e + ' keV' : 'ch ' + data.centroid_ch}`;
 
@@ -2364,7 +2530,8 @@
       for (const vp of visiblePeaks) {
         const tipY = vp.caretTipY;
         const isFitted = Boolean(vp.p && vp.p.fitted);
-        ctx.fillStyle = vp.isNearCursor ? '#ffffff' : (isFitted ? '#00e676' : '#ffd54f');
+        const isManual = Boolean(vp.p && vp.p.manual);
+        ctx.fillStyle = vp.isNearCursor ? '#ffffff' : (isFitted ? '#00e676' : (isManual ? '#00e5ff' : '#ffd54f'));
         ctx.beginPath();
         ctx.moveTo(vp.px, tipY);
         ctx.lineTo(vp.px - 5, tipY - 8);
@@ -2372,7 +2539,7 @@
         ctx.closePath();
         ctx.fill();
 
-        ctx.strokeStyle = vp.isNearCursor ? '#ffffff' : (isFitted ? 'rgba(0, 230, 118, 0.85)' : 'rgba(255, 213, 79, 0.75)');
+        ctx.strokeStyle = vp.isNearCursor ? '#ffffff' : (isFitted ? 'rgba(0, 230, 118, 0.85)' : (isManual ? 'rgba(0, 229, 255, 0.85)' : 'rgba(255, 213, 79, 0.75)'));
         ctx.lineWidth = 1.2;
         ctx.beginPath();
         ctx.moveTo(vp.px, tipY);
@@ -2387,8 +2554,8 @@
       // Sort by prominence / counts descending so prominent peaks get placed first; hovered peak has top priority
       const sortedPeaks = [...visiblePeaks].sort((a, b) => {
         if (a.isNearCursor !== b.isNearCursor) return a.isNearCursor ? -1 : 1;
-        const scoreA = (a.p.counts || 0) + (a.p.snr ? a.p.snr * 100 : 0);
-        const scoreB = (b.p.counts || 0) + (b.p.snr ? b.p.snr * 100 : 0);
+        const scoreA = (a.p.counts || 0) + (a.p.snr ? (typeof a.p.snr === 'number' ? a.p.snr * 100 : 500) : 0);
+        const scoreB = (b.p.counts || 0) + (b.p.snr ? (typeof b.p.snr === 'number' ? b.p.snr * 100 : 500) : 0);
         return scoreB - scoreA;
       });
 
@@ -2432,9 +2599,10 @@
         ctx.lineJoin = 'round';
         ctx.strokeText(vp.pLbl, lblX, lblY);
 
-        // Vibrant gold text for candidate peaks, soft green for fitted peaks (white on hover)
+        // Vibrant gold text for candidate peaks, soft cyan for manual peaks, soft green for fitted peaks (white on hover)
         const isFitted = Boolean(vp.p && vp.p.fitted);
-        ctx.fillStyle = isHovered ? '#ffffff' : (isFitted ? '#81c784' : '#ffd54f');
+        const isManual = Boolean(vp.p && vp.p.manual);
+        ctx.fillStyle = isHovered ? '#ffffff' : (isFitted ? '#81c784' : (isManual ? '#80d8ff' : '#ffd54f'));
         ctx.fillText(vp.pLbl, lblX, lblY);
       }
 
@@ -3229,10 +3397,33 @@
         const activeAxis = (targetPanel === '1d-1') ? 1 : 0;
         searchPeaks1D(activeAxis);
       }
+      else if (e.key === 'j' || e.key === 'J') {
+        let activeAxis = null;
+        let activeCh = null;
+        if (hovered1DAxis === 0 && cursor1DChannelX !== null) {
+          activeAxis = 0;
+          activeCh = cursor1DChannelX;
+        } else if (hovered1DAxis === 1 && cursor1DChannelY !== null) {
+          activeAxis = 1;
+          activeCh = cursor1DChannelY;
+        } else if (targetPanel === '1d-0') {
+          activeAxis = 0;
+          activeCh = (cursor1DChannelX !== null) ? cursor1DChannelX : Math.round(view.x0 + (view.x1 - view.x0) / 2);
+        } else if (targetPanel === '1d-1') {
+          activeAxis = 1;
+          activeCh = (cursor1DChannelY !== null) ? cursor1DChannelY : Math.round(view.y0 + (view.y1 - view.y0) / 2);
+        } else {
+          activeAxis = (foundPeaks1D[1].length > 0 && foundPeaks1D[0].length === 0) ? 1 : 0;
+          activeCh = (activeAxis === 0) ? cursorChannel.x : cursorChannel.y;
+        }
+        addManualPeakMarker(activeAxis, activeCh);
+      }
       else if (e.key === 'g' || e.key === 'G') {
         if (isMouseOver2D) requestPeakFit2D(cursorChannel.x, cursorChannel.y);
         else if (cursor1DChannelX !== null) requestPeakFit(0, cursor1DChannelX);
         else if (cursor1DChannelY !== null) requestPeakFit(1, cursor1DChannelY);
+        else if (targetPanel === '1d-0') requestPeakFit(0, Math.round(view.x0 + (view.x1 - view.x0) / 2));
+        else if (targetPanel === '1d-1') requestPeakFit(1, Math.round(view.y0 + (view.y1 - view.y0) / 2));
       } else if (e.key === 'c' || e.key === 'C') {
         const sel = document.getElementById('cmapSelect');
         sel.selectedIndex = (sel.selectedIndex + 1) % sel.options.length;
@@ -3561,6 +3752,8 @@
               const aStr = nearP.area ? Math.round(nearP.area).toLocaleString() : '0';
               const fStr = nearP.fwhm ? nearP.fwhm.toFixed(2) : '-';
               peakInfo = ` | Fitted Peak: ${isCal ? nearP.energy + ' keV' : 'ch ' + nearP.channel} (Net Area: ${aStr} cts, FWHM: ${fStr})`;
+            } else if (nearP.manual) {
+              peakInfo = ` | Manual Peak: ${isCal ? nearP.energy + ' keV' : 'ch ' + nearP.channel} (${nearP.counts} counts | Press 'G' to fit)`;
             } else {
               peakInfo = ` | Peak: ${isCal ? nearP.energy + ' keV' : 'ch ' + nearP.channel} (SNR: ${nearP.snr || '-'})`;
             }

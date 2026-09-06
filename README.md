@@ -25,6 +25,7 @@
       2. *Wavelet (CWT Pure)*: Continuous Wavelet Transform ridge finding at user-specified expected peak FWHM.
       3. *Prominence (Fast)*: Classical local maxima detection with minimum prominence and SNR thresholds.
       - Displays clean, non-interactive peak markers with 12px calibrated energy/channel text labels, downward carets, guide stems, collision avoidance, and hover details in the coordinate HUD.
+    - **Manual Peak Marking (`J`) & Multiplet Deconvolution (`G`)**: Manually place peak markers at any channel with `J` (or remove if hovering an existing marker within 1.2 channels). Manual markers snap to the local peak summit with parabolic sub-channel centroid refinement, render in distinct cyan (`#00e5ff`), and are automatically merged with the list of automatically found peaks (`P`). When multiple markers (manual or automatic) form a multiplet cluster, pressing `G` within the cluster automatically fits all components simultaneously as a coupled multiplet with full parameter covariance.
     - **Automated 1D Multi-Peak Fitting with Peak-Aware Background (`H`)**: Following automatic peak search (`P`), pressing `H` automatically fits all visible candidate photopeaks on display. Clusters multiplets within $3.2 \times \text{FWHM}$, fits all components simultaneously (Gaussian, RadWare Left-Tail, or Hypermet), and uses a **Peak-Aware Continuum Average** engine that estimates the true expectation value of low-statistics counting noise grass without under-fit bias, bridging smoothly across peak clusters (with automatic fallback to SNIP for dense peak forests).
   - **Collapsible Sidebar & Resizable Panel Layout**: Easily collapse the left control menu (`M` or `Menu`) to maximize screen area for the 2D matrix and 1D projections, and adjust the relative width between 2D and 1D panels using the interactive vertical divider bar (with double-click reset and persistent layout settings).
   - **Context-Aware Arrow Navigation**: Arrow keys automatically adapt to whichever panel has focus:
@@ -81,8 +82,9 @@ python cmat_webviewer.py /path/to/matrix.cmat
 | **Full Zoom Out (2D)** | `Double Click` (2D) | Fully zoom out 2D matrix and both 1D spectra (Full View) |
 | **Full Zoom Out (1D)** | `Double Click` (1D) | Fully zoom out clicked 1D projection only (X range & Y scale; preserves other gate) |
 | **2D Coincidence Peak Fit** | `Ctrl / Cmd + Click` (2D) or `G` | True 2D coincidence peak fit (Gaussian/RadWare/Hypermet) with Gamba & Morhác 4-component BG decomposition |
-| **1D Histogram Peak Fit** | `Ctrl / Cmd + Click` (1D) or `G` | Fit 1D histogram peak (Gaussian/RadWare/Hypermet) + linear BG on Det 1 or Det 2 |
+| **1D Peak / Multiplet Fit** | `Ctrl / Cmd + Click` (1D) or `G` | Fit 1D peak or multiplet (fits all clustered `J` markers together as a multiplet with full covariance) |
 | **Automatic 1D Peak Search** | `P` or `p` | Automatically find peaks in focused 1D spectrum (Prominence / CWT / Mariscotti methods) |
+| **Add / Remove Manual Peak Marker** | `J` or `j` | Add manual peak marker at cursor (or remove if hovering existing marker); setup multiplets for `G` or `H` |
 | **Fit All Displayed Peaks** | `H` or `h` | Fit all visible candidate peaks on Peak-Aware Continuum Background (averages low-statistics noise grass, connects smoothly under multiplets) |
 | **Clear Peak Fits & Markers** | `=` (Equals) or `+` | Clear active peak fit curves and found peak markers from 1D spectra and 2D matrix |
 | **Set Peak Gate Limits** | `W` or `w` (1D) | Set Left / Right peak coincidence gate limits ($W_k$) on 1D spectrum |
@@ -365,6 +367,12 @@ Following automatic peak identification (`P`), pressing **`H`** (or clicking `Fi
   Adjacent peaks separated by $\le 3.2 \times \text{FWHM}$ are grouped into multiplets. Each cluster is fitted simultaneously with Levenberg-Marquardt optimization using variance weights $w_i = 1 / \sqrt{\max(1.0, |y_i|)}$, supporting Standard Gaussian, RadWare / SAMPO Left Exponential Tail, or Hypermet profiles. Centroids are constrained within $\pm 2.5$ channels of markers to prevent line migration.
 - **Full Parameter Covariance & Aligned Terminal Reports**:
   Exact error propagation from the parameter covariance matrix ($\text{Cov} = (J^T J)^{-1} \chi^2_\nu$) yields standard errors for centroids, FWHMs, amplitudes, and net peak areas including off-diagonal correlations. Results are formatted into a clean, decimal-aligned tabular terminal report and an interactive multi-fit results card with click-to-center navigation.
+- **Manual Peak Marking (`J`) & Multiplet Deconvolution (`G`)**:
+  When automated peak search (`P`) misses weak transitions or close doublet/triplet components, users can interactively place manual peak markers:
+  - **Peak Placement (`J`)**: Pressing `J` (or `j`) on any 1D projection snaps to the local peak summit within $\pm 2$ channels and computes parabolic sub-channel centroid refinement ($\delta = \frac{1}{2} \frac{y_0 - y_2}{y_0 - 2y_1 + y_2}$).
+  - **Toggle Removal**: Pressing `J` while hovering over an existing marker within 1.2 channels deletes the marker, allowing instant pruning.
+  - **Visual Distinction**: Manual markers are rendered with a distinct cyan caret (`#00e5ff`) and cyan text label (`#80d8ff`), smoothly turning into green (`#00e676`) once fitted.
+  - **Coupled Multiplet Deconvolution (`G`)**: When two or more markers (manual, automatic, or mixed) form a multiplet cluster, pressing **`G`** (or `Ctrl/Cmd + Click`) anywhere across the cluster automatically performs a simultaneous multi-peak fit across all components in the cluster. It estimates the continuum baseline, deconvolves overlapping components, propagates the full parameter covariance matrix, updates the markers with fitted net areas, and displays the multi-fit results card. Isolated markers continue to execute the standard single-peak fit.
 - **Visual Display & Vector PDF Export**:
   The continuum baseline is rendered in dashed amber (`#ffa726`), the composite multi-peak model is drawn in vibrant neon green (`#00e676`), and fitted peak markers switch to green with updated net areas. Exporting to PDF (`Print PDF`) incorporates both the continuous baseline and composite multi-peak curves into publication-quality vector plots.
 
