@@ -71,6 +71,15 @@ The included `cmat_webviewer.py` provides a rich, responsive browser-based viewe
 python cmat_webviewer.py /path/to/matrix.cmat
 ```
 
+> [!TIP]
+> **Windows Subsystem for Linux (WSL) Users**:
+> To automatically launch `cmat_webviewer` in your default Windows browser (providing full GPU acceleration and avoiding X11 window-grab/dropdown issues), install `wslu` and set `BROWSER` in your WSL `~/.bashrc`:
+> ```bash
+> sudo apt install wslu
+> echo 'export BROWSER=wslview' >> ~/.bashrc
+> source ~/.bashrc
+> ```
+
 ### Keyboard Shortcuts & Controls
 
 | Action | Shortcut | Description |
