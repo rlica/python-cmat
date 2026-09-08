@@ -188,17 +188,34 @@ proj_range = synced
 # 1D Projection Y-Scale: linear, log
 proj_scale = linear
 
+# Web Server Host / Bind Interface (0.0.0.0 binds to all network interfaces)
+host = 0.0.0.0
+
 # Web Server Port
 port = 8080
 
 # Automatically open web browser on launch: true, false
 open_browser = true
+
+# Preferred Browser to launch (default, firefox, google-chrome, chromium, safari, none)
+browser = default
 ```
+
+### Remote Server & SSH Usage
+When launching `cmat_webviewer.py` on a remote Linux server via SSH:
+- **Direct Network Access**: The viewer detects and prints your server's actual Network IP (e.g. `http://192.168.1.50:8080`). You can open or Ctrl+Click this link directly in your local machine's native web browser.
+- **X11 Browser Suppression**: When running inside an SSH session, `cmat_webviewer.py` automatically skips launching the remote server's slow X11 browser unless explicitly requested (e.g. `--browser firefox`).
+- **SSH Port Forwarding** (recommended for firewalled servers):
+  ```bash
+  ssh -L 8080:localhost:8080 user@remote-server
+  python3 cmat_webviewer.py matrix.cmat --no-browser
+  ```
+  Then open `http://localhost:8080` in your local browser.
 
 ### Saving Configuration from Web Viewer
 You can adjust sliders, colormaps, peak fit models, or contrast in the Web Viewer and click **`Save Config to File`** in the **Configuration** panel to immediately save your current state to `python-cmat-config.txt`.
 
-*(Note: Command-line arguments like `--cal`, `-p / --port`, and `--no-browser` will still override config file defaults when explicitly supplied).*
+*(Note: Command-line arguments like `--cal`, `-H / --host`, `-p / --port`, `--browser`, and `--no-browser` will override config file defaults when explicitly supplied).*
 
 ---
 
@@ -441,4 +458,3 @@ MIT License. Developed for the gamma-ray spectroscopy community.
 ## Acknowledgments & Disclaimer
 
 This project was developed with the assistance of **Antigravity**, an agentic AI coding assistant developed by Google DeepMind.
-
