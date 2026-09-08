@@ -35,6 +35,7 @@ import sys
 import time
 import math
 import json
+import socket
 import argparse
 import webbrowser
 import threading
@@ -69,9 +70,56 @@ DEFAULT_CONFIG = {
     "peak_search_snr": 9.0,
     "proj_range": "synced",
     "proj_scale": "linear",
+    "host": "0.0.0.0",
     "port": 8080,
     "open_browser": True,
+    "browser": "default",
 }
+
+
+def get_local_ip() -> str:
+    """Detect the primary network/outbound IP address of this machine."""
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("10.255.255.255", 1))
+        ip = s.getsockname()[0]
+        s.close()
+        if ip and not ip.startswith("127."):
+            return ip
+    except Exception:
+        pass
+
+    try:
+        hostname = socket.gethostname()
+        ip = socket.gethostbyname(hostname)
+        if ip and not ip.startswith("127."):
+            return ip
+    except Exception:
+        pass
+
+    return "127.0.0.1"
+
+
+def is_ssh_session() -> bool:
+    """Check if the current script is running within an SSH session."""
+    return any(k in os.environ for k in ("SSH_CLIENT", "SSH_CONNECTION", "SSH_TTY"))
+
+
+def launch_browser(url: str, browser_name: str = "default") -> None:
+    """Launch the specified web browser to open the given URL."""
+    try:
+        b_name = (browser_name or "default").strip().lower()
+        if b_name in ("default", "auto", "true", "1", ""):
+            webbrowser.open(url)
+        else:
+            try:
+                controller = webbrowser.get(browser_name)
+                controller.open(url)
+            except Exception:
+                # Fallback to default if specific browser controller was not found
+                webbrowser.open(url)
+    except Exception as e:
+        print(f"[!] Warning: Could not automatically launch browser: {e}", file=sys.stderr)
 
 
 def parse_cal_string(cal_val) -> list:
@@ -139,11 +187,17 @@ proj_range = {cfg.get('proj_range', 'synced')}
 # 1D Projection Y-Scale: linear, log
 proj_scale = {cfg.get('proj_scale', 'linear')}
 
+# Web Server Host / Bind Interface (0.0.0.0 binds to all network interfaces)
+host = {cfg.get('host', '0.0.0.0')}
+
 # Web Server Port
 port = {cfg.get('port', 8080)}
 
 # Automatically open web browser on launch: true, false
 open_browser = {open_br_str}
+
+# Preferred Browser to launch (default, firefox, google-chrome, chromium, safari, none)
+browser = {cfg.get('browser', 'default')}
 """
 
 
@@ -186,6 +240,8 @@ def load_or_create_config(config_path: Path) -> dict:
                                 pass
                         elif key == "open_browser":
                             cfg[key] = (val.lower() in ("true", "1", "yes", "on"))
+                        elif key in ("host", "browser"):
+                            cfg[key] = val
                         else:
                             cfg[key] = val
         print(f"[*] Loaded configuration from {config_path.name}")
@@ -3086,8 +3142,30 @@ def main():
         description="Launch modern Web-based interactive 2D viewer with classic binned 1D histogram."
     )
     parser.add_argument("input", type=str, help="Path to input .cmat file")
-    parser.add_argument("-p", "--port", type=int, default=None, help=f"Web server port (default from config: {config.get('port', 8080)})")
-    parser.add_argument("--no-browser", action="store_true", default=None, help="Do not automatically open the web browser")
+    parser.add_argument(
+        "-H", "--host",
+        type=str,
+        default=None,
+        help=f"Web server host/interface to bind (default from config: {config.get('host', '0.0.0.0')})",
+    )
+    parser.add_argument(
+        "-p", "--port",
+        type=int,
+        default=None,
+        help=f"Web server port (default from config: {config.get('port', 8080)})",
+    )
+    parser.add_argument(
+        "--browser",
+        type=str,
+        default=None,
+        help="Specify browser name/command to open (e.g. 'firefox', 'chrome', 'default', or 'none')",
+    )
+    parser.add_argument(
+        "--no-browser",
+        action="store_true",
+        default=None,
+        help="Do not automatically open any web browser",
+    )
     parser.add_argument(
         "--cal",
         nargs="+",
@@ -3105,12 +3183,23 @@ def main():
         sys.exit(1)
 
     # Resolve settings: CLI arguments override config file defaults
+    host = args.host if args.host is not None else str(config.get("host", "0.0.0.0")).strip()
     port = args.port if args.port is not None else int(config.get("port", 8080))
-    if args.no_browser is True:
+    browser_choice = args.browser if args.browser is not None else str(config.get("browser", "default")).strip()
+
+    if args.no_browser is True or browser_choice.lower() in ("none", "no", "false", "0", "off"):
         open_browser = False
     else:
         open_br = config.get("open_browser", True)
         open_browser = (open_br in (True, "true", "True", "1", 1))
+
+    in_ssh = is_ssh_session()
+    # In an SSH session, avoid launching a slow X11 remote browser unless explicitly requested via --browser
+    if in_ssh and args.browser is None and open_browser:
+        open_browser = False
+        ssh_browser_skipped = True
+    else:
+        ssh_browser_skipped = False
 
     if args.cal is not None:
         cal = args.cal
@@ -3129,16 +3218,42 @@ def main():
     CMATWebHandler.config = config
     CMATWebHandler.config_path = config_path
 
-    server_address = ("", port)
+    # Bind HTTP server
+    bind_host = "" if host in ("0.0.0.0", "", "::") else host
+    server_address = (bind_host, port)
     httpd = HTTPServer(server_address, CMATWebHandler)
-    url = f"http://localhost:{port}"
+
+    local_ip = get_local_ip()
+    if host in ("0.0.0.0", "", "::"):
+        network_url = f"http://{local_ip}:{port}"
+        local_url = f"http://localhost:{port}"
+    elif host in ("127.0.0.1", "localhost"):
+        network_url = None
+        local_url = f"http://127.0.0.1:{port}"
+    else:
+        network_url = f"http://{host}:{port}"
+        local_url = f"http://localhost:{port}"
+
     print(f"\n[+] Interactive 2D CMAT Web Viewer is ready!")
-    print(f"[+] Access the viewer at: {url}")
+    if network_url and network_url != local_url:
+        print(f"[+] Network URL (Remote / LAN): {network_url}")
+        print(f"[+] Localhost URL:             {local_url}")
+    else:
+        print(f"[+] Access the viewer at:      {local_url}")
     print(f"[+] Classic Binned 1D Histogram with real-time mouse inspector.")
-    print(f"[+] Press Ctrl+C in terminal to stop server.\n")
+
+    if in_ssh:
+        print(f"\n[*] SSH session detected:")
+        if ssh_browser_skipped:
+            print(f"    - Remote X11 browser auto-launch skipped to keep your SSH session fast.")
+        print(f"    - Open the Network URL above ({network_url or local_url}) in your local client browser.")
+        print(f"    - (Or use SSH port forwarding: ssh -L {port}:localhost:{port} user@server)")
+
+    print(f"\n[+] Press Ctrl+C in terminal to stop server.\n")
 
     if open_browser:
-        threading.Timer(0.6, lambda: webbrowser.open(url)).start()
+        target_url = local_url if host in ("127.0.0.1", "localhost") else (network_url or local_url)
+        threading.Timer(0.6, lambda: launch_browser(target_url, browser_choice)).start()
 
     try:
         httpd.serve_forever()
