@@ -2110,7 +2110,7 @@ def fit_all_peaks_1d(
                 return {"success": False, "error": f"No candidate peaks found within display range [{ch_min}..{ch_max}]."}
 
     # Clean candidate peaks: suppress duplicate candidates closer than 0.8 * FWHM without >= 10% dip
-    # When explicit peaks were supplied (e.g. user set up peaks with 'J' to fit a multiplet with 'G'),
+    # When explicit peaks were supplied (e.g. user set up peaks with 'G' to fit a multiplet with 'V'),
     # preserve all distinct peaks (>= 0.6 channels apart) so user-marked multiplets are never discarded.
     is_explicit_peaks = bool(peak_channels and len(peak_channels) > 0)
     min_spacing = 0.6 if is_explicit_peaks else (0.8 * fwhm_clean)

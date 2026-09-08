@@ -367,8 +367,8 @@
           <option value="detailed">Detailed (Full breakdown)</option>
         </select>
         <small style="color: #888; font-size: 0.68rem; display: block; margin-top: 3px;">
-          1D: Ctrl+Click or [G] on Det 1/2 spectrum.<br>
-          2D: Ctrl+Click or [G] on 2D matrix (Gamba BG).
+          1D: Ctrl+Click or [V] on Det 1/2 spectrum.<br>
+          2D: Ctrl+Click or [V] on 2D matrix (Gamba BG).
         </small>
       </div>
     </div>
@@ -417,7 +417,7 @@
     <div class="control-group">
       <h3 style="color: #ffd54f;">1D Automatic Peak Search</h3>
       <div style="font-size: 0.72rem; color: #aaa; margin-bottom: 6px; line-height: 1.35;">
-        Hover on 1D view &amp; press <span style="color: #ffd54f; font-weight: bold;">[P]</span> to search peaks. Press 'G' or Ctrl+Click to fit.
+        Hover on 1D view &amp; press <span style="color: #ffd54f; font-weight: bold;">[P]</span> to search peaks. Press 'V' or Ctrl+Click to fit.
       </div>
       <label>Search Method</label>
       <select id="peakSearchMethodSelect">
@@ -593,13 +593,15 @@
     <tr><td>Click & Drag (2D)</td><td>Box Zoom into 2D rectangle</td></tr>
     <tr><td>Click & Drag (1D)</td><td>Box Zoom on 1D spectrum X-axis (syncs 2D &amp; other 1D spectrum)</td></tr>
     <tr><td>Mouse Wheel (2D)</td><td>Zoom In / Out centered on crosshair in equal steps</td></tr>
+    <tr><td>Mouse Wheel (1D)</td><td>Zoom In / Out on 1D vertical counts scale (Y-axis)</td></tr>
+    <tr><td>Shift + Wheel (1D)</td><td>Zoom In / Out on 1D spectrum X-axis (energy / channel range centered at cursor)</td></tr>
     <tr><td>Double Click (2D)</td><td>Fully zoom out 2D matrix and both 1D spectra (Full View)</td></tr>
     <tr><td>Double Click (1D)</td><td>Fully zoom out clicked 1D projection only (X range &amp; Y scale)</td></tr>
     <tr><td>Ctrl / Cmd + Click (2D)</td><td>2D Coincidence Peak Fit (Gaussian/HPGe + BG &amp; Random Subtraction)</td></tr>
-    <tr><td>G / g</td><td>Fit peak or multiplet at current cursor position (2D coincidence or 1D histogram)</td></tr>
+    <tr><td>V / v</td><td>Fit peak or multiplet at current cursor position (2D coincidence or 1D histogram)</td></tr>
     <tr><td>P / p</td><td>Automatic 1D Peak Search on focused spectrum (CWT method)</td></tr>
-    <tr><td>J / j</td><td>Add / remove manual peak marker at cursor (on Det 1 or Det 2)</td></tr>
-    <tr><td>R / r</td><td>Set 1D Fit Region limits for 'G' (Limit 1, Limit 2) with straight-line background</td></tr>
+    <tr><td>G / g</td><td>Add / remove manual peak marker at cursor (on Det 1 or Det 2)</td></tr>
+    <tr><td>R / r</td><td>Set 1D Fit Region limits for 'V' (Limit 1, Limit 2) with straight-line background</td></tr>
     <tr><td>H / h</td><td>Fit all visible peaks on focused 1D display (Peak-Aware Background)</td></tr>
     <tr><td>= (Equals) / +</td><td>Clear active peak fits (1D and 2D) and found peak markers</td></tr>
     <tr><td>Arrows in 1D (←, →)</td><td>Pan 1D spectrum channels left / right (Shift + Arrow for 2× fast pan)</td></tr>
@@ -1784,7 +1786,7 @@
         fitRegion1D[activeAxis] = [r0, r1];
         updateFitRegionUI(activeAxis);
         renderBoth1DSpectra();
-        document.getElementById('hudCoords').innerText = `[${detLabel}] Fit Region set: [${r0}..${r1}] (${r1 - r0 + 1} ch). Press 'G' to fit peaks inside region with straight-line background.`;
+        document.getElementById('hudCoords').innerText = `[${detLabel}] Fit Region set: [${r0}..${r1}] (${r1 - r0 + 1} ch). Press 'V' to fit peaks inside region with straight-line background.`;
       } else {
         fitRegion1D[activeAxis] = null;
         updateFitRegionUI(activeAxis);
@@ -1838,7 +1840,7 @@
     const isCal = metadata && metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0);
     const detName = (axis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
 
-    // Toggle: if user presses 'j' on an existing marker (within 1.2 channels), remove it
+    // Toggle: if user presses 'g' on an existing marker (within 1.2 channels), remove it
     const existingIdx = foundPeaks1D[axis].findIndex(p => Math.abs(p.channel - ch) < 1.2);
     if (existingIdx >= 0) {
       const removed = foundPeaks1D[axis].splice(existingIdx, 1)[0];
@@ -1862,7 +1864,7 @@
     updateFoundPeaksUI(axis);
     renderBoth1DSpectra();
     const pLbl = isCal ? `${energy} keV` : `ch ${ch}`;
-    document.getElementById('hudCoords').innerText = `Added peak marker at ${pLbl} on ${detName} (Total: ${foundPeaks1D[axis].length} peaks | Press 'G' to fit)`;
+    document.getElementById('hudCoords').innerText = `Added peak marker at ${pLbl} on ${detName} (Total: ${foundPeaks1D[axis].length} peaks | Press 'V' to fit)`;
   }
 
   async function requestPeakFit(axis, ch) {
@@ -2657,7 +2659,7 @@
       }
     }
 
-    // D. Fit Region Overlays (R) - Set with 'R', fits multiplets with 'G' on straight-line background
+    // D. Fit Region Overlays (R) - Set with 'R', fits multiplets with 'V' on straight-line background
     if (fitRegion1D[axis] !== null) {
       const [r0, r1] = fitRegion1D[axis];
       if (r1 >= chStart && r0 <= chEnd) {
@@ -3622,7 +3624,7 @@
 
     window.addEventListener('keydown', (e) => {
       const k = e.key.toLowerCase();
-      const isShortcut = ['arrowleft', 'arrowright', 'arrowdown', 'arrowup', 'e', 'f', 'q', '=', '+', 'g', 'c', '1', '2', '4', 'l', '?', 'h', 'escape', 'm', 'w', 'b', 'z', 'p'].includes(k);
+      const isShortcut = ['arrowleft', 'arrowright', 'arrowdown', 'arrowup', 'e', 'f', 'q', '=', '+', 'v', 'g', 'c', '1', '2', '4', 'l', '?', 'h', 'escape', 'm', 'w', 'b', 'z', 'p', 'r'].includes(k);
       if (isShortcut) {
         e.preventDefault();
         unfocusControls();
@@ -3676,7 +3678,7 @@
         const activeAxis = (targetPanel === '1d-1') ? 1 : 0;
         searchPeaks1D(activeAxis);
       }
-      else if (e.key === 'j' || e.key === 'J') {
+      else if (e.key === 'g' || e.key === 'G') {
         let activeAxis = null;
         let activeCh = null;
         if (hovered1DAxis === 0 && cursor1DChannelX !== null) {
@@ -3697,7 +3699,7 @@
         }
         addManualPeakMarker(activeAxis, activeCh);
       }
-      else if (e.key === 'g' || e.key === 'G') {
+      else if (e.key === 'v' || e.key === 'V') {
         if (isMouseOver2D) requestPeakFit2D(cursorChannel.x, cursorChannel.y);
         else if (cursor1DChannelX !== null) requestPeakFit(0, cursor1DChannelX);
         else if (cursor1DChannelY !== null) requestPeakFit(1, cursor1DChannelY);
@@ -3809,20 +3811,97 @@
       }, 20);
     }, { passive: false });
 
-    // 1D Mouse Wheel: Y-Axis zoom (keeping Ymin fixed, adjusting Ymax)
-    canvas1dX.addEventListener('wheel', (e) => {
+    // 1D Mouse Wheel: Y-Axis vertical zoom (default) or X-Axis energy/channel zoom (Shift + Wheel)
+    let wheel1DTimer = null;
+    function handle1DWheel(canvas, axis, e) {
       e.preventDefault();
-      const factor = e.deltaY < 0 ? (1.0 - scrollSensitivity) : (1.0 / (1.0 - scrollSensitivity));
-      zoom1DY[0] = Math.max(0.005, Math.min(100.0, (zoom1DY[0] || 1.0) * factor));
-      render1DSpectrum(canvas1dX, ctx1dX, currentProjSpecX, 0, cursor1DChannelX);
-    }, { passive: false });
+      if (!metadata) return;
 
-    canvas1dY.addEventListener('wheel', (e) => {
-      e.preventDefault();
-      const factor = e.deltaY < 0 ? (1.0 - scrollSensitivity) : (1.0 / (1.0 - scrollSensitivity));
-      zoom1DY[1] = Math.max(0.005, Math.min(100.0, (zoom1DY[1] || 1.0) * factor));
-      render1DSpectrum(canvas1dY, ctx1dY, currentProjSpecY, 1, cursor1DChannelY);
-    }, { passive: false });
+      if (e.shiftKey) {
+        // Shift + Wheel: Zoom In / Out on X axis (energy / channel range centered at cursor)
+        const factor = e.deltaY < 0 ? (1.0 - scrollSensitivity) : (1.0 / (1.0 - scrollSensitivity));
+        const isSynced = (document.getElementById('projRangeSelect').value === 'synced');
+        if (!isSynced) {
+          document.getElementById('projRangeSelect').value = 'synced';
+        }
+
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const pr = getPlotRect1D(canvas);
+        let frac = (mouseX - pr.x) / pr.w;
+        if (frac < 0 || frac > 1 || isNaN(frac)) frac = 0.5;
+
+        const maxSpan = (axis === 0) ? (metadata.shape[0] || 4096) : (metadata.shape[1] || 4096);
+        const minSpan = 4;
+
+        if (axis === 0) {
+          const spanX = Math.max(minSpan, view.x1 - view.x0);
+          const cx = view.x0 + frac * spanX;
+          const newSpanX = Math.max(minSpan, Math.min(maxSpan, spanX * factor));
+          let newX0 = cx - frac * newSpanX;
+          let newX1 = newX0 + newSpanX;
+
+          if (newX0 < 0) {
+            newX1 += -newX0;
+            newX0 = 0;
+          }
+          if (newX1 > maxSpan) {
+            newX0 -= (newX1 - maxSpan);
+            newX1 = maxSpan;
+          }
+          view.x0 = Math.max(0, Math.floor(newX0));
+          view.x1 = Math.min(maxSpan, Math.ceil(newX1));
+        } else {
+          const spanY = Math.max(minSpan, view.y1 - view.y0);
+          const cy = view.y0 + frac * spanY;
+          const newSpanY = Math.max(minSpan, Math.min(maxSpan, spanY * factor));
+          let newY0 = cy - frac * newSpanY;
+          let newY1 = newY0 + newSpanY;
+
+          if (newY0 < 0) {
+            newY1 += -newY0;
+            newY0 = 0;
+          }
+          if (newY1 > maxSpan) {
+            newY0 -= (newY1 - maxSpan);
+            newY1 = maxSpan;
+          }
+          view.y0 = Math.max(0, Math.floor(newY0));
+          view.y1 = Math.min(maxSpan, Math.ceil(newY1));
+        }
+
+        const detName = (axis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
+        const c0 = Math.round(axis === 0 ? view.x0 : view.y0);
+        const c1 = Math.round(axis === 0 ? view.x1 : view.y1);
+        const isCal = metadata && metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0);
+        const e0 = isCal ? ` (${chToEnergy(c0).toFixed(1)} keV)` : '';
+        const e1 = isCal ? ` (${chToEnergy(c1).toFixed(1)} keV)` : '';
+        document.getElementById('hudCoords').innerText = `1D Zoom [${detName}]: Range ch ${c0}${e0} - ${c1}${e1} (${c1 - c0 + 1} ch)`;
+
+        renderBoth1DSpectra();
+
+        clearTimeout(wheel1DTimer);
+        wheel1DTimer = setTimeout(() => {
+          fetchTileAndRender();
+          fetch1DProjection();
+        }, 20);
+      } else {
+        // Standard Wheel: Y-Axis vertical zoom (keeping Ymin fixed, adjusting Ymax)
+        const factor = e.deltaY < 0 ? (1.0 - scrollSensitivity) : (1.0 / (1.0 - scrollSensitivity));
+        zoom1DY[axis] = Math.max(0.005, Math.min(100.0, (zoom1DY[axis] || 1.0) * factor));
+        if (axis === 0) {
+          render1DSpectrum(canvas1dX, ctx1dX, currentProjSpecX, 0, cursor1DChannelX);
+        } else {
+          render1DSpectrum(canvas1dY, ctx1dY, currentProjSpecY, 1, cursor1DChannelY);
+        }
+        const detName = (axis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
+        const yMag = (1.0 / (zoom1DY[axis] || 1.0)).toFixed(2);
+        document.getElementById('hudCoords').innerText = `1D Scale [${detName}]: Vertical Magnification ${yMag}×`;
+      }
+    }
+
+    canvas1dX.addEventListener('wheel', (e) => handle1DWheel(canvas1dX, 0, e), { passive: false });
+    canvas1dY.addEventListener('wheel', (e) => handle1DWheel(canvas1dY, 1, e), { passive: false });
 
     canvas1dX.addEventListener('dblclick', () => {
       zoomFull1D(0);
@@ -4032,7 +4111,7 @@
               const fStr = nearP.fwhm ? nearP.fwhm.toFixed(2) : '-';
               peakInfo = ` | Fitted Peak: ${isCal ? nearP.energy + ' keV' : 'ch ' + nearP.channel} (Net Area: ${aStr} cts, FWHM: ${fStr})`;
             } else if (nearP.manual) {
-              peakInfo = ` | Manual Peak: ${isCal ? nearP.energy + ' keV' : 'ch ' + nearP.channel} (${nearP.counts} counts | Press 'G' to fit)`;
+              peakInfo = ` | Manual Peak: ${isCal ? nearP.energy + ' keV' : 'ch ' + nearP.channel} (${nearP.counts} counts | Press 'V' to fit)`;
             } else {
               peakInfo = ` | Peak: ${isCal ? nearP.energy + ' keV' : 'ch ' + nearP.channel} (SNR: ${nearP.snr || '-'})`;
             }
@@ -4067,7 +4146,7 @@
       const span = Math.max(1, chEnd - chStart + 1);
       const frac = (mouseX - pr.x) / pr.w;
 
-      // Ctrl/Cmd+Click anywhere on the spectrum to fit (or press 'G')
+      // Ctrl/Cmd+Click anywhere on the spectrum to fit (or press 'V')
       if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) {
         e.preventDefault();
         if (frac >= 0 && frac <= 1) {
