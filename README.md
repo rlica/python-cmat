@@ -1,4 +1,4 @@
-# python-cmat
+# python-cmat (pycmat)
 
 **Python reader, decompressor, ASCII converter, and interactive Web visualizer for [GASPware](https://github.com/csteke/GASPware) `.cmat` 2D gamma-gamma coincidence matrices.**
 
