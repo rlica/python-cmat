@@ -779,6 +779,32 @@
 
 <script>
   let metadata = null;
+
+  function getCalForAxis(axis) {
+    if (!metadata) return [0.0, 1.0, 0.0];
+    if (metadata.cal_axes && metadata.cal_axes[axis]) return metadata.cal_axes[axis];
+    if (metadata.cal_axes && metadata.cal_axes[String(axis)]) return metadata.cal_axes[String(axis)];
+    if (axis === 0 && metadata.cal_0) return metadata.cal_0;
+    if (axis === 1 && metadata.cal_1) return metadata.cal_1;
+    if (metadata.cal) return metadata.cal;
+    return [0.0, 1.0, 0.0];
+  }
+
+  function isAxisCalibrated(axis) {
+    if (!metadata) return false;
+    if (axis === 0 && metadata.is_calibrated_0 !== undefined) return Boolean(metadata.is_calibrated_0);
+    if (axis === 1 && metadata.is_calibrated_1 !== undefined) return Boolean(metadata.is_calibrated_1);
+    const c = getCalForAxis(axis);
+    return Boolean(c && (c[0] !== 0.0 || c[1] !== 1.0 || (c[2] && c[2] !== 0.0)));
+  }
+
+  function chToEnergy(ch, axis = 0) {
+    const c = getCalForAxis(axis);
+    const a0 = c[0] || 0.0;
+    const a1 = (c[1] !== undefined) ? c[1] : 1.0;
+    const a2 = c[2] || 0.0;
+    return Math.round((a0 + a1 * ch + a2 * ch * ch) * 100) / 100;
+  }
   let currentProjSpecX = null;
   let currentProjSpecY = null;
   let currentProjSlice = { x0: 0, x1: 4096, y0: 0, y1: 4096 };
@@ -879,13 +905,7 @@
   // Precalculated 256-entry Uint32 Color LUT
   let colorLUT = new Uint32Array(256);
 
-  function chToEnergy(ch) {
-    if (!metadata || !metadata.cal) return ch;
-    const a0 = metadata.cal[0] || 0.0;
-    const a1 = metadata.cal[1] || 1.0;
-    const a2 = metadata.cal[2] || 0.0;
-    return a0 + a1 * ch + a2 * (ch * ch);
-  }
+  // chToEnergy(ch, axis) is defined at top of script with per-axis calibration support
 
   function getPlotRect2D() {
     return {
@@ -1912,10 +1932,11 @@
       ctx2d.stroke();
 
       // D. Callout badge with Centroid & Volume
-      const isCal = metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0);
-      const posStr = isCal
-        ? `(${f2d.centroid_x_e}, ${f2d.centroid_y_e}) keV`
-        : `(${f2d.centroid_x_ch}, ${f2d.centroid_y_ch}) ch`;
+      const isCalX = isAxisCalibrated(0);
+      const isCalY = isAxisCalibrated(1);
+      const xStr = isCalX ? `${f2d.centroid_x_e} keV` : `ch ${f2d.centroid_x_ch}`;
+      const yStr = isCalY ? `${f2d.centroid_y_e} keV` : `ch ${f2d.centroid_y_ch}`;
+      const posStr = `(${xStr}, ${yStr})`;
       const lbl = `${posStr} | Vol: ${f2d.volume.toLocaleString()} cts`;
       ctx2d.font = 'bold 9px monospace';
       const tW = ctx2d.measureText(lbl).width;
@@ -1977,11 +1998,13 @@
       activeFit2D = data;
       lastFit2DParams = { x: (data.centroid_x_ch !== undefined ? data.centroid_x_ch : x), y: (data.centroid_y_ch !== undefined ? data.centroid_y_ch : y) };
 
-      const isCal = metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0);
+      const isCalX = isAxisCalibrated(0);
+      const isCalY = isAxisCalibrated(1);
+      const isCal = isCalX && isCalY;
       const modelTag = (data.fit_type === 'hypermet') ? '2D Hypermet Fit (Convolved Tail + Step)' : ((data.fit_type === 'gaussian_tail') ? '2D Peak Fit (Left-Tail RadWare)' : '2D Gaussian Fit (Symmetric)');
-      const posTag = isCal
-        ? `(${data.centroid_x_e}, ${data.centroid_y_e}) keV`
-        : `(${data.centroid_x_ch}, ${data.centroid_y_ch}) ch`;
+      const xTag = isCalX ? `${data.centroid_x_e} keV` : `ch ${data.centroid_x_ch}`;
+      const yTag = isCalY ? `${data.centroid_y_e} keV` : `ch ${data.centroid_y_ch}`;
+      const posTag = `(${xTag}, ${yTag})`;
 
       document.getElementById('fitTitle2D').innerText = `${modelTag}: ${posTag}`;
 
@@ -1989,17 +2012,17 @@
       const dec = isCal ? 2 : 3;
       const unit = isCal ? 'keV' : 'ch';
       const [c1Str, c2Str] = formatAlignedPair(
-        isCal ? data.centroid_x_e : data.centroid_x_ch,
-        isCal ? data.centroid_x_e_err : data.centroid_x_ch_err,
-        isCal ? data.centroid_y_e : data.centroid_y_ch,
-        isCal ? data.centroid_y_e_err : data.centroid_y_ch_err,
+        isCalX ? data.centroid_x_e : data.centroid_x_ch,
+        isCalX ? data.centroid_x_e_err : data.centroid_x_ch_err,
+        isCalY ? data.centroid_y_e : data.centroid_y_ch,
+        isCalY ? data.centroid_y_e_err : data.centroid_y_ch_err,
         dec
       );
       const [f1Str, f2Str] = formatAlignedPair(
-        isCal ? data.fwhm_x_e : data.fwhm_x_ch,
-        isCal ? data.fwhm_x_e_err : data.fwhm_x_ch_err,
-        isCal ? data.fwhm_y_e : data.fwhm_y_ch,
-        isCal ? data.fwhm_y_e_err : data.fwhm_y_ch_err,
+        isCalX ? data.fwhm_x_e : data.fwhm_x_ch,
+        isCalX ? data.fwhm_x_e_err : data.fwhm_x_ch_err,
+        isCalY ? data.fwhm_y_e : data.fwhm_y_ch,
+        isCalY ? data.fwhm_y_e_err : data.fwhm_y_ch_err,
         dec
       );
       const volVal = (typeof data.volume === 'number' ? data.volume : parseFloat(data.volume)).toFixed(1);
@@ -2273,14 +2296,8 @@
     ch = Math.round(ch * 100) / 100;
 
     // Calibrated energy
-    let energy = ch;
-    if (metadata && metadata.cal && metadata.cal.length >= 2) {
-      const [a0, a1, a2] = metadata.cal;
-      energy = Math.round((a0 + a1 * ch + (a2 ? a2 * ch * ch : 0.0)) * 100) / 100;
-    }
-
-    if (!foundPeaks1D[axis]) foundPeaks1D[axis] = [];
-    const isCal = metadata && metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0);
+    const isCal = isAxisCalibrated(axis);
+    const energy = isCal ? chToEnergy(ch, axis) : ch;
     const detName = (axis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
 
     // Toggle: if user presses 'g' on an existing marker (within 1.2 channels), remove it
@@ -2481,8 +2498,7 @@
 
       activeFit1D[axis] = data;
       lastFit1DParams[axis] = { axis, ch: (data.centroid_ch !== undefined ? data.centroid_ch : fitCh) };
-      lastMultiFitParams[axis] = null;
-      const isCal = metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0);
+      const isCal = isAxisCalibrated(axis);
       const modelTag = (data.fit_type === 'hypermet') ? '1D Hypermet Fit (Convolved Tail + Step)' : ((data.fit_type === 'gaussian_tail') ? '1D Peak Fit (Left-Tail RadWare)' : '1D Gaussian Fit');
       document.getElementById('fitTitle1D').innerText = `${modelTag} [${detLabel}]: ${isCal ? data.centroid_e + ' keV' : 'ch ' + data.centroid_ch}`;
 
@@ -2632,7 +2648,7 @@
     const card = document.getElementById('fitCardMulti1D');
     if (!card) return;
 
-    const isCal = metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0);
+    const isCal = isAxisCalibrated(axis);
     const detLabel = (axis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
     const modelTag = (data.fit_type === 'hypermet') ? 'Hypermet' : ((data.fit_type === 'gaussian_tail') ? 'Left-Tail' : 'Gaussian');
     const bgMethodTag = (data.bg_method === 'snip') ? `SNIP BG (M=${data.snip_iterations || 6})` : 'Peak-Aware BG';
@@ -2733,7 +2749,7 @@
     const pr = getPlotRect1D(canvas);
     const isSynced = (document.getElementById('projRangeSelect').value === 'synced');
     const isLog = (projScale1D[axis] === 'log');
-    const isCal = Boolean(metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0));
+    const isCal = isAxisCalibrated(axis);
 
     let chStart = 0;
     let chEnd = spec.length - 1;
@@ -2974,7 +2990,7 @@
         const c0 = Math.round(chStart + frac0 * (span - 1));
         const c1 = Math.round(chStart + frac1 * (span - 1));
         const badgeLbl = isCal
-          ? `Zoom: ${chToEnergy(c0).toFixed(0)} - ${chToEnergy(c1).toFixed(0)} keV (${c0} - ${c1} ch)`
+          ? `Zoom: ${chToEnergy(c0, axis).toFixed(0)} - ${chToEnergy(c1, axis).toFixed(0)} keV (${c0} - ${c1} ch)`
           : `Zoom: ch ${c0} - ${c1}`;
 
         ctx.save();
@@ -3247,7 +3263,7 @@
           const isNearCursor = (cursorCh !== null && Math.abs(p.channel - cursorCh) <= 2.5);
           const caretTipY = Math.max(pr.y + 22, Math.min(pr.y + pr.h, py - 3));
           const pLbl = isCal
-            ? (p.energy !== undefined ? p.energy.toFixed(1) : chToEnergy(p.channel + 0.5).toFixed(1))
+            ? (p.energy !== undefined ? p.energy.toFixed(1) : chToEnergy(p.channel + 0.5, axis).toFixed(1))
             : p.channel.toFixed(1);
 
           visiblePeaks.push({ p, px, py, caretTipY, isNearCursor, pLbl });
@@ -3380,7 +3396,7 @@
       ctx.lineTo(x, pr.y + pr.h + 3);
       ctx.stroke();
       if (isCal) {
-        const eStr = chToEnergy(c + 0.5).toFixed(0);
+        const eStr = chToEnergy(c + 0.5, axis).toFixed(0);
         ctx.fillText(`${eStr}k (${c})`, x, pr.y + pr.h + 12);
       } else {
         ctx.fillText(c.toString(), x, pr.y + pr.h + 12);
@@ -3480,16 +3496,17 @@
   }
 
   function updateMarkerStatus() {
-    const isCal = metadata && metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0);
+    const isCalX = isAxisCalibrated(0);
+    const isCalY = isAxisCalibrated(1);
     const lVal = markers.left !== null ? markers.left : Math.round(view.x0);
     const rVal = markers.right !== null ? markers.right : Math.round(view.x1);
     const dVal = markers.down !== null ? markers.down : Math.round(view.y0);
     const uVal = markers.up !== null ? markers.up : Math.round(view.y1);
 
-    const lStr = isCal ? `${lVal} (${chToEnergy(lVal).toFixed(0)}k)` : `${lVal}`;
-    const rStr = isCal ? `${rVal} (${chToEnergy(rVal).toFixed(0)}k)` : `${rVal}`;
-    const dStr = isCal ? `${dVal} (${chToEnergy(dVal).toFixed(0)}k)` : `${dVal}`;
-    const uStr = isCal ? `${uVal} (${chToEnergy(uVal).toFixed(0)}k)` : `${uVal}`;
+    const lStr = isCalX ? `${lVal} (${chToEnergy(lVal, 0).toFixed(0)}k)` : `${lVal}`;
+    const rStr = isCalX ? `${rVal} (${chToEnergy(rVal, 0).toFixed(0)}k)` : `${rVal}`;
+    const dStr = isCalY ? `${dVal} (${chToEnergy(dVal, 1).toFixed(0)}k)` : `${dVal}`;
+    const uStr = isCalY ? `${uVal} (${chToEnergy(uVal, 1).toFixed(0)}k)` : `${uVal}`;
 
     const statusEl = document.getElementById('overlayStatus');
     if (statusEl) {
@@ -3648,9 +3665,10 @@
   async function updateHoverHUD() {
     const res = await fetch(`/api/value?x=${cursorChannel.x}&y=${cursorChannel.y}`);
     const data = await res.json();
-    const isCal = metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0);
-    const ex = isCal ? ` (${chToEnergy(data.x + 0.5).toFixed(1)} keV)` : '';
-    const ey = isCal ? ` (${chToEnergy(data.y + 0.5).toFixed(1)} keV)` : '';
+    const isCalX = isAxisCalibrated(0);
+    const isCalY = isAxisCalibrated(1);
+    const ex = isCalX ? ` (${chToEnergy(data.x + 0.5, 0).toFixed(1)} keV)` : '';
+    const ey = isCalY ? ` (${chToEnergy(data.y + 0.5, 1).toFixed(1)} keV)` : '';
     document.getElementById('hudCoords').innerText = `Det 1 (X): ch ${data.x}${ex} | Det 2 (Y): ch ${data.y}${ey} | Counts: ${data.value}`;
   }
 
@@ -3821,8 +3839,10 @@
       proj_scale: (projScale1D[0] === 'log' || projScale1D[1] === 'log') ? 'log' : 'linear',
     };
 
-    if (metadata && metadata.cal) {
-      cfg.cal = metadata.cal;
+    if (metadata) {
+      cfg.cal_0 = getCalForAxis(0);
+      cfg.cal_1 = getCalForAxis(1);
+      cfg.cal = getCalForAxis(0);
     }
 
     try {
@@ -4413,9 +4433,9 @@
         const detName = (axis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
         const c0 = Math.round(axis === 0 ? view.x0 : view.y0);
         const c1 = Math.round(axis === 0 ? view.x1 : view.y1);
-        const isCal = metadata && metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0);
-        const e0 = isCal ? ` (${chToEnergy(c0).toFixed(1)} keV)` : '';
-        const e1 = isCal ? ` (${chToEnergy(c1).toFixed(1)} keV)` : '';
+        const isCal = isAxisCalibrated(axis);
+        const e0 = isCal ? ` (${chToEnergy(c0, axis).toFixed(1)} keV)` : '';
+        const e1 = isCal ? ` (${chToEnergy(c1, axis).toFixed(1)} keV)` : '';
         document.getElementById('hudCoords').innerText = `1D Zoom [${detName}]: Range ch ${c0}${e0} - ${c1}${e1} (${c1 - c0 + 1} ch)`;
 
         renderBoth1DSpectra();
@@ -4638,10 +4658,10 @@
       if (frac >= 0 && frac <= 1) {
         const ch = Math.max(0, Math.min(spec.length - 1, Math.floor(chStart + frac * span)));
         if (axis === 0) cursor1DChannelX = ch; else cursor1DChannelY = ch;
-        const val = spec[ch] || 0;
-        const energy = chToEnergy(ch + 0.5).toFixed(1);
+        const isCal = isAxisCalibrated(axis);
+        const energy = chToEnergy(ch + 0.5, axis).toFixed(1);
+        const energyStr = isCal ? ` (${energy} keV)` : '';
         const detName = (axis === 0) ? 'Det 1 (1D)' : 'Det 2 (1D)';
-        const isCal = Boolean(metadata && metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0));
         let peakInfo = '';
         if (foundPeaks1D[axis] && foundPeaks1D[axis].length > 0) {
           const nearP = foundPeaks1D[axis].find(p => Math.abs(p.channel - ch) <= 2.5);
@@ -4657,7 +4677,7 @@
             }
           }
         }
-        document.getElementById('hudCoords').innerText = `${detName}: ch ${ch} (${energy} keV) | Proj Counts: ${val}${peakInfo}`;
+        document.getElementById('hudCoords').innerText = `${detName}: ch ${ch}${energyStr} | Proj Counts: ${val}${peakInfo}`;
       } else {
         if (!is1DBoxZooming[axis]) {
           if (axis === 0) cursor1DChannelX = null; else cursor1DChannelY = null;

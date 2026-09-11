@@ -1,0 +1,194 @@
+# ==============================================================================
+# python-cmat Analysis Macro Template (*.mac)
+# ==============================================================================
+# This template demonstrates every command available in the python-cmat
+# spectroscopy command language. Users can copy, edit, and extend this file
+# to automate gamma-gamma coincidence analysis, multi-matrix comparison,
+# peak fitting, and publication-quality vector PDF report generation.
+#
+# Execution modes:
+#   1. Batch / Script execution:
+#        python3 cmat_webviewer.py -m analysis_template.mac
+#   2. Pre-loading matrices from CLI then running macro:
+#        python3 cmat_webviewer.py -m analysis_template.mac run1.cmat run2.cmat
+#   3. Executing directly from the interactive shell:
+#        python3 cmat_webviewer.py -i
+#        cmat [no-matrix]> macro analysis_template.mac
+# ==============================================================================
+
+echo "=============================================================================="
+echo " Starting Automated Spectroscopy Analysis Workflow"
+echo "=============================================================================="
+
+# ------------------------------------------------------------------------------
+# 1. MATRIX LOADING & MANAGEMENT
+# ------------------------------------------------------------------------------
+# Load one or more 2D coincidence matrices into the current session.
+# Syntax: load <filepath> [alias]
+load GeE-symm.cmat inbeam
+
+# Display list of all loaded matrices in the current session
+# Output includes: Index, Name, Filename, Shape (Y×X), Counts, Symmetry
+list
+
+# Select active matrix by alias name or 1-based index (e.g. "matrix inbeam" or "matrix 1")
+matrix inbeam
+
+# Display metadata (format, dimensions, counts, calibration status) for active matrix
+info
+
+# ------------------------------------------------------------------------------
+# 2. PER-AXIS ENERGY CALIBRATION
+# ------------------------------------------------------------------------------
+# Calibration is defined per axis, enabling asymmetric matrices (e.g., Energy vs
+# Time, Particle Energy vs Gamma Energy, or Detector Index vs Energy).
+#
+# Calibration formula: E = a0 + a1 * ch + a2 * ch^2
+#   - a0: Zero offset / Intercept (keV)
+#   - a1: Linear gain slope (keV/ch)
+#   - a2: Quadratic curvature coefficient (keV/ch^2, optional, default: 0.0)
+#
+# Syntax:
+#   cal <axis> <a0> <a1> [a2]       # Set calibration for specific axis (0: Det 1 / X, 1: Det 2 / Y)
+#   cal show                        # Display active calibration polynomials
+#   cal clear [axis]                # Clear calibration and revert to channels
+
+# Example: Calibrate Det 1 (Axis 0) with quadratic calibration
+cal 0 0.5000 1.0020 0.0000010
+
+# Example: Calibrate Det 2 (Axis 1) with slightly different detector gain
+cal 1 0.4000 1.0010 0.0000005
+
+# Inspect active calibration table
+cal show
+
+# ------------------------------------------------------------------------------
+# 3. 1D COINCIDENCE GATING WITH BACKGROUND NORMALIZATION
+# ------------------------------------------------------------------------------
+# Apply coincidence energy slices along one detector axis to project the
+# gated, continuum-subtracted coincidence spectrum onto the opposite axis.
+#
+# Syntax:
+#   gate <axis> w <w0> <w1> [w <w2> <w3> ...] [b <b0> <b1> ...]
+#
+# Parameters:
+#   axis       : Gating axis (0 for Det 1 / X, 1 for Det 2 / Y)
+#   w <min max>: Peak gate window channels (can specify multiple windows)
+#   b <min max>: Background subtraction window channels (optional)
+#   --energy   : Interpret gate bounds in calibrated keV instead of channels
+
+# Set a peak window at ch 1170..1176 on Det 1 (Axis 0) with sideband BG windows:
+gate 0 w 1170 1176 b 1150 1160 b 1185 1195
+
+# Inspect currently applied coincidence gates and background scale factors
+gate show
+
+# ------------------------------------------------------------------------------
+# 4. 1D PEAK SEARCHING & AUTOMATED DETECTION
+# ------------------------------------------------------------------------------
+# Search for photopeaks on the active 1D projection or gated coincidence spectrum.
+#
+# Syntax:
+#   search [axis] [--method cwt|prominence|mariscotti] [--snr N] [--fwhm N] [--range min max]
+#
+# Parameters:
+#   axis     : Target spectrum axis (0: Det 1 / X, 1: Det 2 / Y)
+#   --method : Peak detection engine:
+#                - 'cwt'        : Continuous Wavelet Transform (Ricker wavelet with local Poisson noise)
+#                - 'prominence' : Topographic prominence with Non-Maximum Suppression
+#                - 'mariscotti' : GASPware 5-fold smoothed 2nd difference (trackn.F)
+#   --snr    : Minimum Poisson statistical signal-to-noise ratio threshold (default: 9.0)
+#   --fwhm   : Estimated peak FWHM in channels (default: 4.0)
+#   --range  : Channel search range bounds [min max]
+
+search 1 --method cwt --snr 10.0 --fwhm 4.0 --range 100 2000
+
+# ------------------------------------------------------------------------------
+# 5. 1D SPECTROSCOPY PEAK FITTING
+# ------------------------------------------------------------------------------
+# Fit isolated photopeaks, multiplets, or all candidate peaks in a window.
+#
+# Available analytical peak shapes (--model):
+#   - gaussian      : Classic symmetric Gaussian on linear continuum baseline
+#   - gaussian_tail : Left-tail convolved Gaussian (RadWare style for detector incomplete charge collection)
+#   - hypermet      : Full Hypermet function (Gaussian + exponential tail + smoothed step function)
+#
+# Single peak fit syntax:
+#   fit_1d <axis> <channel_or_energy> [--model M] [--fwhm_mult N] [--energy]
+fit_1d 1 775.0 --model gaussian --fwhm_mult 4.0
+
+# Coupled multiplet fit syntax:
+#   fit_multiplet <axis> <ch1> <ch2> ... [--model M] [--fwhm_mult N]
+fit_multiplet 1 315.0 322.0 --model gaussian
+
+# Automated multi-peak fit across a display region:
+#   fit_all <axis> [--range min max] [--snr N] [--model M]
+fit_all 1 --range 300 800 --snr 10.0 --model gaussian
+
+# ------------------------------------------------------------------------------
+# 6. 2D COINCIDENCE PEAK FITTING (GAMBA DECOMPOSITION)
+# ------------------------------------------------------------------------------
+# Simultaneously fit 2D coincidence photopeaks directly on the 2D matrix
+# using full 4-component Gamba decomposition (P|P, P|B, B|P, B|B continuum).
+#
+# Syntax:
+#   fit_2d <x> <y> [--roi half_width] [--model gaussian|gaussian_tail|hypermet] [--verbose]
+#
+# Parameters:
+#   <x> <y> : Approximate 2D peak center (channel coordinates)
+#   --roi   : Region of interest half-width in channels (default: 16 -> 33×33 bins)
+#   --verbose: Print complete mathematical covariance and background matrix
+fit_2d 1173.0 775.0 --roi 16
+
+# ------------------------------------------------------------------------------
+# 7. PUBLICATION-QUALITY VECTOR PDF EXPORTS
+# ------------------------------------------------------------------------------
+# Export publication-ready, fully vectorized PDF plots with stepped histograms,
+# background shading, centroid callouts, and fitted peak curves.
+#
+# 1D Spectrum Vector PDF:
+#   pdf_1d <axis> <output_filename.pdf> [--range min max] [--log] [--fit] [--title "Text"]
+pdf_1d 1 inbeam_gated_spectrum.pdf --range 200 1500 --fit --title "In-Beam Coincidence Spectrum (Gate: Det 1 1173 keV)"
+
+# 2D Matrix Vector PDF:
+#   pdf_2d <output_filename.pdf> [--x min max] [--y min max] [--cmap turbo|viridis|...] [--scale log|linear|sqrt] [--fit] [--title "Text"]
+pdf_2d inbeam_2d_coincidence.pdf --x 1140 1200 --y 740 810 --cmap turbo --scale log --fit --title "Gamma-Gamma Coincidence Peak (1173 x 775 keV)"
+
+# ------------------------------------------------------------------------------
+# 8. ASCII DATA EXPORT (TABLES & MATRICES)
+# ------------------------------------------------------------------------------
+# Export 1D spectra or 2D matrices into standardized ASCII format for external
+# analysis in ROOT, Python/NumPy, Gnuplot, or Excel.
+#
+# Export 1D spectrum data table:
+# Output columns: Channel, Energy (if calibrated), Counts, Poisson Uncertainty (sqrt(N))
+export_1d 1 inbeam_gated_spectrum.dat
+
+# Export 2D matrix in ASCII matrix format:
+# export_amat inbeam_matrix.mat
+
+# ------------------------------------------------------------------------------
+# 9. DIFFERENTIAL COMPARISON WORKFLOW (BACKGROUND SUBTRACTION)
+# ------------------------------------------------------------------------------
+# To compare multiple runs under identical gating and fitting conditions:
+#   1. Load reference/background matrix:
+#        load run02_offbeam.cmat offbeam
+#   2. Calibrate both axes identically:
+#        cal 0 0.5000 1.0020 0.0000010
+#        cal 1 0.4000 1.0010 0.0000005
+#   3. Switch to background run:
+#        matrix offbeam
+#   4. Re-export spectrum or fit under the exact same conditions:
+#        pdf_1d 1 offbeam_gated_spectrum.pdf --range 200 1500 --fit --title "Off-Beam Background Gate"
+# ------------------------------------------------------------------------------
+
+# Clear gating for clean subsequent runs
+gate clear
+
+echo "=============================================================================="
+echo " Analysis Pipeline Finished Successfully!"
+echo " Outputs Generated:"
+echo "   - inbeam_gated_spectrum.pdf (Vector PDF of 1D gated spectrum)"
+echo "   - inbeam_2d_coincidence.pdf (Vector PDF of 2D coincidence peak)"
+echo "   - inbeam_gated_spectrum.dat (ASCII spectrum data table)"
+echo "=============================================================================="

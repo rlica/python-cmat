@@ -58,6 +58,8 @@ CONFIG_FILENAME = "python-cmat-config.txt"
 
 DEFAULT_CONFIG = {
     "cal": "0.0, 1.0, 0.0",
+    "cal_0": "0.0, 1.0, 0.0",
+    "cal_1": "0.0, 1.0, 0.0",
     "fit_type": "gaussian",
     "fwhm_mult_1d": 4.0,
     "roi_half_width_2d": 16,
@@ -123,14 +125,76 @@ def launch_browser(url: str, browser_name: str = "default") -> None:
         print(f"[!] Warning: Could not automatically launch browser: {e}", file=sys.stderr)
 
 
-def parse_cal_string(cal_val) -> list:
-    """Parse calibration string (e.g. '0.0, 1.0, 0.0' or '0 1 0') into a list of floats."""
+def parse_cal_coefficients(cal_val) -> list:
+    """Parse calibration values into a 3-element list of floats [a0, a1, a2]."""
     if isinstance(cal_val, (list, tuple)):
-        return [float(v) for v in cal_val]
-    if isinstance(cal_val, str):
+        vals = [float(v) for v in cal_val]
+    elif isinstance(cal_val, str):
         parts = cal_val.replace(",", " ").split()
-        return [float(p) for p in parts] if parts else [0.0, 1.0, 0.0]
-    return [0.0, 1.0, 0.0]
+        vals = [float(p) for p in parts] if parts else [0.0, 1.0, 0.0]
+    else:
+        vals = [0.0, 1.0, 0.0]
+    while len(vals) < 3:
+        vals.append(0.0)
+    return vals[:3]
+
+
+parse_cal_string = parse_cal_coefficients
+
+
+def ch_to_energy(ch: float, cal: list) -> float:
+    """Convert channel to calibrated energy: E = a0 + a1*ch + a2*ch^2."""
+    if cal is None:
+        return float(ch)
+    a0 = cal[0] if len(cal) > 0 else 0.0
+    a1 = cal[1] if len(cal) > 1 else 1.0
+    a2 = cal[2] if len(cal) > 2 else 0.0
+    return a0 + a1 * float(ch) + a2 * (float(ch) ** 2)
+
+
+def energy_to_ch(energy: float, cal: list, default_ch: float = None) -> float:
+    """Convert calibrated energy (keV) to channel: solve a0 + a1*ch + a2*ch^2 = E."""
+    if cal is None:
+        return float(energy)
+    a0 = cal[0] if len(cal) > 0 else 0.0
+    a1 = cal[1] if len(cal) > 1 else 1.0
+    a2 = cal[2] if len(cal) > 2 else 0.0
+    if abs(a2) < 1e-12:
+        if abs(a1) < 1e-12:
+            return default_ch if default_ch is not None else float(energy)
+        return (float(energy) - a0) / a1
+    disc = a1 ** 2 - 4.0 * a2 * (a0 - float(energy))
+    if disc < 0:
+        return default_ch if default_ch is not None else (float(energy) - a0) / a1
+    r1 = (-a1 + math.sqrt(disc)) / (2.0 * a2)
+    r2 = (-a1 - math.sqrt(disc)) / (2.0 * a2)
+    if r1 >= 0 and r2 < 0:
+        return r1
+    if r2 >= 0 and r1 < 0:
+        return r2
+    if default_ch is not None:
+        return r1 if abs(r1 - default_ch) < abs(r2 - default_ch) else r2
+    return r1 if r1 >= 0 else r2
+
+
+def de_dch(ch: float, cal: list) -> float:
+    """Calculate first derivative dE/dch = |a1 + 2*a2*ch|."""
+    if cal is None:
+        return 1.0
+    a1 = cal[1] if len(cal) > 1 else 1.0
+    a2 = cal[2] if len(cal) > 2 else 0.0
+    return max(1e-9, abs(a1 + 2.0 * a2 * float(ch)))
+
+
+def is_calibrated_coeffs(cal: list) -> bool:
+    """Check if calibration coefficients represent non-trivial energy calibration."""
+    if not cal or len(cal) < 2:
+        return False
+    a0 = cal[0]
+    a1 = cal[1]
+    a2 = cal[2] if len(cal) > 2 else 0.0
+    return abs(a0) > 1e-12 or abs(a1 - 1.0) > 1e-12 or abs(a2) > 1e-12
+
 
 
 def generate_config_content(cfg: dict) -> str:
@@ -138,6 +202,14 @@ def generate_config_content(cfg: dict) -> str:
     cal_str = cfg.get("cal", "0.0, 1.0, 0.0")
     if isinstance(cal_str, (list, tuple)):
         cal_str = ", ".join(str(v) for v in cal_str)
+
+    cal_0_str = cfg.get("cal_0", cal_str)
+    if isinstance(cal_0_str, (list, tuple)):
+        cal_0_str = ", ".join(str(v) for v in cal_0_str)
+
+    cal_1_str = cfg.get("cal_1", cal_str)
+    if isinstance(cal_1_str, (list, tuple)):
+        cal_1_str = ", ".join(str(v) for v in cal_1_str)
 
     open_br = cfg.get("open_browser", True)
     open_br_str = "true" if open_br in (True, "true", "True", "1", 1) else "false"
@@ -148,7 +220,11 @@ def generate_config_content(cfg: dict) -> str:
 # You can edit these values directly or click "Save Config" in the Web Viewer.
 # ==============================================================================
 
-# Energy Calibration: a0 a1 a2 for E = a0 + a1*ch + a2*ch^2
+# Energy Calibration (Quadratic: E = a0 + a1*ch + a2*ch^2)
+# Define calibration per-axis: Det 1 / X (cal_0) and Det 2 / Y (cal_1)
+cal_0 = {cal_0_str}
+cal_1 = {cal_1_str}
+# Shorthand for symmetric matrices (applies to both axes if cal_0/cal_1 are not set):
 cal = {cal_str}
 
 # Default Peak Function Model: gaussian, gaussian_tail (RadWare), hypermet
@@ -223,7 +299,11 @@ def load_or_create_config(config_path: Path) -> dict:
                     key, val = line.split("=", 1)
                     key = key.strip().lower()
                     val = val.strip()
-                    if key in cfg:
+                    if key in ("cal_x", "cal_0"):
+                        cfg["cal_0"] = val
+                    elif key in ("cal_y", "cal_1"):
+                        cfg["cal_1"] = val
+                    elif key in cfg:
                         if key in ("fwhm_mult_1d", "peak_search_snr"):
                             try:
                                 cfg[key] = float(val)
@@ -672,7 +752,7 @@ def print_fit_terminal_report(res, det_name, filename, is_cal, verbosity="compac
 
 def _fit_2d_gaussian_single_roi(
     matrix, x_center, y_center, fit_type="gaussian", cal=[0.0, 1.0, 0.0], roi_half_width=16,
-    proj_x=None, proj_y=None, total_counts=None, **kwargs
+    proj_x=None, proj_y=None, total_counts=None, cal_x=None, cal_y=None, **kwargs
 ):
     mat = np.asarray(matrix, dtype=np.float64)
     H_mat, W_mat = mat.shape
@@ -1001,21 +1081,34 @@ def _fit_2d_gaussian_single_roi(
     fwhm_y = fwhm_factor * sy
     fwhm_y_err = fwhm_factor * param_errors[9]
 
-    a0 = cal[0] if len(cal) > 0 else 0.0
-    a1 = cal[1] if len(cal) > 1 else 1.0
-    a2 = cal[2] if len(cal) > 2 else 0.0
-    def ch_to_e(c): return a0 + a1 * c + a2 * (c**2)
-    def de_dch(c): return abs(a1 + 2.0 * a2 * c)
+    if cal_x is None:
+        if isinstance(cal, dict):
+            cal_x = cal.get(0, [0.0, 1.0, 0.0])
+        elif isinstance(cal, (list, tuple)) and len(cal) > 0 and isinstance(cal[0], (list, tuple)):
+            cal_x = cal[0]
+        else:
+            cal_x = cal if cal is not None else [0.0, 1.0, 0.0]
 
-    e_x = ch_to_e(mx)
-    e_x_err = param_errors[6] * de_dch(mx)
-    e_y = ch_to_e(my)
-    e_y_err = param_errors[7] * de_dch(my)
+    if cal_y is None:
+        if isinstance(cal, dict):
+            cal_y = cal.get(1, [0.0, 1.0, 0.0])
+        elif isinstance(cal, (list, tuple)) and len(cal) > 1 and isinstance(cal[1], (list, tuple)):
+            cal_y = cal[1]
+        else:
+            cal_y = cal if cal is not None else [0.0, 1.0, 0.0]
 
-    fwhm_e_x = fwhm_x * de_dch(mx)
-    fwhm_e_x_err = fwhm_x_err * de_dch(mx)
-    fwhm_e_y = fwhm_y * de_dch(my)
-    fwhm_e_y_err = fwhm_y_err * de_dch(my)
+    cal_x = parse_cal_coefficients(cal_x)
+    cal_y = parse_cal_coefficients(cal_y)
+
+    e_x = ch_to_energy(mx, cal_x)
+    e_x_err = param_errors[6] * de_dch(mx, cal_x)
+    e_y = ch_to_energy(my, cal_y)
+    e_y_err = param_errors[7] * de_dch(my, cal_y)
+
+    fwhm_e_x = fwhm_x * de_dch(mx, cal_x)
+    fwhm_e_x_err = fwhm_x_err * de_dch(mx, cal_x)
+    fwhm_e_y = fwhm_y * de_dch(my, cal_y)
+    fwhm_e_y_err = fwhm_y_err * de_dch(my, cal_y)
 
     ndf = max(1, N_pixels - n_params)
     red_chi2 = chi2 / ndf
@@ -1157,7 +1250,7 @@ def _fit_2d_gaussian_single_roi(
 
 def fit_2d_gaussian_peak(
     matrix, x_center, y_center, fit_type="gaussian", cal=[0.0, 1.0, 0.0], roi_half_width=16,
-    proj_x=None, proj_y=None, total_counts=None, recenter=True, **kwargs
+    proj_x=None, proj_y=None, total_counts=None, recenter=True, cal_x=None, cal_y=None, **kwargs
 ):
     """
     Fits a true 2D coincidence peak (Symmetric Gaussian, RadWare Tail, or Hypermet Model)
@@ -1178,7 +1271,7 @@ def fit_2d_gaussian_peak(
     # Pass 1: Preliminary fit around initial user pointer position
     res_prelim = _fit_2d_gaussian_single_roi(
         mat, x_center, y_center, fit_type=fit_type, cal=cal, roi_half_width=roi_half_width,
-        proj_x=proj_x, proj_y=proj_y, total_counts=total_counts, **kwargs
+        proj_x=proj_x, proj_y=proj_y, total_counts=total_counts, cal_x=cal_x, cal_y=cal_y, **kwargs
     )
 
     if not recenter or not res_prelim.get("success"):
@@ -1199,7 +1292,7 @@ def fit_2d_gaussian_peak(
         try:
             res_refined = _fit_2d_gaussian_single_roi(
                 mat, ix_clamped + 0.5, iy_clamped + 0.5, fit_type=fit_type, cal=cal, roi_half_width=roi_half_width,
-                proj_x=proj_x, proj_y=proj_y, total_counts=total_counts, **kwargs
+                proj_x=proj_x, proj_y=proj_y, total_counts=total_counts, cal_x=cal_x, cal_y=cal_y, **kwargs
             )
             if res_refined.get("success"):
                 return res_refined
@@ -1212,40 +1305,48 @@ def fit_2d_gaussian_peak(
 def print_fit_2d_terminal_report(res, filename, is_cal, verbosity="compact"):
     ft = res.get("fit_type", "gaussian")
     model_tag = "Hypermet" if ft == "hypermet" else ("RadWare" if ft == "gaussian_tail" else "Gaussian")
+
+    if isinstance(is_cal, (list, tuple)):
+        is_cal_x, is_cal_y = bool(is_cal[0]), bool(is_cal[1])
+    else:
+        is_cal_x, is_cal_y = bool(is_cal), bool(is_cal)
+
+    unit_x = "keV" if is_cal_x else "ch"
+    unit_y = "keV" if is_cal_y else "ch"
+    dec_x = 2 if is_cal_x else 3
+    dec_y = 2 if is_cal_y else 3
+
     if verbosity == "compact":
-        dec = 2 if is_cal else 3
-        unit = "keV" if is_cal else "ch"
+        cx_val = res['centroid_x_e'] if is_cal_x else res['centroid_x_ch']
+        cx_err = res['centroid_x_e_err'] if is_cal_x else res['centroid_x_ch_err']
+        cy_val = res['centroid_y_e'] if is_cal_y else res['centroid_y_ch']
+        cy_err = res['centroid_y_e_err'] if is_cal_y else res['centroid_y_ch_err']
 
-        cx_val = res['centroid_x_e'] if is_cal else res['centroid_x_ch']
-        cx_err = res['centroid_x_e_err'] if is_cal else res['centroid_x_ch_err']
-        cy_val = res['centroid_y_e'] if is_cal else res['centroid_y_ch']
-        cy_err = res['centroid_y_e_err'] if is_cal else res['centroid_y_ch_err']
-
-        fx_val = res['fwhm_x_e'] if is_cal else res['fwhm_x_ch']
-        fx_err = res['fwhm_x_e_err'] if is_cal else res['fwhm_x_ch_err']
-        fy_val = res['fwhm_y_e'] if is_cal else res['fwhm_y_ch']
-        fy_err = res['fwhm_y_e_err'] if is_cal else res['fwhm_y_ch_err']
+        fx_val = res['fwhm_x_e'] if is_cal_x else res['fwhm_x_ch']
+        fx_err = res['fwhm_x_e_err'] if is_cal_x else res['fwhm_x_ch_err']
+        fy_val = res['fwhm_y_e'] if is_cal_y else res['fwhm_y_ch']
+        fy_err = res['fwhm_y_e_err'] if is_cal_y else res['fwhm_y_ch_err']
 
         # Align centroid integer part and error width so decimal points line up
-        cx_fmt = f"{cx_val:.{dec}f}"
-        cy_fmt = f"{cy_val:.{dec}f}"
+        cx_fmt = f"{cx_val:.{dec_x}f}"
+        cy_fmt = f"{cy_val:.{dec_y}f}"
         cx_int, cx_dec = cx_fmt.split(".")
         cy_int, cy_dec = cy_fmt.split(".")
         max_c_int = max(len(cx_int), len(cy_int))
-        cx_err_s = f"{cx_err:.{dec}f}"
-        cy_err_s = f"{cy_err:.{dec}f}"
+        cx_err_s = f"{cx_err:.{dec_x}f}"
+        cy_err_s = f"{cy_err:.{dec_y}f}"
         max_c_err = max(len(cx_err_s), len(cy_err_s))
         cx_str = f"{cx_int:>{max_c_int}}.{cx_dec}({cx_err_s:>{max_c_err}})"
         cy_str = f"{cy_int:>{max_c_int}}.{cy_dec}({cy_err_s:>{max_c_err}})"
 
         # Align FWHM integer part and error width so decimal points line up
-        fx_fmt = f"{fx_val:.{dec}f}"
-        fy_fmt = f"{fy_val:.{dec}f}"
+        fx_fmt = f"{fx_val:.{dec_x}f}"
+        fy_fmt = f"{fy_val:.{dec_y}f}"
         fx_int, fx_dec = fx_fmt.split(".")
         fy_int, fy_dec = fy_fmt.split(".")
         max_f_int = max(len(fx_int), len(fy_int))
-        fx_err_s = f"{fx_err:.{dec}f}"
-        fy_err_s = f"{fy_err:.{dec}f}"
+        fx_err_s = f"{fx_err:.{dec_x}f}"
+        fy_err_s = f"{fy_err:.{dec_y}f}"
         max_f_err = max(len(fx_err_s), len(fy_err_s))
         fx_str = f"{fx_int:>{max_f_int}}.{fx_dec}({fx_err_s:>{max_f_err}})"
         fy_str = f"{fy_int:>{max_f_int}}.{fy_dec}({fy_err_s:>{max_f_err}})"
@@ -1253,8 +1354,8 @@ def print_fit_2d_terminal_report(res, filename, is_cal, verbosity="compact"):
         vol_str = f"{res['volume']:.1f}({res['volume_err']:.1f})"
 
         print(f"[2D Fit] [{filename}] ({model_tag} + Gamba BG):", flush=True)
-        print(f"  Det 1 (X):\tCentroid: {cx_str} {unit}\tArea: {vol_str} counts\tFWHM: {fx_str} {unit}", flush=True)
-        print(f"  Det 2 (Y):\tCentroid: {cy_str} {unit}\tArea: {vol_str} counts\tFWHM: {fy_str} {unit}", flush=True)
+        print(f"  Det 1 (X):\tCentroid: {cx_str} {unit_x}\tArea: {vol_str} counts\tFWHM: {fx_str} {unit_x}", flush=True)
+        print(f"  Det 2 (Y):\tCentroid: {cy_str} {unit_y}\tArea: {vol_str} counts\tFWHM: {fy_str} {unit_y}", flush=True)
         print(f"  Gamba Net Area (p|p^t): {res['gamba_net']:.1f} ± {res['gamba_net_err']:.1f} counts\tPeak/Total-BG Ratio (Π): {res['pi_ratio_percent']:.1f}%\n", flush=True)
         return
 
@@ -1271,10 +1372,14 @@ def print_fit_2d_terminal_report(res, filename, is_cal, verbosity="compact"):
     print(f"[GASPware 2D Coincidence Peak Fit] - {filename} ({model_name})")
     print(f"   [Self-Consistent 4-Component BG Decomposition: Gamba et al., NIM A 928 (2019) 93]")
     print(subbar)
-    if is_cal:
-        print(f"  2D Centroid (Energy): ({res['centroid_x_e']:.2f} ± {res['centroid_x_e_err']:.2f}, {res['centroid_y_e']:.2f} ± {res['centroid_y_e_err']:.2f}) keV")
+    if is_cal_x or is_cal_y:
+        cx_s = f"{res['centroid_x_e']:.2f} ± {res['centroid_x_e_err']:.2f} keV" if is_cal_x else f"{res['centroid_x_ch']:.3f} ch"
+        cy_s = f"{res['centroid_y_e']:.2f} ± {res['centroid_y_e_err']:.2f} keV" if is_cal_y else f"{res['centroid_y_ch']:.3f} ch"
+        print(f"  2D Centroid         : Det 1 (X) = {cx_s} | Det 2 (Y) = {cy_s}")
         print(f"  2D Centroid (ch)    : ({res['centroid_x_ch']:.3f} ± {res['centroid_x_ch_err']:.3f}, {res['centroid_y_ch']:.3f} ± {res['centroid_y_ch_err']:.3f}) ch")
-        print(f"  FWHM (Energy)       : Det 1 (X) = {res['fwhm_x_e']:.2f} ± {res['fwhm_x_e_err']:.2f} keV | Det 2 (Y) = {res['fwhm_y_e']:.2f} ± {res['fwhm_y_e_err']:.2f} keV")
+        fx_s = f"{res['fwhm_x_e']:.2f} ± {res['fwhm_x_e_err']:.2f} keV" if is_cal_x else f"{res['fwhm_x_ch']:.3f} ch"
+        fy_s = f"{res['fwhm_y_e']:.2f} ± {res['fwhm_y_e_err']:.2f} keV" if is_cal_y else f"{res['fwhm_y_ch']:.3f} ch"
+        print(f"  FWHM                : Det 1 (X) = {fx_s} | Det 2 (Y) = {fy_s}")
         print(f"  FWHM (ch)           : Det 1 (X) = {res['fwhm_x_ch']:.3f} ± {res['fwhm_x_ch_err']:.3f} ch | Det 2 (Y) = {res['fwhm_y_ch']:.3f} ± {res['fwhm_y_ch_err']:.3f} ch")
     else:
         print(f"  2D Centroid (ch)    : ({res['centroid_x_ch']:.3f} ± {res['centroid_x_ch_err']:.3f}, {res['centroid_y_ch']:.3f} ± {res['centroid_y_ch_err']:.3f}) ch")
@@ -1300,10 +1405,10 @@ def print_fit_2d_terminal_report(res, filename, is_cal, verbosity="compact"):
     print(f"{bar}\n", flush=True)
 
 
-def generate_pdf_1d(spec, ch_start, ch_end, is_log=False, zoom_y=1.0, fit_res=None):
+def generate_pdf_1d(spec, ch_start, ch_end, is_log=False, zoom_y=1.0, fit_res=None, cal=None, axis_label=None, title=None):
     """
     Generates a publication-quality 1D spectrum vector PDF with white background,
-    Times New Roman font, inward ticks, stepped staircase histogram, and Energy (keV) axis.
+    Times New Roman font, inward ticks, stepped staircase histogram, and optional calibration.
     """
     import io
     import matplotlib
@@ -1330,8 +1435,20 @@ def generate_pdf_1d(spec, ch_start, ch_end, is_log=False, zoom_y=1.0, fit_res=No
     sub_x = np.arange(ch_start, ch_end + 1, dtype=np.float64)
     sub_y = spec[ch_start:ch_end + 1]
 
-    # Stepped histogram centered on channels (1 keV/channel calibrated)
-    ax.step(sub_x, sub_y, where="mid", color="#111111", linewidth=1.0, label="Data")
+    is_cal = is_calibrated_coeffs(cal)
+    if is_cal:
+        plot_x = np.array([ch_to_energy(c, cal) for c in sub_x])
+        x_lim_0 = ch_to_energy(ch_start, cal)
+        x_lim_1 = ch_to_energy(ch_end, cal)
+        x_axis_name = axis_label or "Energy (keV)"
+    else:
+        plot_x = sub_x
+        x_lim_0 = ch_start
+        x_lim_1 = ch_end
+        x_axis_name = axis_label or "Channel"
+
+    # Stepped histogram centered on bins
+    ax.step(plot_x, sub_y, where="mid", color="#111111", linewidth=1.0, label="Data")
 
     max_val = float(np.max(sub_y)) if len(sub_y) > 0 else 1.0
     min_val = float(np.min(sub_y)) if len(sub_y) > 0 else 0.0
@@ -1349,10 +1466,12 @@ def generate_pdf_1d(spec, ch_start, ch_end, is_log=False, zoom_y=1.0, fit_res=No
         if y_min < 0:
             ax.axhline(0, color="#888888", linestyle=":", linewidth=0.8)
 
-    ax.set_xlim(ch_start, ch_end)
-    ax.set_xlabel("Energy (keV)", fontsize=12, labelpad=6)
+    ax.set_xlim(min(x_lim_0, x_lim_1), max(x_lim_0, x_lim_1))
+    ax.set_xlabel(x_axis_name, fontsize=12, labelpad=6)
     ax.set_ylabel("Counts", fontsize=12, labelpad=6)
     ax.tick_params(axis="both", labelsize=10)
+    if title:
+        ax.set_title(title, fontsize=12, pad=8)
 
     # Plot fitted peak curve and baseline if available
     if fit_res and fit_res.get("success"):
@@ -1361,15 +1480,16 @@ def generate_pdf_1d(spec, ch_start, ch_end, is_log=False, zoom_y=1.0, fit_res=No
         curve_bg = np.array(fit_res.get("curve_bg", []), dtype=np.float64)
 
         if len(curve_x) > 0 and len(curve_fit) > 0:
+            curve_x_plot = np.array([ch_to_energy(c, cal) for c in curve_x]) if is_cal else curve_x
             if len(curve_bg) > 0:
-                ax.plot(curve_x, curve_bg, color="#cc0066", linestyle="--", linewidth=1.2, label="Background")
-            ax.plot(curve_x, curve_fit, color="#d95f02", linestyle="-", linewidth=1.8, label="Fit")
+                ax.plot(curve_x_plot, curve_bg, color="#cc0066", linestyle="--", linewidth=1.2, label="Background")
+            ax.plot(curve_x_plot, curve_fit, color="#d95f02", linestyle="-", linewidth=1.8, label="Fit")
 
             if "peaks" in fit_res and len(fit_res["peaks"]) > 0:
-                # Multi-peak fit with peak-aware continuum background
                 p_list = fit_res["peaks"]
                 for p in p_list:
-                    ax.axvline(p["centroid_ch"], color="#d95f02", linestyle=":", linewidth=0.7, alpha=0.65)
+                    p_mu = ch_to_energy(p["centroid_ch"], cal) if is_cal else p["centroid_ch"]
+                    ax.axvline(p_mu, color="#d95f02", linestyle=":", linewidth=0.7, alpha=0.65)
                 tot_a = sum(p.get("area", 0.0) for p in p_list)
                 info_txt = f"Multi-Peak Fit: {len(p_list)} peaks\nTotal Net Area: {tot_a:,.1f} counts\nPeak-Aware Continuum BG"
                 ax.text(0.04, 0.94, info_txt, transform=ax.transAxes, verticalalignment="top",
@@ -1377,12 +1497,26 @@ def generate_pdf_1d(spec, ch_start, ch_end, is_log=False, zoom_y=1.0, fit_res=No
             else:
                 mu = fit_res.get("centroid_ch")
                 if mu is not None:
-                    ax.axvline(mu, color="#d95f02", linestyle=":", linewidth=1.0)
+                    mu_plot = ch_to_energy(mu, cal) if is_cal else mu
+                    ax.axvline(mu_plot, color="#d95f02", linestyle=":", linewidth=1.0)
 
                 area_str = f"{fit_res.get('area', 0):.1f} ± {fit_res.get('area_err', 0):.1f}"
-                fwhm_str = f"{fit_res.get('fwhm_ch', 0):.2f} ± {fit_res.get('fwhm_ch_err', 0):.2f}"
-                centroid_str = f"{fit_res.get('centroid_ch', 0):.2f} ± {fit_res.get('centroid_ch_err', 0):.2f}"
-                info_txt = f"Centroid: {centroid_str} keV\nArea: {area_str}\nFWHM: {fwhm_str} keV\n$\\chi^2_\\nu$: {fit_res.get('red_chi2', 0):.2f}"
+                if is_cal:
+                    centroid_val = fit_res.get('centroid_e', ch_to_energy(fit_res.get('centroid_ch', 0), cal))
+                    centroid_err = fit_res.get('centroid_e_err', fit_res.get('centroid_ch_err', 0) * de_dch(fit_res.get('centroid_ch', 0), cal))
+                    fwhm_val = fit_res.get('fwhm_e', fit_res.get('fwhm_ch', 0) * de_dch(fit_res.get('centroid_ch', 0), cal))
+                    fwhm_err = fit_res.get('fwhm_e_err', fit_res.get('fwhm_ch_err', 0) * de_dch(fit_res.get('centroid_ch', 0), cal))
+                    unit_str = "keV"
+                else:
+                    centroid_val = fit_res.get('centroid_ch', 0)
+                    centroid_err = fit_res.get('centroid_ch_err', 0)
+                    fwhm_val = fit_res.get('fwhm_ch', 0)
+                    fwhm_err = fit_res.get('fwhm_ch_err', 0)
+                    unit_str = "ch"
+
+                centroid_str = f"{centroid_val:.2f} ± {centroid_err:.2f}"
+                fwhm_str = f"{fwhm_val:.2f} ± {fwhm_err:.2f}"
+                info_txt = f"Centroid: {centroid_str} {unit_str}\nArea: {area_str} counts\nFWHM: {fwhm_str} {unit_str}\n$\\chi^2_\\nu$: {fit_res.get('red_chi2', 0):.2f}"
                 ax.text(0.04, 0.94, info_txt, transform=ax.transAxes, verticalalignment="top",
                         fontsize=9, fontfamily="serif", bbox=dict(boxstyle="round,pad=0.4", facecolor="white", edgecolor="#999999", alpha=0.92))
 
@@ -1394,10 +1528,10 @@ def generate_pdf_1d(spec, ch_start, ch_end, is_log=False, zoom_y=1.0, fit_res=No
     return buf.getvalue()
 
 
-def generate_pdf_2d(matrix, x0, x1, y0, y1, cmap_name="turbo", scale_mode="log", vmin=0, vmax=100, fit_2d_res=None):
+def generate_pdf_2d(matrix, x0, x1, y0, y1, cmap_name="turbo", scale_mode="log", vmin=0, vmax=100, fit_2d_res=None, cal_x=None, cal_y=None, x_label=None, y_label=None, title=None):
     """
     Generates a publication-quality 2D coincidence matrix vector PDF with white background,
-    Times New Roman font, Energy (keV) axes labels, colorbar, and optional fit overlays.
+    Times New Roman font, per-axis calibration axes labels, colorbar, and optional fit overlays.
     """
     import io
     import matplotlib
@@ -1438,11 +1572,23 @@ def generate_pdf_2d(matrix, x0, x1, y0, y1, cmap_name="turbo", scale_mode="log",
     except Exception:
         cmap = plt.get_cmap("turbo")
 
-    im = ax.imshow(sub_mat, extent=[x0, x1, y0, y1], origin="lower", cmap=cmap, norm=norm, aspect="auto", interpolation="nearest")
+    is_cal_x = is_calibrated_coeffs(cal_x)
+    is_cal_y = is_calibrated_coeffs(cal_y)
 
-    ax.set_xlabel("Energy (keV)", fontsize=12, labelpad=6)
-    ax.set_ylabel("Energy (keV)", fontsize=12, labelpad=6)
+    ext_x0 = ch_to_energy(x0, cal_x) if is_cal_x else x0
+    ext_x1 = ch_to_energy(x1, cal_x) if is_cal_x else x1
+    ext_y0 = ch_to_energy(y0, cal_y) if is_cal_y else y0
+    ext_y1 = ch_to_energy(y1, cal_y) if is_cal_y else y1
+
+    im = ax.imshow(sub_mat, extent=[ext_x0, ext_x1, ext_y0, ext_y1], origin="lower", cmap=cmap, norm=norm, aspect="auto", interpolation="nearest")
+
+    lbl_x = x_label or ("Det 1 (X) Energy (keV)" if is_cal_x else "Det 1 / X (Channel)")
+    lbl_y = y_label or ("Det 2 (Y) Energy (keV)" if is_cal_y else "Det 2 / Y (Channel)")
+    ax.set_xlabel(lbl_x, fontsize=12, labelpad=6)
+    ax.set_ylabel(lbl_y, fontsize=12, labelpad=6)
     ax.tick_params(axis="both", labelsize=10)
+    if title:
+        ax.set_title(title, fontsize=12, pad=8)
 
     divider = make_axes_locatable(ax)
     cax = divider.append_axes("right", size="3.5%", pad=0.12)
@@ -1457,28 +1603,42 @@ def generate_pdf_2d(matrix, x0, x1, y0, y1, cmap_name="turbo", scale_mode="log",
         fwhm_x = fit_2d_res.get("fwhm_x_ch", 4.0)
         fwhm_y = fit_2d_res.get("fwhm_y_ch", 4.0)
 
-        # ROI box
+        cx_plot = ch_to_energy(cx, cal_x) if is_cal_x else cx
+        cy_plot = ch_to_energy(cy, cal_y) if is_cal_y else cy
+        fx_plot = fwhm_x * de_dch(cx, cal_x) if is_cal_x else fwhm_x
+        fy_plot = fwhm_y * de_dch(cy, cal_y) if is_cal_y else fwhm_y
+
         rx0 = fit_2d_res.get("roi_x_min", cx - 8)
         rx1 = fit_2d_res.get("roi_x_max", cx + 8) + 1
         ry0 = fit_2d_res.get("roi_y_min", cy - 8)
         ry1 = fit_2d_res.get("roi_y_max", cy + 8) + 1
+
+        rx0_plot = ch_to_energy(rx0, cal_x) if is_cal_x else rx0
+        rx1_plot = ch_to_energy(rx1, cal_x) if is_cal_x else rx1
+        ry0_plot = ch_to_energy(ry0, cal_y) if is_cal_y else ry0
+        ry1_plot = ch_to_energy(ry1, cal_y) if is_cal_y else ry1
+
         import matplotlib.patches as patches
-        rect = patches.Rectangle((rx0, ry0), rx1 - rx0, ry1 - ry0, linewidth=1.0, edgecolor="#ffd600", facecolor="none", linestyle="--", alpha=0.7)
+        rect = patches.Rectangle((rx0_plot, ry0_plot), rx1_plot - rx0_plot, ry1_plot - ry0_plot, linewidth=1.0, edgecolor="#ffd600", facecolor="none", linestyle="--", alpha=0.7)
         ax.add_patch(rect)
 
         # Crosshair
-        ax.plot([cx - 4, cx + 4], [cy, cy], color="#ff0066", linewidth=1.2)
-        ax.plot([cx, cx], [cy - 4, cy + 4], color="#ff0066", linewidth=1.2)
+        cross_w = fx_plot * 0.8
+        cross_h = fy_plot * 0.8
+        ax.plot([cx_plot - cross_w, cx_plot + cross_w], [cy_plot, cy_plot], color="#ff0066", linewidth=1.2)
+        ax.plot([cx_plot, cx_plot], [cy_plot - cross_h, cy_plot + cross_h], color="#ff0066", linewidth=1.2)
 
         # Ellipse
-        ell = Ellipse((cx, cy), width=fwhm_x, height=fwhm_y, angle=0, edgecolor="#ffd600", facecolor="none", linewidth=1.6)
+        ell = Ellipse((cx_plot, cy_plot), width=fx_plot, height=fy_plot, angle=0, edgecolor="#ffd600", facecolor="none", linewidth=1.6)
         ax.add_patch(ell)
 
         # Text annotation with Net Volume and Centroid
         vol_val = fit_2d_res.get("volume", 0)
         vol_err = fit_2d_res.get("volume_err", 0)
         vol_str = f"Net Vol: {vol_val:,.0f} ± {vol_err:,.0f} cts" if vol_err else f"Net Vol: {vol_val:,.0f} cts"
-        ax.text(0.02, 0.98, f"2D Coincidence Peak\nCentroid: ({cx:.2f}, {cy:.2f})\n{vol_str}",
+        unit_x = "keV" if is_cal_x else "ch"
+        unit_y = "keV" if is_cal_y else "ch"
+        ax.text(0.02, 0.98, f"2D Coincidence Peak\nCentroid: ({cx_plot:.2f} {unit_x}, {cy_plot:.2f} {unit_y})\n{vol_str}",
                 transform=ax.transAxes, verticalalignment="top", fontsize=9,
                 bbox=dict(boxstyle="round,pad=0.4", facecolor="#191c20", edgecolor="#ffd600", alpha=0.85),
                 color="#ffffff", fontfamily="monospace")
@@ -1489,6 +1649,39 @@ def generate_pdf_2d(matrix, x0, x1, y0, y1, cmap_name="turbo", scale_mode="log",
     plt.close(fig)
     buf.seek(0)
     return buf.getvalue()
+
+
+def export_1d_ascii(filepath: Path, spec: np.ndarray, cal: list = None, header: str = "") -> None:
+    """Export 1D spectrum to ASCII .dat file with columns: Channel, Energy (if calibrated), Counts."""
+    filepath = Path(filepath)
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+    is_cal = is_calibrated_coeffs(cal)
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write("# python-cmat 1D Spectrum Export\n")
+        if header:
+            f.write(f"# {header}\n")
+        if is_cal:
+            f.write("# Channel\tEnergy_keV\tCounts\n")
+            for ch, val in enumerate(spec):
+                e = ch_to_energy(ch, cal)
+                f.write(f"{ch}\t{e:.4f}\t{val:.2f}\n")
+        else:
+            f.write("# Channel\tCounts\n")
+            for ch, val in enumerate(spec):
+                f.write(f"{ch}\t{val:.2f}\n")
+
+
+def export_amat_ascii(filepath: Path, matrix: np.ndarray, header: str = "") -> None:
+    """Export 2D matrix to ASCII matrix format."""
+    filepath = Path(filepath)
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+    ny, nx = matrix.shape
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(f"# python-cmat 2D Matrix Export ({nx}x{ny})\n")
+        if header:
+            f.write(f"# {header}\n")
+        for row in matrix:
+            f.write(" ".join(str(int(v)) if float(v).is_integer() else f"{v:.2f}" for v in row) + "\n")
 
 
 def parse_gate_ranges(param_str: str) -> list:
@@ -1595,8 +1788,12 @@ def compute_1d_gate(matrix: np.ndarray, axis: int, w_gates: list, b_gates: list)
         "dest_axis": 1 - axis,
         "valid_w": valid_w,
         "valid_b": valid_b,
+        "w_gates": valid_w,
+        "b_gates": valid_b,
         "total_w_ch": total_w_ch,
         "total_b_ch": total_b_ch,
+        "w_width": total_w_ch,
+        "b_width": total_b_ch,
         "scale": scale,
         "gross_counts": gross_counts,
         "bg_counts": bg_counts,
@@ -2599,22 +2796,155 @@ def print_multi_fit_terminal_report(res: dict, det_name: str, matrix_name: str, 
     print(f"{bar}\n", flush=True)
 
 
-class CMATWebHandler(BaseHTTPRequestHandler):
-    matrices: list = []
-    active_index: int = 0
-    reader: CMATReader = None
-    matrix: np.ndarray = None
-    proj: np.ndarray = None
-    cal: list = [0.0, 1.0, 0.0]
-    global_cal: list = [0.0, 1.0, 0.0]
-    config: dict = None
-    config_path: Path = None
+def parse_cmd_tokens(tokens: list) -> tuple:
+    """
+    Parse a list of string tokens into (positional_arguments, options_dict).
+    Supports boolean flags (--fit), single-value flags (--roi 16), and multi-value flags (--range 100 200).
+    """
+    pos = []
+    flags = {}
+    i = 0
+    while i < len(tokens):
+        tok = tokens[i]
+        if tok.startswith("--") or (tok.startswith("-") and len(tok) == 2 and not (len(tok) > 1 and tok[1].isdigit())):
+            flag_name = tok.lstrip("-").replace("-", "_").lower()
+            vals = []
+            i += 1
+            while i < len(tokens):
+                next_tok = tokens[i]
+                if next_tok.startswith("--") or (next_tok.startswith("-") and len(next_tok) == 2 and not (len(next_tok) > 1 and next_tok[1].isdigit())):
+                    break
+                vals.append(next_tok)
+                i += 1
+            if len(vals) == 0:
+                flags[flag_name] = True
+            elif len(vals) == 1:
+                flags[flag_name] = vals[0]
+            else:
+                flags[flag_name] = vals
+        else:
+            pos.append(tok)
+            i += 1
+    return pos, flags
 
-    @classmethod
-    def add_matrix_file(cls, path: Path, name: str = None, cal: list = None) -> int:
+
+def parse_gate_args(tokens: list, session: "CMATSession"):
+    """Parse coincidence gate command tokens into (action, axis, w_gates, b_gates)."""
+    if not tokens:
+        return "show", None, [], []
+    first = tokens[0].lower()
+    if first in ("clear", "reset", "ungate"):
+        axis = int(tokens[1]) if len(tokens) > 1 and tokens[1].isdigit() else None
+        return "clear", axis, [], []
+    if first in ("show", "info"):
+        return "show", None, [], []
+
+    try:
+        axis = int(tokens[0])
+    except ValueError:
+        axis = 0
+
+    w_gates = []
+    b_gates = []
+    current_type = None
+    curr_pair = []
+    is_energy = False
+
+    for tok in tokens[1:]:
+        t_low = tok.lower()
+        if t_low in ("--energy", "-e"):
+            is_energy = True
+            continue
+        if t_low in ("--channel", "--ch", "-c"):
+            is_energy = False
+            continue
+        if t_low in ("w", "gate", "peak", "roi"):
+            if len(curr_pair) == 2:
+                (w_gates if current_type == "w" else b_gates).append(curr_pair)
+                curr_pair = []
+            current_type = "w"
+            continue
+        if t_low in ("b", "bg", "background"):
+            if len(curr_pair) == 2:
+                (w_gates if current_type == "w" else b_gates).append(curr_pair)
+                curr_pair = []
+            current_type = "b"
+            continue
+        try:
+            val = float(tok)
+            curr_pair.append(val)
+            if len(curr_pair) == 2:
+                if current_type == "w":
+                    w_gates.append(curr_pair)
+                elif current_type == "b":
+                    b_gates.append(curr_pair)
+                curr_pair = []
+        except ValueError:
+            pass
+
+    if len(curr_pair) == 2 and current_type:
+        (w_gates if current_type == "w" else b_gates).append(curr_pair)
+
+    if is_energy:
+        cal = session.get_cal(axis)
+        w_gates = [[energy_to_ch(p[0], cal), energy_to_ch(p[1], cal)] for p in w_gates]
+        b_gates = [[energy_to_ch(p[0], cal), energy_to_ch(p[1], cal)] for p in b_gates]
+
+    return "apply", axis, w_gates, b_gates
+
+
+def parse_cal_args(tokens: list):
+    """Parse calibration command tokens into (action, axis, coeffs)."""
+    if not tokens or tokens[0].lower() in ("show", "info"):
+        axis = int(tokens[1]) if len(tokens) > 1 and tokens[1].isdigit() else None
+        return "show", axis, None
+    if tokens[0].lower() in ("clear", "reset"):
+        axis = int(tokens[1]) if len(tokens) > 1 and tokens[1].isdigit() else None
+        return "clear", axis, None
+
+    first = tokens[0].lower()
+    if first.isdigit():
+        axis = int(first)
+        coeffs = [float(x) for x in tokens[1:]]
+        return "set", axis, coeffs
+    elif first in ("x", "det1", "det_1"):
+        axis = 0
+        coeffs = [float(x) for x in tokens[1:]]
+        return "set", axis, coeffs
+    elif first in ("y", "det2", "det_2"):
+        axis = 1
+        coeffs = [float(x) for x in tokens[1:]]
+        return "set", axis, coeffs
+    else:
+        coeffs = [float(x) for x in tokens]
+        return "set", None, coeffs
+
+
+class CMATSession:
+    """
+    Central state container for python-cmat spectroscopy sessions.
+    Maintains loaded matrices, per-axis calibration parameters, active gates,
+    1D and 2D fits, and user preferences.
+    """
+    def __init__(self, config: dict = None, config_path: Path = None):
+        self.matrices = []
+        self.active_index = 0
+        self.config = config.copy() if config else DEFAULT_CONFIG.copy()
+        self.config_path = config_path
+
+        c0 = parse_cal_coefficients(self.config.get("cal_0", self.config.get("cal", [0.0, 1.0, 0.0])))
+        c1 = parse_cal_coefficients(self.config.get("cal_1", self.config.get("cal", [0.0, 1.0, 0.0])))
+        self.cal = {0: c0, 1: c1}
+        self.gates = {0: None, 1: None}
+        self.fits_1d = {0: None, 1: None}
+        self.fit_2d = None
+
+    def add_matrix_file(self, path: Path, name: str = None, cal: dict = None) -> int:
         path = Path(path).resolve()
-        for idx, m in enumerate(cls.matrices):
+        for idx, m in enumerate(self.matrices):
             if m["path"] == str(path):
+                if name:
+                    m["name"] = name
                 return idx
 
         reader = CMATReader(path)
@@ -2622,8 +2952,21 @@ class CMATWebHandler(BaseHTTPRequestHandler):
         proj = reader.get_projection()
         matrix_name = name or path.name
 
-        matrix_entry = {
-            "index": len(cls.matrices),
+        matrix_cal = {0: list(self.cal[0]), 1: list(self.cal[1])}
+        if cal:
+            if isinstance(cal, dict):
+                for k, v in cal.items():
+                    matrix_cal[int(k)] = parse_cal_coefficients(v)
+            elif isinstance(cal, (list, tuple)):
+                if len(cal) == 6:
+                    matrix_cal[0] = parse_cal_coefficients(cal[:3])
+                    matrix_cal[1] = parse_cal_coefficients(cal[3:])
+                elif len(cal) >= 3:
+                    matrix_cal[0] = parse_cal_coefficients(cal[:3])
+                    matrix_cal[1] = parse_cal_coefficients(cal[:3])
+
+        entry = {
+            "index": len(self.matrices),
             "name": matrix_name,
             "filename": path.name,
             "path": str(path),
@@ -2635,26 +2978,886 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             "max_count": int(np.max(mat)),
             "nonzero_bins": int(np.count_nonzero(mat)),
             "is_symmetric": bool(reader.is_symmetric),
-            "cal": cal if cal is not None else cls.global_cal,
+            "cal": matrix_cal,
         }
-        cls.matrices.append(matrix_entry)
+        self.matrices.append(entry)
+        return len(self.matrices) - 1
+
+    def get_active_matrix(self) -> dict:
+        if self.matrices and 0 <= self.active_index < len(self.matrices):
+            return self.matrices[self.active_index]
+        return None
+
+    def select_matrix(self, identifier) -> int:
+        if not self.matrices:
+            raise ValueError("No matrices loaded in session.")
+        try:
+            val = int(identifier)
+            if 0 <= val < len(self.matrices):
+                self.active_index = val
+                return val
+            elif 1 <= val <= len(self.matrices):
+                self.active_index = val - 1
+                return val - 1
+        except ValueError:
+            pass
+
+        ident_str = str(identifier).strip().lower()
+        for idx, m in enumerate(self.matrices):
+            if m["name"].lower() == ident_str or m["filename"].lower() == ident_str:
+                self.active_index = idx
+                return idx
+        for idx, m in enumerate(self.matrices):
+            if ident_str in m["name"].lower() or ident_str in m["filename"].lower():
+                self.active_index = idx
+                return idx
+        raise KeyError(f"Matrix '{identifier}' not found in loaded matrices.")
+
+    def close_matrix(self, identifier=None) -> None:
+        if not self.matrices:
+            return
+        idx = self.active_index if identifier is None else self.select_matrix(identifier)
+        self.matrices.pop(idx)
+        for i, m in enumerate(self.matrices):
+            m["index"] = i
+        if self.active_index >= len(self.matrices):
+            self.active_index = max(0, len(self.matrices) - 1)
+
+    def get_cal(self, axis: int = 0) -> list:
+        axis = int(axis)
+        m = self.get_active_matrix()
+        if m and "cal" in m:
+            mc = m["cal"]
+            if isinstance(mc, dict) and axis in mc:
+                return mc[axis]
+            elif isinstance(mc, (list, tuple)):
+                if len(mc) > 0 and isinstance(mc[0], (list, tuple)):
+                    return mc[axis] if axis < len(mc) else [0.0, 1.0, 0.0]
+                return list(mc)
+        return self.cal.get(axis, [0.0, 1.0, 0.0])
+
+    def set_cal(self, axis, coeffs: list) -> None:
+        c = parse_cal_coefficients(coeffs)
+        if axis is None:
+            self.cal[0] = list(c)
+            self.cal[1] = list(c)
+            m = self.get_active_matrix()
+            if m and "cal" in m and isinstance(m["cal"], dict):
+                m["cal"][0] = list(c)
+                m["cal"][1] = list(c)
+        else:
+            axis = int(axis)
+            self.cal[axis] = list(c)
+            m = self.get_active_matrix()
+            if m and "cal" in m and isinstance(m["cal"], dict):
+                m["cal"][axis] = list(c)
+
+    def is_calibrated(self, axis: int = 0) -> bool:
+        return is_calibrated_coeffs(self.get_cal(axis))
+
+    def get_spectrum(self, axis: int = 0) -> np.ndarray:
+        m = self.get_active_matrix()
+        if not m:
+            return np.array([], dtype=np.float64)
+        other_axis = 1 - int(axis)
+        gate = self.gates.get(other_axis)
+        if gate and "net_spec" in gate:
+            return np.array(gate["net_spec"], dtype=np.float64)
+        mat = m["matrix"]
+        if axis == 0:
+            if m["is_symmetric"] and m["proj"] is not None:
+                return m["proj"]
+            return np.sum(mat, axis=0, dtype=np.float64)
+        else:
+            if m["is_symmetric"] and m["proj"] is not None:
+                return m["proj"]
+            return np.sum(mat, axis=1, dtype=np.float64)
+
+
+class CMATCommandInterpreter:
+    """
+    Command-line and macro script execution engine for python-cmat.
+    Executes commands for CMATSession in headless mode (-m, -c, or -i).
+    """
+    def __init__(self, session: CMATSession):
+        self.session = session
+        self.macro_depth = 0
+        self.max_macro_depth = 10
+        self.last_gated_axis = None
+        self.should_exit = False
+
+    def execute_batch(self, cmd_string: str) -> bool:
+        """Execute one or more commands (may contain semicolon-separated commands)."""
+        self.should_exit = False
+        res = self.execute_line(cmd_string)
+        return True if self.should_exit else res
+
+    def execute_line(self, line: str) -> bool:
+        """Execute a single line of commands (may contain semicolon-separated commands)."""
+        line = line.strip()
+        if not line or line.startswith("#") or line.startswith("//"):
+            return True
+
+        parts = []
+        try:
+            in_quote = None
+            cur = []
+            for ch in line:
+                if ch in ('"', "'"):
+                    if in_quote == ch:
+                        in_quote = None
+                    elif in_quote is None:
+                        in_quote = ch
+                    cur.append(ch)
+                elif ch == ';' and in_quote is None:
+                    part_str = "".join(cur).strip()
+                    if part_str:
+                        parts.append(part_str)
+                    cur = []
+                else:
+                    cur.append(ch)
+            part_str = "".join(cur).strip()
+            if part_str:
+                parts.append(part_str)
+        except Exception:
+            parts = [line]
+
+        for part in parts:
+            if not self._execute_single_command(part):
+                return False
+        return True
+
+    def _execute_single_command(self, cmd_str: str) -> bool:
+        cmd_str = cmd_str.strip()
+        if not cmd_str or cmd_str.startswith("#") or cmd_str.startswith("//"):
+            return True
+
+        import shlex
+        try:
+            tokens = shlex.split(cmd_str)
+        except Exception as e:
+            print(f"[!] Syntax error in command '{cmd_str}': {e}", file=sys.stderr)
+            return True
+
+        if not tokens:
+            return True
+
+        verb = tokens[0].lower()
+        args = tokens[1:]
+
+        if verb in ("quit", "exit", "q"):
+            self.should_exit = True
+            return False
+        elif verb in ("help", "?"):
+            self.cmd_help(args)
+        elif verb in ("echo", "print"):
+            self.cmd_echo(args)
+        elif verb in ("sleep", "wait"):
+            self.cmd_sleep(args)
+        elif verb in ("load", "open"):
+            self.cmd_load(args)
+        elif verb in ("matrix", "select", "use"):
+            self.cmd_matrix(args)
+        elif verb in ("list", "matrices", "ls"):
+            self.cmd_list(args)
+        elif verb in ("info", "metadata"):
+            self.cmd_info(args)
+        elif verb in ("close", "unload"):
+            self.cmd_close(args)
+        elif verb == "cal":
+            self.cmd_cal(args)
+        elif verb in ("gate", "ungate"):
+            self.cmd_gate(args if verb == "gate" else ["clear"] + args)
+        elif verb in ("search", "find"):
+            self.cmd_search(args)
+        elif verb == "fit_1d":
+            self.cmd_fit_1d(args)
+        elif verb in ("fit_multiplet", "fit_multi"):
+            self.cmd_fit_multiplet(args)
+        elif verb in ("fit_all", "fitall"):
+            self.cmd_fit_all(args)
+        elif verb in ("clear_fits", "clearfit"):
+            self.cmd_clear_fits(args)
+        elif verb in ("fit_2d", "fit2d"):
+            self.cmd_fit_2d(args)
+        elif verb in ("pdf_1d", "pdf1d"):
+            self.cmd_pdf_1d(args)
+        elif verb in ("pdf_2d", "pdf2d"):
+            self.cmd_pdf_2d(args)
+        elif verb in ("export_1d", "export1d"):
+            self.cmd_export_1d(args)
+        elif verb in ("export_amat", "export_mat", "exportamat"):
+            self.cmd_export_amat(args)
+        elif verb in ("macro", "run") or verb.startswith("@"):
+            if verb.startswith("@"):
+                args = [verb[1:]] + args
+            self.cmd_macro(args)
+        else:
+            print(f"[!] Unknown command '{verb}'. Type 'help' for a list of available commands.", file=sys.stderr)
+
+        return True
+
+    def cmd_help(self, args: list):
+        bar = "─" * 85
+        print(f"\n{bar}")
+        print(" python-cmat Analysis Commands Reference:")
+        print(bar)
+        print("  Matrix & Session:")
+        print("    load <path> [alias]                 Load .cmat matrix file into session")
+        print("    matrix <name_or_index>              Select active matrix for analysis")
+        print("    list                                List all loaded matrices with indices and counts")
+        print("    info                                Display active matrix metadata and calibrations")
+        print("    close [name_or_index]               Unload matrix from session")
+        print()
+        print("  Energy Calibration (Per-Axis):")
+        print("    cal show                            Display current calibration formulas for both axes")
+        print("    cal clear [axis]                    Reset calibration to channel coordinates")
+        print("    cal <axis> <a0> <a1> [a2]           Set quadratic calibration for Det 1 (0) or Det 2 (1)")
+        print("    cal <a0> <a1> [a2]                  Set quadratic calibration for both axes simultaneously")
+        print()
+        print("  1D Coincidence Gating:")
+        print("    gate <axis> w <w0> <w1> [b <b0> <b1>] Coincidence gate with normalized BG subtraction")
+        print("    gate clear [axis]                   Clear coincidence gates and restore full projection")
+        print("    gate show                           Display active gate windows and BG scale factor")
+        print()
+        print("  1D Peak Search & Fitting:")
+        print("    search [axis] [--method M] [--snr N] Search peaks on 1D/gated spectrum (cwt, prominence)")
+        print("    fit_1d <axis> <ch_or_e> [--model M] Fit single photopeak on active 1D spectrum")
+        print("    fit_multiplet <axis> <p1> <p2> ...  Simultaneously fit coupled multiplet on straight baseline")
+        print("    fit_all [axis] [--range min max]    Auto-fit all candidate peaks with continuum baseline")
+        print("    clear_fits [1d|2d|all]              Clear stored fit results")
+        print()
+        print("  2D Coincidence Fitting:")
+        print("    fit_2d <x> <y> [--roi N] [--verbose] 2D coincidence fit (Gamba 4-component decomposition)")
+        print()
+        print("  Export & Publishing:")
+        print("    pdf_1d <axis> <out.pdf> [--fit]     Export vector PDF of 1D (or gated) spectrum")
+        print("    pdf_2d <out.pdf> [--x ...] [--fit]  Export vector PDF of 2D coincidence matrix")
+        print("    export_1d <axis> <out.dat>          Export 1D spectrum to ASCII data table")
+        print("    export_amat <out.mat>               Export 2D matrix to ASCII matrix format")
+        print()
+        print("  Scripting & Control:")
+        print("    macro <filepath>                    Execute commands from macro script file")
+        print("    echo <message>                      Print message to terminal")
+        print("    sleep <seconds>                     Pause execution")
+        print("    quit / exit / q                     Exit shell or stop execution")
+        print(f"{bar}\n")
+
+    def cmd_echo(self, args: list):
+        print(" ".join(args))
+
+    def cmd_sleep(self, args: list):
+        if args:
+            try:
+                time.sleep(float(args[0]))
+            except ValueError:
+                pass
+
+    def cmd_load(self, args: list):
+        if not args:
+            print("[!] Usage: load <filepath> [alias]", file=sys.stderr)
+            return
+        path_str = args[0]
+        alias = args[1] if len(args) > 1 else None
+        p = Path(path_str)
+        if not p.exists():
+            p_alt = Path(__file__).resolve().parent / path_str
+            if p_alt.exists():
+                p = p_alt
+            else:
+                print(f"[!] Error: File '{path_str}' not found.", file=sys.stderr)
+                return
+        idx = self.session.add_matrix_file(p, name=alias)
+        self.session.active_index = idx
+        m = self.session.matrices[idx]
+        print(f"[*] Loaded [{idx + 1}] '{m['name']}' ({m['shape'][0]}×{m['shape'][1]}, {m['total_counts']:,} counts, symmetric={m['is_symmetric']})")
+
+    def cmd_matrix(self, args: list):
+        if not args:
+            print("[!] Usage: matrix <name_or_index>", file=sys.stderr)
+            return
+        try:
+            idx = self.session.select_matrix(args[0])
+            m = self.session.get_active_matrix()
+            print(f"[*] Active matrix switched to [{idx + 1}/{len(self.session.matrices)}]: '{m['name']}' ({m['shape'][0]}×{m['shape'][1]}, {m['total_counts']:,} counts)")
+        except Exception as e:
+            print(f"[!] Error selecting matrix: {e}", file=sys.stderr)
+
+    def cmd_list(self, args: list):
+        if not self.session.matrices:
+            print("[*] No matrices currently loaded.")
+            return
+        bar = "─" * 85
+        print(f"\n{bar}")
+        print(f" {'Idx':<4} {'Act':<4} {'Name':<24} {'Shape':<12} {'Total Counts':<14} {'Max Count':<10} {'Symmetric':<10}")
+        print(bar)
+        for idx, m in enumerate(self.session.matrices):
+            act = "*" if idx == self.session.active_index else " "
+            shape_str = f"{m['shape'][0]}×{m['shape'][1]}"
+            tot_str = f"{m['total_counts']:,}"
+            max_str = f"{m['max_count']:,}"
+            sym_str = "Yes" if m['is_symmetric'] else "No"
+            print(f"  {idx + 1:<3} {act:^4} {m['name'][:23]:<24} {shape_str:<12} {tot_str:<14} {max_str:<10} {sym_str:<10}")
+        print(f"{bar}\n")
+
+    def cmd_info(self, args: list):
+        m = self.session.get_active_matrix()
+        if not m:
+            print("[!] No active matrix loaded.", file=sys.stderr)
+            return
+        bar = "═" * 70
+        subbar = "─" * 70
+        print(f"\n{bar}")
+        print(f" Active Matrix Metadata: '{m['name']}'")
+        print(subbar)
+        print(f"  File Path      : {m['path']}")
+        print(f"  Dimensions     : {m['shape'][0]} × {m['shape'][1]} channels")
+        print(f"  Total Counts   : {m['total_counts']:,}")
+        print(f"  Max Bin Count  : {m['max_count']:,}")
+        print(f"  Nonzero Bins   : {m['nonzero_bins']:,}")
+        print(f"  Symmetric      : {'Yes' if m['is_symmetric'] else 'No'}")
+        c0 = self.session.get_cal(0)
+        c1 = self.session.get_cal(1)
+        c0_cal = "Calibrated" if self.session.is_calibrated(0) else "Uncalibrated"
+        c1_cal = "Calibrated" if self.session.is_calibrated(1) else "Uncalibrated"
+        print(f"  Det 1 / X Cal  : E = {c0[0]:.4f} + {c0[1]:.6f}*ch + {c0[2]:.8e}*ch^2 [{c0_cal}]")
+        print(f"  Det 2 / Y Cal  : E = {c1[0]:.4f} + {c1[1]:.6f}*ch + {c1[2]:.8e}*ch^2 [{c1_cal}]")
+        g0 = self.session.gates.get(0)
+        g1 = self.session.gates.get(1)
+        if g0:
+            print(f"  Active Gate 0  : {len(g0.get('w_gates', []))} peak window(s) on Det 1 -> Coinc on Det 2")
+        if g1:
+            print(f"  Active Gate 1  : {len(g1.get('w_gates', []))} peak window(s) on Det 2 -> Coinc on Det 1")
+        print(f"{bar}\n")
+
+    def cmd_close(self, args: list):
+        ident = args[0] if args else None
+        try:
+            self.session.close_matrix(ident)
+            print("[*] Matrix closed.")
+        except Exception as e:
+            print(f"[!] Error closing matrix: {e}", file=sys.stderr)
+
+    def cmd_cal(self, args: list):
+        action, axis, coeffs = parse_cal_args(args)
+        if action == "show":
+            bar = "═" * 84
+            print(f"\n{bar}")
+            print(" Energy Calibration (Quadratic: E = a0 + a1*ch + a2*ch^2)")
+            print("─" * 84)
+            axes = [axis] if axis is not None else sorted(self.session.cal.keys())
+            if not axes:
+                axes = [0, 1]
+            for ax in axes:
+                c = self.session.get_cal(ax)
+                status = "Calibrated (keV)" if self.session.is_calibrated(ax) else "Uncalibrated (Channel)"
+                det_label = f"Det {ax + 1} / Axis {ax}" + (" (X)" if ax == 0 else (" (Y)" if ax == 1 else ""))
+                print(f"  {det_label:<24}: E = {c[0]:.4f} + {c[1]:.6f}*ch + {c[2]:.8e}*ch^2  [{status}]")
+            print(f"{bar}\n")
+        elif action == "clear":
+            self.session.set_cal(axis, [0.0, 1.0, 0.0])
+            target = f"Axis {axis}" if axis is not None else "all axes"
+            print(f"[*] Cleared energy calibration for {target} (reset to 1 ch/keV).")
+        elif action == "set":
+            self.session.set_cal(axis, coeffs)
+            c = parse_cal_coefficients(coeffs)
+            if axis is None:
+                print(f"[*] Calibration set for both axes: E = {c[0]:.4f} + {c[1]:.6f}*ch + {c[2]:.8e}*ch^2")
+                print("    [Tip: Set per-axis calibration with 'cal <axis> <a0> <a1> [a2]', e.g. 'cal 0 0.5 1.002 0.000001']")
+            else:
+                det = f"Det {axis + 1} / Axis {axis}" + (" (X)" if axis == 0 else (" (Y)" if axis == 1 else ""))
+                print(f"[*] Calibration set for {det}: E = {c[0]:.4f} + {c[1]:.6f}*ch + {c[2]:.8e}*ch^2")
+
+    def cmd_gate(self, args: list):
+        action, axis, w_gates, b_gates = parse_gate_args(args, self.session)
+        if action == "clear":
+            if axis is None:
+                self.session.gates = {0: None, 1: None}
+                print("[*] Cleared all active coincidence gates.")
+            else:
+                self.session.gates[axis] = None
+                print(f"[*] Cleared coincidence gate on Axis {axis}.")
+            self.last_gated_axis = None
+            return
+
+        if action == "show":
+            bar = "─" * 70
+            print(f"\n{bar}\n Active Coincidence Gates:\n{bar}")
+            for ax in (0, 1):
+                g = self.session.gates.get(ax)
+                if g:
+                    det = "Det 1 (X)" if ax == 0 else "Det 2 (Y)"
+                    opp = "Det 2 (Y)" if ax == 0 else "Det 1 (X)"
+                    w_str = ", ".join(f"[{w[0]}..{w[1]}]" for w in g.get("w_gates", []))
+                    b_str = ", ".join(f"[{b[0]}..{b[1]}]" for b in g.get("b_gates", [])) if g.get("b_gates") else "None"
+                    print(f"  Gate on {det} -> Slices on {opp}:")
+                    print(f"    Peak Windows (W)      : {w_str} (width: {g.get('w_width', 0)} ch)")
+                    print(f"    Background Windows (B): {b_str} (width: {g.get('b_width', 0)} ch)")
+                    print(f"    BG Scale Factor       : {g.get('scale', 0.0):.4f}")
+                    print(f"    Net Gated Counts      : {g.get('net_counts', 0):,}")
+                else:
+                    det = "Det 1 (X)" if ax == 0 else "Det 2 (Y)"
+                    print(f"  {det}: No active gate")
+            print(f"{bar}\n")
+            return
+
+        m = self.session.get_active_matrix()
+        if not m:
+            print("[!] No active matrix loaded.", file=sys.stderr)
+            return
+
+        if not w_gates:
+            print("[!] Error: At least one peak window 'w <min> <max>' is required.", file=sys.stderr)
+            return
+
+        gate_res = compute_1d_gate(m["matrix"], axis, w_gates, b_gates)
+        self.session.gates[axis] = gate_res
+        self.last_gated_axis = 1 - axis
+
+        src_det = "Det 1 (X)" if axis == 0 else "Det 2 (Y)"
+        dst_det = "Det 2 (Y)" if axis == 0 else "Det 1 (X)"
+        w_str = ", ".join(f"[{w[0]}..{w[1]}]" for w in gate_res["w_gates"])
+        b_str = ", ".join(f"[{b[0]}..{b[1]}]" for b in gate_res["b_gates"]) if gate_res["b_gates"] else "None"
+
+        print(f"[*] Applied coincidence gate on {src_det}:")
+        print(f"    Peak Windows (W)      : {w_str} (total width: {gate_res['w_width']} ch)")
+        if gate_res["b_gates"]:
+            print(f"    Background Windows (B): {b_str} (total width: {gate_res['b_width']} ch)")
+            print(f"    BG Normalization Scale: {gate_res['scale']:.4f}")
+        print(f"    Gated Coincidence on  : {dst_det} (Total Net Counts: {gate_res['net_counts']:,})")
+
+    def cmd_search(self, args: list):
+        pos, flags = parse_cmd_tokens(args)
+        if pos:
+            try:
+                axis = int(pos[0])
+            except ValueError:
+                axis = 0
+        else:
+            axis = self.last_gated_axis if self.last_gated_axis is not None else 0
+
+        method = str(flags.get("method", "cwt")).lower()
+        snr = float(flags.get("snr", flags.get("min_snr", 9.0)))
+        fwhm = float(flags.get("fwhm", flags.get("fwhm_est", 4.0)))
+
+        c_min = 0
+        c_max = None
+        if "range" in flags:
+            r = flags["range"] if isinstance(flags["range"], (list, tuple)) else [flags["range"]]
+            if len(r) >= 2:
+                c_min, c_max = int(float(r[0])), int(float(r[1]))
+
+        spec = self.session.get_spectrum(axis)
+        if len(spec) == 0:
+            print("[!] No spectrum available for peak search.", file=sys.stderr)
+            return
+
+        axis_cal = self.session.get_cal(axis)
+        res = find_peaks_1d(spec, ch_min=c_min, ch_max=c_max, method=method, min_snr=snr, fwhm_est=fwhm, cal=axis_cal)
+
+        peaks = res.get("peaks", [])
+        is_gated = bool(self.session.gates.get(1 - axis))
+        det_name = f"Det {axis + 1} ({'X' if axis == 0 else 'Y'}{' Gated' if is_gated else ''})"
+        bar = "─" * 75
+        print(f"\n{bar}")
+        print(f" Peak Search Results ({det_name}, Method: {method.upper()}, Min SNR: {snr})")
+        print(bar)
+        print(f"  {'#':<4} {'Centroid (ch)':<16} {'Energy (keV)':<16} {'Amplitude (cts)':<18} {'SNR':<8}")
+        for idx, p in enumerate(peaks):
+            ch_val = p.get('centroid_ch', p.get('channel', 0.0))
+            e_val = p.get('centroid_e', p.get('energy', ch_to_energy(ch_val, axis_cal)))
+            amp_val = p.get('amplitude', p.get('counts', 0.0))
+            c_ch = f"{ch_val:10.2f}"
+            c_e = f"{e_val:10.2f}"
+            amp = f"{amp_val:12,.1f}"
+            snr_val = f"{p.get('snr', 0.0):6.1f}"
+            print(f"  {idx + 1:<4} {c_ch:<16} {c_e:<16} {amp:<18} {snr_val:<8}")
+        print(bar)
+        print(f" Found {len(peaks)} candidate peak(s) in {res.get('elapsed_ms', 0.0):.1f} ms.\n")
+
+    def cmd_fit_1d(self, args: list):
+        pos, flags = parse_cmd_tokens(args)
+        if len(pos) < 2:
+            print("[!] Usage: fit_1d <axis> <center_ch_or_energy> [--model gaussian|gaussian_tail|hypermet] [--fwhm_mult 4.0] [--roi half_width] [--energy]", file=sys.stderr)
+            return
+        axis = int(pos[0])
+        center = float(pos[1])
+        axis_cal = self.session.get_cal(axis)
+        is_cal = self.session.is_calibrated(axis)
+
+        if flags.get("energy") or flags.get("e"):
+            center = energy_to_ch(center, axis_cal)
+
+        model = str(flags.get("model", flags.get("fit_type", "gaussian"))).lower()
+        fwhm_mult = float(flags.get("fwhm_mult", 4.0))
+        roi = int(float(flags["roi"])) if "roi" in flags else None
+
+        spec = self.session.get_spectrum(axis)
+        if len(spec) == 0:
+            print("[!] No spectrum available for fitting.", file=sys.stderr)
+            return
+
+        m = self.session.get_active_matrix()
+        mat_name = m["name"] if m else "matrix"
+        is_gated = bool(self.session.gates.get(1 - axis))
+        det_name = f"Det {axis + 1} ({'X' if axis == 0 else 'Y'}{' Gated Coincidence' if is_gated else ' Projection'})"
+
+        try:
+            res = fit_gaussian_peak(np.arange(len(spec)) + 0.5, spec, center, fit_type=model, fwhm_mult=fwhm_mult, roi_half_width=roi, cal=axis_cal)
+            res["axis"] = axis
+            self.session.fits_1d[axis] = res
+            verbosity = "detailed" if (flags.get("verbose") or flags.get("v")) else "compact"
+            print_fit_terminal_report(res, det_name, mat_name, is_cal, verbosity=verbosity)
+        except Exception as e:
+            print(f"[!] 1D peak fit error: {e}", file=sys.stderr)
+
+    def cmd_fit_multiplet(self, args: list):
+        pos, flags = parse_cmd_tokens(args)
+        if len(pos) < 2:
+            print("[!] Usage: fit_multiplet <axis> <ch1> <ch2> ... [--model gaussian|...] [--region left right] [--energy]", file=sys.stderr)
+            return
+        axis = int(pos[0])
+        axis_cal = self.session.get_cal(axis)
+        is_cal = self.session.is_calibrated(axis)
+
+        raw_peaks = [float(x) for x in pos[1:]]
+        if flags.get("energy") or flags.get("e"):
+            peak_channels = [energy_to_ch(p, axis_cal) for p in raw_peaks]
+        else:
+            peak_channels = raw_peaks
+
+        model = str(flags.get("model", "gaussian")).lower()
+        fwhm_est = float(flags.get("fwhm_est", 4.0))
+        fwhm_mult = float(flags.get("fwhm_mult", 4.0))
+
+        region = None
+        if "region" in flags:
+            r = flags["region"] if isinstance(flags["region"], (list, tuple)) else [flags["region"]]
+            if len(r) >= 2:
+                r0, r1 = float(r[0]), float(r[1])
+                if flags.get("energy") or flags.get("e"):
+                    r0, r1 = energy_to_ch(r0, axis_cal), energy_to_ch(r1, axis_cal)
+                region = [r0, r1]
+
+        spec = self.session.get_spectrum(axis)
+        ch_min = int(min(peak_channels) - fwhm_est * 4) if peak_channels else 0
+        ch_max = int(max(peak_channels) + fwhm_est * 4) if peak_channels else len(spec) - 1
+
+        res = fit_all_peaks_1d(spec, ch_min, ch_max, peak_channels, fit_type=model, fwhm_est=fwhm_est, cal=axis_cal, fwhm_mult=fwhm_mult, region=region)
+        if res.get("success"):
+            self.session.fits_1d[axis] = res
+            m = self.session.get_active_matrix()
+            det_name = f"Det {axis + 1} ({'X' if axis == 0 else 'Y'})"
+            print_multi_fit_terminal_report(res, det_name, m["name"] if m else "matrix", is_cal)
+        else:
+            print(f"[!] Multiplet fit failed: {res.get('error', 'Unknown error')}", file=sys.stderr)
+
+    def cmd_fit_all(self, args: list):
+        pos, flags = parse_cmd_tokens(args)
+        axis = int(pos[0]) if pos else (self.last_gated_axis if self.last_gated_axis is not None else 0)
+        axis_cal = self.session.get_cal(axis)
+        is_cal = self.session.is_calibrated(axis)
+
+        model = str(flags.get("model", "gaussian")).lower()
+        snr = float(flags.get("snr", 9.0))
+        fwhm_est = float(flags.get("fwhm_est", 4.0))
+        spec = self.session.get_spectrum(axis)
+
+        ch_min = 0
+        ch_max = len(spec) - 1
+        if "range" in flags:
+            r = flags["range"] if isinstance(flags["range"], (list, tuple)) else [flags["range"]]
+            if len(r) >= 2:
+                r0, r1 = float(r[0]), float(r[1])
+                if flags.get("energy") or flags.get("e"):
+                    r0, r1 = energy_to_ch(r0, axis_cal), energy_to_ch(r1, axis_cal)
+                ch_min, ch_max = int(min(r0, r1)), int(max(r0, r1))
+
+        search_res = find_peaks_1d(spec, ch_min=ch_min, ch_max=ch_max, method="cwt", min_snr=snr, fwhm_est=fwhm_est, cal=axis_cal)
+        peak_chs = [p.get("channel", p.get("centroid_ch", 0.0)) for p in search_res.get("peaks", [])]
+
+        res = fit_all_peaks_1d(spec, ch_min, ch_max, peak_chs, fit_type=model, fwhm_est=fwhm_est, cal=axis_cal)
+        if res.get("success"):
+            self.session.fits_1d[axis] = res
+            m = self.session.get_active_matrix()
+            det_name = f"Det {axis + 1} ({'X' if axis == 0 else 'Y'})"
+            print_multi_fit_terminal_report(res, det_name, m["name"] if m else "matrix", is_cal)
+        else:
+            print(f"[!] Auto-fit failed: {res.get('error', 'Unknown error')}", file=sys.stderr)
+
+    def cmd_clear_fits(self, args: list):
+        target = args[0].lower() if args else "all"
+        if target in ("1d", "all"):
+            self.session.fits_1d = {0: None, 1: None}
+        if target in ("2d", "all"):
+            self.session.fit_2d = None
+        print(f"[*] Cleared {target} fit cache.")
+
+    def cmd_fit_2d(self, args: list):
+        pos, flags = parse_cmd_tokens(args)
+        if len(pos) < 2:
+            print("[!] Usage: fit_2d <x_center> <y_center> [--model gaussian|gaussian_tail|hypermet] [--roi 16] [--verbose] [--energy]", file=sys.stderr)
+            return
+        x_c = float(pos[0])
+        y_c = float(pos[1])
+        cal_x = self.session.get_cal(0)
+        cal_y = self.session.get_cal(1)
+
+        if flags.get("energy") or flags.get("e"):
+            x_c = energy_to_ch(x_c, cal_x)
+            y_c = energy_to_ch(y_c, cal_y)
+
+        model = str(flags.get("model", "gaussian")).lower()
+        roi = int(float(flags.get("roi", 16)))
+        verbose = bool(flags.get("verbose") or flags.get("v"))
+
+        m = self.session.get_active_matrix()
+        if not m:
+            print("[!] No active matrix loaded.", file=sys.stderr)
+            return
+
+        mat = m["matrix"]
+        proj_y = m["proj"] if m["is_symmetric"] else np.sum(mat, axis=1, dtype=np.float64)
+        is_cal = (self.session.is_calibrated(0), self.session.is_calibrated(1))
+
+        try:
+            res = fit_2d_gaussian_peak(
+                mat, x_c, y_c, fit_type=model, cal_x=cal_x, cal_y=cal_y, roi_half_width=roi,
+                proj_x=m["proj"], proj_y=proj_y, total_counts=m["total_counts"]
+            )
+            self.session.fit_2d = res
+            print_fit_2d_terminal_report(res, m["name"], is_cal, verbosity="detailed" if verbose else "compact")
+        except Exception as e:
+            print(f"[!] 2D peak fit error: {e}", file=sys.stderr)
+
+    def cmd_pdf_1d(self, args: list):
+        pos, flags = parse_cmd_tokens(args)
+        if len(pos) < 2:
+            print("[!] Usage: pdf_1d <axis> <output_filename.pdf> [--range min max] [--log] [--zoom_y 1.0] [--fit] [--title '...']", file=sys.stderr)
+            return
+        axis = int(pos[0])
+        outfile = Path(pos[1])
+        spec = self.session.get_spectrum(axis)
+        if len(spec) == 0:
+            print("[!] No spectrum available for PDF export.", file=sys.stderr)
+            return
+
+        ch_start = 0
+        ch_end = len(spec) - 1
+        if "range" in flags:
+            r = flags["range"] if isinstance(flags["range"], (list, tuple)) else [flags["range"]]
+            if len(r) >= 2:
+                r0, r1 = float(r[0]), float(r[1])
+                if flags.get("energy") or flags.get("e"):
+                    axis_cal = self.session.get_cal(axis)
+                    r0, r1 = energy_to_ch(r0, axis_cal), energy_to_ch(r1, axis_cal)
+                ch_start, ch_end = int(r0), int(r1)
+
+        is_log = bool(flags.get("log"))
+        zoom_y = float(flags.get("zoom_y", 1.0))
+        fit_res = self.session.fits_1d.get(axis) if flags.get("fit") else None
+        title = flags.get("title")
+
+        pdf_bytes = generate_pdf_1d(
+            spec, ch_start, ch_end, is_log=is_log, zoom_y=zoom_y, fit_res=fit_res,
+            cal=self.session.get_cal(axis), title=title
+        )
+        outfile.parent.mkdir(parents=True, exist_ok=True)
+        outfile.write_bytes(pdf_bytes)
+        print(f"[+] Exported 1D spectrum PDF: {outfile.resolve()}")
+
+    def cmd_pdf_2d(self, args: list):
+        pos, flags = parse_cmd_tokens(args)
+        if not pos:
+            print("[!] Usage: pdf_2d <output_filename.pdf> [--x min max] [--y min max] [--cmap turbo] [--scale log] [--vmin N] [--vmax N] [--fit] [--title '...']", file=sys.stderr)
+            return
+        outfile = Path(pos[0])
+        m = self.session.get_active_matrix()
+        if not m:
+            print("[!] No active matrix loaded.", file=sys.stderr)
+            return
+
+        mat = m["matrix"]
+        H, W = mat.shape
+        x0, x1 = 0, W
+        y0, y1 = 0, H
+
+        cal_x = self.session.get_cal(0)
+        cal_y = self.session.get_cal(1)
+
+        if "x" in flags:
+            rx = flags["x"] if isinstance(flags["x"], (list, tuple)) else [flags["x"]]
+            if len(rx) >= 2:
+                v0, v1 = float(rx[0]), float(rx[1])
+                if flags.get("energy") or flags.get("e"):
+                    v0, v1 = energy_to_ch(v0, cal_x), energy_to_ch(v1, cal_x)
+                x0, x1 = int(v0), int(v1)
+
+        if "y" in flags:
+            ry = flags["y"] if isinstance(flags["y"], (list, tuple)) else [flags["y"]]
+            if len(ry) >= 2:
+                v0, v1 = float(ry[0]), float(ry[1])
+                if flags.get("energy") or flags.get("e"):
+                    v0, v1 = energy_to_ch(v0, cal_y), energy_to_ch(v1, cal_y)
+                y0, y1 = int(v0), int(v1)
+
+        cmap = str(flags.get("cmap", "turbo"))
+        scale = str(flags.get("scale", "log"))
+        vmin = float(flags.get("vmin", 0))
+        vmax = float(flags.get("vmax", 100))
+        fit_2d_res = self.session.fit_2d if flags.get("fit") else None
+        title = flags.get("title")
+
+        pdf_bytes = generate_pdf_2d(
+            mat, x0, x1, y0, y1, cmap_name=cmap, scale_mode=scale, vmin=vmin, vmax=vmax,
+            fit_2d_res=fit_2d_res, cal_x=cal_x, cal_y=cal_y, title=title
+        )
+        outfile.parent.mkdir(parents=True, exist_ok=True)
+        outfile.write_bytes(pdf_bytes)
+        print(f"[+] Exported 2D coincidence matrix PDF: {outfile.resolve()}")
+
+    def cmd_export_1d(self, args: list):
+        pos, flags = parse_cmd_tokens(args)
+        if len(pos) < 2:
+            print("[!] Usage: export_1d <axis> <output_filename.dat>", file=sys.stderr)
+            return
+        axis = int(pos[0])
+        outfile = Path(pos[1])
+        spec = self.session.get_spectrum(axis)
+        m = self.session.get_active_matrix()
+        hdr = f"Matrix: {m['name'] if m else 'unknown'} | Det {axis + 1} ({'X' if axis == 0 else 'Y'})"
+        export_1d_ascii(outfile, spec, cal=self.session.get_cal(axis), header=hdr)
+        print(f"[+] Exported 1D spectrum data: {outfile.resolve()}")
+
+    def cmd_export_amat(self, args: list):
+        pos, flags = parse_cmd_tokens(args)
+        if not pos:
+            print("[!] Usage: export_amat <output_filename.mat>", file=sys.stderr)
+            return
+        outfile = Path(pos[0])
+        m = self.session.get_active_matrix()
+        if not m:
+            print("[!] No active matrix loaded.", file=sys.stderr)
+            return
+        hdr = f"Matrix: {m['name']}"
+        export_amat_ascii(outfile, m["matrix"], header=hdr)
+        print(f"[+] Exported 2D matrix data: {outfile.resolve()}")
+
+    def cmd_macro(self, args: list):
+        if not args:
+            print("[!] Usage: macro <filepath>", file=sys.stderr)
+            return
+        mac_path = Path(args[0])
+        if not mac_path.exists():
+            mac_alt = Path(__file__).resolve().parent / args[0]
+            if mac_alt.exists():
+                mac_path = mac_alt
+            else:
+                print(f"[!] Error: Macro file '{args[0]}' not found.", file=sys.stderr)
+                return
+        self.execute_script(mac_path)
+
+    def execute_script(self, filepath: Path) -> bool:
+        if self.macro_depth >= self.max_macro_depth:
+            print(f"[!] Maximum macro recursion depth ({self.max_macro_depth}) exceeded.", file=sys.stderr)
+            return False
+
+        self.macro_depth += 1
+        print(f"[*] Executing macro: {filepath.name} ...")
+        t0 = time.time()
+        line_num = 0
+        try:
+            with open(filepath, "r", encoding="utf-8") as f:
+                for line in f:
+                    line_num += 1
+                    line_clean = line.strip()
+                    if not line_clean or line_clean.startswith("#") or line_clean.startswith("//"):
+                        continue
+                    if not self.execute_line(line_clean):
+                        if self.should_exit:
+                            print(f"[*] Macro '{filepath.name}' exited cleanly at line {line_num}.")
+                            return True
+                        print(f"[*] Macro '{filepath.name}' stopped at line {line_num}.")
+                        return False
+            print(f"[+] Macro '{filepath.name}' completed in {time.time() - t0:.2f}s.")
+            return True
+        except Exception as e:
+            print(f"[!] Error in macro '{filepath.name}' at line {line_num}: {e}", file=sys.stderr)
+            return False
+        finally:
+            self.macro_depth -= 1
+
+    def run_repl(self):
+        print("\n" + "═" * 75)
+        print("  python-cmat Interactive Headless Shell")
+        print("  Type 'help' for command list, 'quit' or Ctrl+D to exit.")
+        print("═" * 75 + "\n")
+        try:
+            import readline
+        except ImportError:
+            pass
+
+        while True:
+            try:
+                active = self.session.get_active_matrix()
+                mat_prompt = active["name"] if active else "no-matrix"
+                line = input(f"cmat [{mat_prompt}]> ")
+                if not self.execute_line(line):
+                    break
+            except (EOFError, KeyboardInterrupt):
+                print("\n[*] Exiting cmat shell.")
+                break
+            except Exception as e:
+                print(f"[!] Error: {e}", file=sys.stderr)
+
+
+class CMATWebHandler(BaseHTTPRequestHandler):
+    session: "CMATSession" = None
+    matrices: list = []
+    active_index: int = 0
+    reader: CMATReader = None
+    matrix: np.ndarray = None
+    proj: np.ndarray = None
+    cal: list = [0.0, 1.0, 0.0]
+    cal_0: list = [0.0, 1.0, 0.0]
+    cal_1: list = [0.0, 1.0, 0.0]
+    global_cal: list = [0.0, 1.0, 0.0]
+    config: dict = None
+    config_path: Path = None
+
+    @classmethod
+    def get_session(cls) -> "CMATSession":
+        if cls.session is None:
+            cls.session = CMATSession(cls.config, cls.config_path)
+        return cls.session
+
+    @classmethod
+    def add_matrix_file(cls, path: Path, name: str = None, cal=None) -> int:
+        session = cls.get_session()
+        idx = session.add_matrix_file(path, name=name, cal=cal)
+        cls.matrices = session.matrices
+        cls.active_index = session.active_index
         cls.sync_class_attrs()
-        return len(cls.matrices) - 1
+        return idx
 
     @classmethod
     def get_active_matrix(cls):
-        if cls.matrices and 0 <= cls.active_index < len(cls.matrices):
-            return cls.matrices[cls.active_index]
-        return None
+        session = cls.get_session()
+        return session.get_active_matrix()
 
     @classmethod
     def sync_class_attrs(cls):
-        m = cls.get_active_matrix()
+        session = cls.get_session()
+        cls.matrices = session.matrices
+        cls.active_index = session.active_index
+        m = session.get_active_matrix()
         if m:
             cls.reader = m["reader"]
             cls.matrix = m["matrix"]
             cls.proj = m["proj"]
-            cls.cal = m["cal"]
+            cls.cal = session.get_cal(0)
+            cls.cal_0 = session.get_cal(0)
+            cls.cal_1 = session.get_cal(1)
 
     @property
     def active_matrix_data(self):
@@ -2666,13 +3869,26 @@ class CMATWebHandler(BaseHTTPRequestHandler):
         if active_mat:
             info["filename"] = active_mat["name"]
             info["filepath"] = active_mat["path"]
-        info["cal"] = self.cal
+        session = self.get_session()
+        c0 = session.get_cal(0)
+        c1 = session.get_cal(1)
+        info["cal"] = c0
+        info["cal_0"] = c0
+        info["cal_1"] = c1
+        info["cal_axes"] = {
+            0: c0,
+            1: c1,
+            "0": c0,
+            "1": c1,
+        }
+        info["is_calibrated_0"] = session.is_calibrated(0)
+        info["is_calibrated_1"] = session.is_calibrated(1)
         info["config"] = self.config or DEFAULT_CONFIG
         info["config_file"] = self.config_path.name if self.config_path else CONFIG_FILENAME
         info["max_count"] = int(np.max(self.matrix)) if self.matrix is not None else 0
         info["total_counts"] = int(np.sum(self.matrix)) if self.matrix is not None else 0
         info["nonzero_bins"] = int(np.count_nonzero(self.matrix)) if self.matrix is not None else 0
-        info["active_index"] = self.active_index
+        info["active_index"] = session.active_index
         info["matrices"] = [
             {
                 "index": m["index"],
@@ -2684,8 +3900,10 @@ class CMATWebHandler(BaseHTTPRequestHandler):
                 "max_count": m["max_count"],
                 "nonzero_bins": m["nonzero_bins"],
                 "is_symmetric": m["is_symmetric"],
+                "cal_0": m.get("cal", {}).get(0, c0) if isinstance(m.get("cal"), dict) else c0,
+                "cal_1": m.get("cal", {}).get(1, c1) if isinstance(m.get("cal"), dict) else c1,
             }
-            for m in self.matrices
+            for m in session.matrices
         ]
         return info
 
@@ -2723,11 +3941,12 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             except ValueError:
                 idx = 0
 
-            if 0 <= idx < len(CMATWebHandler.matrices):
-                CMATWebHandler.active_index = idx
+            session = self.get_session()
+            if 0 <= idx < len(session.matrices):
+                session.select_matrix(idx)
                 CMATWebHandler.sync_class_attrs()
-                m = CMATWebHandler.matrices[idx]
-                print(f"\n[*] Active matrix switched to [{idx + 1}/{len(CMATWebHandler.matrices)}]: {m['name']} (Shape: {m['shape'][0]}×{m['shape'][1]}, Total counts: {m['total_counts']:,})", flush=True)
+                m = session.matrices[idx]
+                print(f"\n[*] Active matrix switched to [{idx + 1}/{len(session.matrices)}]: {m['name']} (Shape: {m['shape'][0]}×{m['shape'][1]}, Total counts: {m['total_counts']:,})", flush=True)
 
             self.send_response(200)
             self.send_header("Content-type", "application/json")
@@ -2744,15 +3963,20 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             roi_half_width = int(float(query.get("roi_half_width", [query.get("roi_width", [16])[0]])[0]))
             verbosity = query.get("verbosity", ["compact"])[0].lower()
 
-            is_cal = self.cal and (self.cal[0] != 0.0 or self.cal[1] != 1.0 or self.cal[2] != 0.0)
+            session = self.get_session()
+            cal_x = session.get_cal(0)
+            cal_y = session.get_cal(1)
+            is_cal_x = session.is_calibrated(0)
+            is_cal_y = session.is_calibrated(1)
+
             proj_y = self.proj if (self.reader and self.reader.is_symmetric) else np.sum(self.matrix, axis=1, dtype=np.float64)
             tot_counts = float(np.sum(self.proj))
             try:
                 res = fit_2d_gaussian_peak(
-                    self.matrix, x, y, fit_type=fit_type, cal=self.cal, roi_half_width=roi_half_width,
+                    self.matrix, x, y, fit_type=fit_type, cal_x=cal_x, cal_y=cal_y, roi_half_width=roi_half_width,
                     proj_x=self.proj, proj_y=proj_y, total_counts=tot_counts
                 )
-                print_fit_2d_terminal_report(res, self.reader.filename.name, is_cal, verbosity=verbosity)
+                print_fit_2d_terminal_report(res, self.reader.filename.name, (is_cal_x, is_cal_y), verbosity=verbosity)
             except Exception as e:
                 res = {"success": False, "error": str(e), "is_2d": True}
                 print(f"[!] 2D coincidence peak fit error at ({x:.1f}, {y:.1f}): {e}", file=sys.stderr)
@@ -2799,9 +4023,11 @@ class CMATWebHandler(BaseHTTPRequestHandler):
                     spec = np.sum(self.matrix[:, x0:x1], axis=1, dtype=np.float64)
                 det_name = "Det 2 (Y Projection)"
 
-            is_cal = self.cal and (self.cal[0] != 0.0 or self.cal[1] != 1.0 or self.cal[2] != 0.0)
+            session = self.get_session()
+            axis_cal = session.get_cal(axis)
+            is_cal = session.is_calibrated(axis)
             try:
-                res = fit_gaussian_peak(np.arange(len(spec)) + 0.5, spec, channel, fit_type=fit_type, fwhm_mult=fwhm_mult, cal=self.cal)
+                res = fit_gaussian_peak(np.arange(len(spec)) + 0.5, spec, channel, fit_type=fit_type, fwhm_mult=fwhm_mult, cal=axis_cal)
                 res["axis"] = axis
                 print_fit_terminal_report(res, det_name, self.reader.filename.name, is_cal, verbosity=verbosity)
             except Exception as e:
@@ -2876,11 +4102,13 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             else:
                 ch_min, ch_max = 0, len(spec)
 
-            is_cal = self.cal and (self.cal[0] != 0.0 or self.cal[1] != 1.0 or self.cal[2] != 0.0)
+            session = self.get_session()
+            axis_cal = session.get_cal(axis)
+            is_cal = session.is_calibrated(axis)
             try:
                 res = find_peaks_1d(
                     spec, ch_min=ch_min, ch_max=ch_max, method=method,
-                    min_snr=min_snr, min_counts=min_counts, fwhm_est=fwhm_est, cal=self.cal
+                    min_snr=min_snr, min_counts=min_counts, fwhm_est=fwhm_est, cal=axis_cal
                 )
                 res["axis"] = axis
                 print_peaks_terminal_report(res, det_name, self.reader.filename.name, is_cal)
@@ -2939,6 +4167,10 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             ch_min = max(0, min(len(spec) - 2, ch_min))
             ch_max = max(ch_min + 1, min(len(spec) - 1, ch_max))
 
+            session = self.get_session()
+            axis_cal = session.get_cal(axis)
+            is_cal = session.is_calibrated(axis)
+
             peaks_str = query.get("peaks", [""])[0]
             if peaks_str.strip():
                 try:
@@ -2953,11 +4185,10 @@ class CMATWebHandler(BaseHTTPRequestHandler):
                 search_method = query.get("search_method", ["cwt"])[0].lower()
                 search_res = find_peaks_1d(
                     spec, ch_min=ch_min, ch_max=ch_max, method=search_method,
-                    min_snr=min_snr, fwhm_est=fwhm_est, cal=self.cal
+                    min_snr=min_snr, fwhm_est=fwhm_est, cal=axis_cal
                 )
                 peak_channels = [p["channel"] for p in search_res.get("peaks", [])]
 
-            is_cal = self.cal and (self.cal[0] != 0.0 or self.cal[1] != 1.0 or self.cal[2] != 0.0)
             fwhm_mult = float(query.get("fwhm_mult", [4.0])[0])
             bg_method = query.get("bg_method", ["peak_aware"])[0].lower()
             snip_iter_val = query.get("snip_iter", [None])[0]
@@ -2976,7 +4207,7 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             try:
                 res = fit_all_peaks_1d(
                     spec, ch_min=ch_min, ch_max=ch_max, peak_channels=peak_channels,
-                    fit_type=fit_type, fwhm_est=fwhm_est, cal=self.cal, fwhm_mult=fwhm_mult,
+                    fit_type=fit_type, fwhm_est=fwhm_est, cal=axis_cal, fwhm_mult=fwhm_mult,
                     bg_method=bg_method, snip_iter=snip_iter, region=region_bounds
                 )
                 res["axis"] = axis
@@ -3128,15 +4359,18 @@ class CMATWebHandler(BaseHTTPRequestHandler):
                 ch_start = y0 if is_synced else 0
                 ch_end = y1 if is_synced else len(spec) - 1
 
+            session = self.get_session()
+            axis_cal = session.get_cal(axis)
+
             fit_res = None
             if has_fit and fit_ch is not None:
                 try:
-                    fit_res = fit_gaussian_peak(np.arange(len(spec)) + 0.5, spec, fit_ch, fit_type=fit_type, fwhm_mult=fwhm_mult, cal=self.cal)
+                    fit_res = fit_gaussian_peak(np.arange(len(spec)) + 0.5, spec, fit_ch, fit_type=fit_type, fwhm_mult=fwhm_mult, cal=axis_cal)
                 except Exception:
                     fit_res = None
 
             try:
-                pdf_bytes = generate_pdf_1d(spec, ch_start, ch_end, is_log=is_log, zoom_y=zoom_y, fit_res=fit_res)
+                pdf_bytes = generate_pdf_1d(spec, ch_start, ch_end, is_log=is_log, zoom_y=zoom_y, fit_res=fit_res, cal=axis_cal)
                 self.send_response(200)
                 self.send_header("Content-type", "application/pdf")
                 self.send_header("Content-Disposition", f'attachment; filename="{self.reader.filename.stem}_{det_name}_{ch_start}_{ch_end}.pdf"')
@@ -3168,19 +4402,23 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             fit_type = query.get("fit_type", ["gaussian"])[0]
             fwhm_mult = float(query.get("fwhm_mult", [4.0])[0])
 
+            session = self.get_session()
+            cal_x = session.get_cal(0)
+            cal_y = session.get_cal(1)
+
             fit_2d_res = None
             if has_fit and fit_x is not None and fit_y is not None:
                 try:
                     proj_y = self.proj if (self.reader and self.reader.is_symmetric) else np.sum(self.matrix, axis=1, dtype=np.float64)
                     fit_2d_res = fit_2d_gaussian_peak(
-                        self.matrix, fit_x, fit_y, fit_type=fit_type, cal=self.cal, roi_half_width=16,
+                        self.matrix, fit_x, fit_y, fit_type=fit_type, cal_x=cal_x, cal_y=cal_y, roi_half_width=16,
                         proj_x=self.proj, proj_y=proj_y, total_counts=float(np.sum(self.proj))
                     )
                 except Exception:
                     fit_2d_res = None
 
             try:
-                pdf_bytes = generate_pdf_2d(self.matrix, x0, x1, y0, y1, cmap_name=cmap, scale_mode=scale, vmin=vmin, vmax=vmax, fit_2d_res=fit_2d_res)
+                pdf_bytes = generate_pdf_2d(self.matrix, x0, x1, y0, y1, cmap_name=cmap, scale_mode=scale, vmin=vmin, vmax=vmax, fit_2d_res=fit_2d_res, cal_x=cal_x, cal_y=cal_y)
                 self.send_response(200)
                 self.send_header("Content-type", "application/pdf")
                 self.send_header("Content-Disposition", f'attachment; filename="{self.reader.filename.stem}_2D_Matrix_{x0}_{x1}_{y0}_{y1}.pdf"')
@@ -3322,13 +4560,34 @@ def main():
     config = load_or_create_config(config_path)
 
     parser = argparse.ArgumentParser(
-        description="Launch modern Web-based interactive 2D viewer with classic binned 1D histogram and multi-matrix comparison."
+        description="Launch modern Web-based interactive 2D viewer or run automated spectroscopy analysis in headless mode."
     )
     parser.add_argument(
         "input",
-        nargs="+",
+        nargs="*",
         type=str,
+        default=[],
         help="Path to one or more input .cmat file(s) (e.g. run1.cmat run2.cmat or *.cmat)",
+    )
+    parser.add_argument(
+        "-m", "--macro",
+        type=str,
+        default=None,
+        help="Execute a .mac command script file in headless mode and exit",
+    )
+    parser.add_argument(
+        "-c", "--batch", "--command",
+        type=str,
+        dest="command",
+        default=None,
+        help="Execute one or more semicolon-separated analysis commands in headless mode and exit",
+    )
+    parser.add_argument(
+        "-i", "--headless", "--interactive", "--shell",
+        action="store_true",
+        dest="headless",
+        default=False,
+        help="Start interactive headless CLI shell (REPL) without opening a web browser or server",
     )
     parser.add_argument(
         "-H", "--host",
@@ -3360,7 +4619,25 @@ def main():
         type=float,
         metavar="COEFF",
         default=None,
-        help="Energy calibration coefficients: a0 a1 a2 for E = a0 + a1*ch + a2*ch^2 (overrides config)",
+        help="Global calibration coefficients: a0 a1 [a2] applied to all axes (overrides config)",
+    )
+    parser.add_argument(
+        "--cal-0", "--cal-x",
+        nargs="+",
+        type=float,
+        dest="cal_0",
+        metavar="COEFF",
+        default=None,
+        help="Axis 0 (Det 1 / X) calibration coefficients: a0 a1 [a2] (overrides config)",
+    )
+    parser.add_argument(
+        "--cal-1", "--cal-y",
+        nargs="+",
+        type=float,
+        dest="cal_1",
+        metavar="COEFF",
+        default=None,
+        help="Axis 1 (Det 2 / Y) calibration coefficients: a0 a1 [a2] (overrides config)",
     )
 
     args = parser.parse_args()
@@ -3383,16 +4660,69 @@ def main():
             seen.add(res)
             unique_paths.append(p)
 
-    if not unique_paths:
-        print("Error: No input files found.", file=sys.stderr)
-        sys.exit(1)
-
     for p in unique_paths:
         if not p.exists():
             print(f"Error: File '{p}' not found.", file=sys.stderr)
             sys.exit(1)
 
-    # Resolve settings: CLI arguments override config file defaults
+    # Initialize Session
+    session = CMATSession(config, config_path)
+
+    # Apply calibrations
+    if args.cal is not None:
+        session.set_cal(None, args.cal)
+    if args.cal_0 is not None:
+        session.set_cal(0, args.cal_0)
+    if args.cal_1 is not None:
+        session.set_cal(1, args.cal_1)
+
+    # Pre-load matrices if provided
+    for p in unique_paths:
+        session.add_matrix_file(p)
+
+    # Check for Headless Mode: Macro, Batch Command, or Interactive REPL
+    is_headless_mode = bool(args.macro or args.command or args.headless)
+
+    if is_headless_mode:
+        interpreter = CMATCommandInterpreter(session)
+        success = True
+
+        if args.command:
+            success = interpreter.execute_batch(args.command)
+            if not success:
+                sys.exit(1)
+
+        if args.macro:
+            mac_path = Path(args.macro)
+            if not mac_path.exists():
+                mac_alt = Path(__file__).resolve().parent / args.macro
+                if mac_alt.exists():
+                    mac_path = mac_alt
+                else:
+                    print(f"Error: Macro file '{args.macro}' not found.", file=sys.stderr)
+                    sys.exit(1)
+            success = interpreter.execute_script(mac_path)
+            if not success:
+                sys.exit(1)
+
+        if args.headless:
+            interpreter.run_repl()
+
+        sys.exit(0 if success else 1)
+
+    # Otherwise: Web Viewer Mode
+    if not unique_paths:
+        # Check if default GeE-symm.cmat exists in cwd
+        def_file = Path.cwd() / "GeE-symm.cmat"
+        if def_file.exists():
+            unique_paths.append(def_file)
+            session.add_matrix_file(def_file)
+        else:
+            print("Error: No input .cmat files specified.", file=sys.stderr)
+            parser.print_help()
+            sys.exit(1)
+
+    # Resolve web server settings
     host = args.host if args.host is not None else str(config.get("host", "0.0.0.0")).strip()
     port = args.port if args.port is not None else int(config.get("port", 8080))
     browser_choice = args.browser if args.browser is not None else str(config.get("browser", "default")).strip()
@@ -3404,33 +4734,20 @@ def main():
         open_browser = (open_br in (True, "true", "True", "1", 1))
 
     in_ssh = is_ssh_session()
-    # In an SSH session, avoid launching a slow X11 remote browser unless explicitly requested via --browser
     if in_ssh and args.browser is None and open_browser:
         open_browser = False
         ssh_browser_skipped = True
     else:
         ssh_browser_skipped = False
 
-    if args.cal is not None:
-        cal = args.cal
-    else:
-        cal = parse_cal_string(config.get("cal", [0.0, 1.0, 0.0]))
-
-    CMATWebHandler.matrices = []
-    CMATWebHandler.active_index = 0
+    CMATWebHandler.session = session
     CMATWebHandler.config = config
     CMATWebHandler.config_path = config_path
-    CMATWebHandler.global_cal = cal
-
-    print(f"[*] Loading {len(unique_paths)} matrix file{'s' if len(unique_paths) > 1 else ''}...")
-    for idx, p in enumerate(unique_paths):
-        t0 = time.time()
-        m_idx = CMATWebHandler.add_matrix_file(p, cal=cal)
-        m = CMATWebHandler.matrices[m_idx]
-        print(f"    [{idx + 1}/{len(unique_paths)}] Loaded '{m['name']}' ({m['shape'][0]}×{m['shape'][1]}, {m['total_counts']:,} counts, {time.time()-t0:.2f}s)")
-
-    CMATWebHandler.active_index = 0
     CMATWebHandler.sync_class_attrs()
+
+    print(f"[*] Loaded {len(session.matrices)} matrix file{'s' if len(session.matrices) > 1 else ''}:")
+    for idx, m in enumerate(session.matrices):
+        print(f"    [{idx + 1}/{len(session.matrices)}] '{m['name']}' ({m['shape'][0]}×{m['shape'][1]}, {m['total_counts']:,} counts)")
 
     # Bind HTTP server
     bind_host = "" if host in ("0.0.0.0", "", "::") else host

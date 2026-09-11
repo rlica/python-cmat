@@ -170,7 +170,11 @@ python cmat_webviewer.py ./data/*.cmat
 # You can edit these values directly or click "Save Config" in the Web Viewer.
 # ==============================================================================
 
-# Energy Calibration: a0 a1 a2 for E = a0 + a1*ch + a2*ch^2
+# Energy Calibration (Quadratic: E = a0 + a1*ch + a2*ch^2)
+# Define calibration per-axis: Det 1 / X (cal_0) and Det 2 / Y (cal_1)
+cal_0 = 0.0, 1.0, 0.0
+cal_1 = 0.0, 1.0, 0.0
+# Shorthand for symmetric matrices (applies to both axes if cal_0/cal_1 not specified):
 cal = 0.0, 1.0, 0.0
 
 # Default Peak Function Model: gaussian, gaussian_tail (RadWare), hypermet
@@ -238,6 +242,92 @@ When launching `cmat_webviewer.py` on a remote Linux server via SSH:
 You can adjust sliders, colormaps, peak fit models, or contrast in the Web Viewer and click **`Save Config to File`** in the **Configuration** panel to immediately save your current state to `python-cmat-config.txt`.
 
 *(Note: Command-line arguments like `--cal`, `-H / --host`, `-p / --port`, `--browser`, and `--no-browser` will override config file defaults when explicitly supplied).*
+
+---
+
+## Headless Analysis, Scripting & CLI Macros
+
+In addition to the interactive Web Viewer, `python-cmat` provides a complete headless analysis engine. You can automate gamma-gamma coincidence analysis pipelines, run batch scripts, perform automated multi-peak searches and fits, and generate publication-quality vector PDFs without launching a browser or graphical desktop.
+
+### Execution Modes
+
+#### 1. Batch Macro Script Execution (`-m` / `--macro`)
+Execute an automated spectroscopy analysis macro file (`*.mac`):
+```bash
+python3 cmat_webviewer.py -m analysis_template.mac
+```
+
+#### 2. Direct CLI One-Liner Execution (`-c` / `--command`)
+Execute one or more semicolon-delimited spectroscopy commands directly from your terminal:
+```bash
+python3 cmat_webviewer.py -c "load GeE-symm.cmat run1; cal 0 0.5 1.002; gate 0 w 1170 1176 b 1150 1160; fit_1d 1 1332; pdf_1d 1 gated.pdf --fit; exit"
+```
+
+#### 3. Interactive Headless Shell (`-i` / `--headless`)
+Launch an interactive REPL command prompt with line editing and history:
+```bash
+python3 cmat_webviewer.py -i
+cmat [no-matrix]> load GeE-symm.cmat inbeam
+cmat [inbeam]> cal show
+cmat [inbeam]> search 0 --snr 10.0
+cmat [inbeam]> quit
+```
+
+### Per-Axis Energy Calibration
+
+`python-cmat` supports independent energy calibrations for each detector axis, enabling analysis of asymmetric 2D matrices (e.g., Energy vs. Time, Particle Energy vs. Gamma Energy, or Detector Index vs. Energy):
+
+- **Command Syntax**:
+  - `cal <axis> <a0> <a1> [a2]`: Set quadratic calibration $E = a_0 + a_1 \cdot \text{ch} + a_2 \cdot \text{ch}^2$ for Det 1 / Axis 0 (`0`) or Det 2 / Axis 1 (`1`).
+  - `cal <a0> <a1> [a2]`: Set identical calibration for both axes (for symmetric matrices).
+  - `cal show`: Print active calibration polynomials and units for both axes.
+  - `cal clear [axis]`: Clear calibration and revert to uncalibrated channel coordinates.
+- **CLI Startup Flags**:
+  - `--cal-0 "0.5 1.002 0.000001"`: Set calibration for Det 1 (Axis 0 / X).
+  - `--cal-1 "0.4 1.001 0.0000005"`: Set calibration for Det 2 (Axis 1 / Y).
+  - `--cal "0.0 1.0 0.0"`: Set calibration for both axes simultaneously.
+
+### Spectroscopy Command Reference
+
+| Command | Arguments | Description |
+|---|---|---|
+| **`load`** | `<filepath> [alias]` | Load `.cmat` matrix into session with optional alias name |
+| **`matrix`** | `<name_or_index>` | Switch active matrix for analysis while preserving gates/fits |
+| **`list`** | *None* | List all loaded matrices with shapes, total counts, and symmetry |
+| **`info`** | *None* | Display active matrix dimensions, statistics, and calibration |
+| **`close`** | `[name_or_index]` | Unload matrix from memory |
+| **`cal`** | `<axis> <a0> <a1> [a2]` | Define per-axis quadratic energy calibration |
+| **`cal show`** | *None* | Display calibration table and formulas for all axes |
+| **`cal clear`** | `[axis]` | Reset calibration to raw channel units |
+| **`gate`** | `<axis> w <w0> <w1> [b <b0> <b1>]` | Set coincidence peak (`w`) and sideband BG subtraction (`b`) windows |
+| **`gate clear`** | `[axis]` | Clear active coincidence gates and restore full projection |
+| **`gate show`** | *None* | Print active gate slices, widths, and normalization scale factors |
+| **`search`** | `[axis] [--method M] [--snr N]` | Automated peak detection (`cwt`, `prominence`, `mariscotti`) |
+| **`fit_1d`** | `<axis> <ch_or_e> [--model M]` | Single peak fit (`gaussian`, `gaussian_tail`, `hypermet`) |
+| **`fit_multiplet`**| `<axis> <p1> <p2> ...` | Simultaneously fit coupled multiplet cluster with covariance |
+| **`fit_all`** | `[axis] [--range min max] [--snr N]`| Auto-fit all candidate peaks on Peak-Aware Continuum baseline |
+| **`fit_2d`** | `<x> <y> [--roi N] [--verbose]` | True 2D coincidence peak fit (Gamba 4-component decomposition) |
+| **`clear_fits`** | `[1d\|2d\|all]` | Clear stored fit results from memory |
+| **`pdf_1d`** | `<axis> <out.pdf> [--fit] [--title T]`| Export publication-quality vector PDF of 1D/gated spectrum |
+| **`pdf_2d`** | `<out.pdf> [--x ..] [--y ..] [--fit]` | Export publication-quality vector PDF of 2D coincidence matrix |
+| **`export_1d`** | `<axis> <out.dat>` | Export 1D spectrum to ASCII data table with Poisson errors |
+| **`export_amat`** | `<out.mat>` | Export 2D matrix to ASCII matrix format |
+| **`macro`** | `<filepath>` | Execute commands from an external macro file |
+| **`echo`** | `<message>` | Print message to the console |
+| **`sleep`** | `<seconds>` | Pause execution |
+| **`quit` / `exit`**| *None* | Terminate script or exit interactive shell |
+
+### Macro Template (`analysis_template.mac`)
+A complete, fully commented macro template is provided in [`analysis_template.mac`](analysis_template.mac) demonstrating a complete analysis pipeline:
+1. Loading target and background matrices.
+2. Applying independent per-axis energy calibrations.
+3. Setting coincidence gates on Det 1 to produce continuum-subtracted projections on Det 2.
+4. Detecting photopeaks using Continuous Wavelet Transform (CWT).
+5. Performing single-peak, multiplet, and automated region fitting.
+6. Performing 2D coincidence peak fitting with Gamba background decomposition.
+7. Exporting vector PDF figures and ASCII data tables.
+
+Users can copy and customize `analysis_template.mac` for their specific spectroscopy experiments.
 
 ---
 
