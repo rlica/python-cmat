@@ -2,6 +2,10 @@
 
 **Python reader, decompressor, ASCII converter, and interactive Web visualizer for [GASPware](https://github.com/csteke/GASPware) `.cmat` 2D gamma-gamma coincidence matrices.**
 
+<img width="2294" height="1253" alt="image" src="https://github.com/user-attachments/assets/460ab83c-cbfa-4ee8-9194-f57c58e5215e" />
+
+
+
 ---
 
 ## Overview
