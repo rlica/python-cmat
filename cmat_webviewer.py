@@ -1405,10 +1405,12 @@ def print_fit_2d_terminal_report(res, filename, is_cal, verbosity="compact"):
     print(f"{bar}\n", flush=True)
 
 
-def generate_pdf_1d(spec, ch_start, ch_end, is_log=False, zoom_y=1.0, fit_res=None, cal=None, axis_label=None, title=None):
+def generate_pdf_1d(spec, ch_start, ch_end, is_log=False, zoom_y=1.0, fit_res=None, cal=None, axis_label=None, title=None, grid_mode="both", peaks=None):
     """
     Generates a publication-quality 1D spectrum vector PDF with white background,
-    Times New Roman font, inward ticks, stepped staircase histogram, and optional calibration.
+    Times New Roman font, inward ticks, stepped staircase histogram, optional calibration,
+    major and minor gridlines, full peak fit curves (single & multi-peak with baseline),
+    and annotated peak labels with carets and non-colliding text.
     """
     import io
     import matplotlib
@@ -1423,12 +1425,25 @@ def generate_pdf_1d(spec, ch_start, ch_end, is_log=False, zoom_y=1.0, fit_res=No
     plt.rcParams["ytick.direction"] = "in"
     plt.rcParams["xtick.major.size"] = 5
     plt.rcParams["ytick.major.size"] = 5
+    plt.rcParams["xtick.minor.size"] = 2.5
+    plt.rcParams["ytick.minor.size"] = 2.5
     plt.rcParams["xtick.top"] = True
     plt.rcParams["ytick.right"] = True
 
-    fig, ax = plt.subplots(figsize=(6.5, 4.0), dpi=300)
+    fig, ax = plt.subplots(figsize=(6.8, 4.2), dpi=300)
     fig.patch.set_facecolor("white")
     ax.set_facecolor("white")
+    ax.set_axisbelow(True)
+
+    # 1. Major and minor gridlines
+    grid_clean = str(grid_mode).lower().strip() if grid_mode else "off"
+    if grid_clean in ("both", "all", "major", "maj"):
+        ax.grid(True, which="major", color="#d3d3d3", linestyle="--", linewidth=0.6, alpha=0.85)
+    if grid_clean in ("both", "all"):
+        ax.minorticks_on()
+        ax.grid(True, which="minor", color="#ebebeb", linestyle=":", linewidth=0.45, alpha=0.7)
+    elif grid_clean in ("off", "none", "false"):
+        ax.grid(False)
 
     ch_start = int(max(0, ch_start))
     ch_end = int(min(len(spec) - 1, ch_end))
@@ -1448,19 +1463,84 @@ def generate_pdf_1d(spec, ch_start, ch_end, is_log=False, zoom_y=1.0, fit_res=No
         x_axis_name = axis_label or "Channel"
 
     # Stepped histogram centered on bins
-    ax.step(plot_x, sub_y, where="mid", color="#111111", linewidth=1.0, label="Data")
+    ax.step(plot_x, sub_y, where="mid", color="#111111", linewidth=1.0, label="Data", zorder=3)
+
+    # 2. Consolidate peak candidates and fitted peaks
+    all_peaks = []
+    if peaks:
+        for p in peaks:
+            if isinstance(p, (int, float)):
+                all_peaks.append({"channel": float(p), "fitted": False})
+            elif isinstance(p, dict):
+                ch_val = p.get("channel", p.get("centroid_ch", p.get("ch")))
+                if ch_val is not None:
+                    all_peaks.append(dict(p))
+
+    # Incorporate peaks from fit_res
+    if fit_res and fit_res.get("success"):
+        if "peaks" in fit_res and len(fit_res["peaks"]) > 0:
+            for fp in fit_res["peaks"]:
+                fch = fp.get("centroid_ch")
+                fe = fp.get("centroid_e")
+                matched = False
+                for ap in all_peaks:
+                    ap_ch = ap.get("channel", ap.get("centroid_ch", ap.get("ch")))
+                    if ap_ch is not None and abs(float(ap_ch) - float(fch)) < 2.0:
+                        ap["channel"] = fch
+                        if fe is not None:
+                            ap["energy"] = fe
+                        ap["fitted"] = True
+                        ap["area"] = fp.get("area")
+                        matched = True
+                        break
+                if not matched:
+                    all_peaks.append({
+                        "channel": fch,
+                        "energy": fe,
+                        "fitted": True,
+                        "area": fp.get("area")
+                    })
+        elif "centroid_ch" in fit_res and fit_res["centroid_ch"] is not None:
+            fch = fit_res["centroid_ch"]
+            fe = fit_res.get("centroid_e")
+            matched = False
+            for ap in all_peaks:
+                ap_ch = ap.get("channel", ap.get("centroid_ch", ap.get("ch")))
+                if ap_ch is not None and abs(float(ap_ch) - float(fch)) < 2.0:
+                    ap["channel"] = fch
+                    if fe is not None:
+                        ap["energy"] = fe
+                    ap["fitted"] = True
+                    matched = True
+                    break
+            if not matched:
+                all_peaks.append({
+                    "channel": fch,
+                    "energy": fe,
+                    "fitted": True,
+                    "area": fit_res.get("area")
+                })
+
+    visible_peaks = []
+    for p in all_peaks:
+        ch = p.get("channel", p.get("centroid_ch", p.get("ch")))
+        if ch is not None and ch_start <= ch <= ch_end:
+            visible_peaks.append(p)
 
     max_val = float(np.max(sub_y)) if len(sub_y) > 0 else 1.0
     min_val = float(np.min(sub_y)) if len(sub_y) > 0 else 0.0
+    has_labels = len(visible_peaks) > 0
 
     if is_log:
         ax.set_yscale("log")
         log_min = max(1.0, min_val if min_val > 0 else 1.0)
         log_max = max(10.0, max_val)
-        y_max = 10 ** (np.log10(log_min) + (np.log10(log_max) - np.log10(log_min) + 0.5) * zoom_y)
+        headroom = 0.8 if has_labels else 0.5
+        y_max = 10 ** (np.log10(log_min) + (np.log10(log_max) - np.log10(log_min) + headroom) * zoom_y)
         ax.set_ylim(bottom=log_min, top=y_max)
     else:
-        y_max = (max_val * 1.1) * zoom_y
+        head_factor = 1.25 if has_labels else 1.1
+        y_max = (max_val * head_factor) * zoom_y
         y_min = min(0.0, min_val * 1.1) if min_val < 0 else 0.0
         ax.set_ylim(bottom=y_min, top=max(1.0, y_max))
         if y_min < 0:
@@ -1473,7 +1553,7 @@ def generate_pdf_1d(spec, ch_start, ch_end, is_log=False, zoom_y=1.0, fit_res=No
     if title:
         ax.set_title(title, fontsize=12, pad=8)
 
-    # Plot fitted peak curve and baseline if available
+    # 3. Plot fitted peak curve and baseline if available
     if fit_res and fit_res.get("success"):
         curve_x = np.array(fit_res.get("curve_x", []), dtype=np.float64)
         curve_fit = np.array(fit_res.get("curve_fit", []), dtype=np.float64)
@@ -1482,23 +1562,31 @@ def generate_pdf_1d(spec, ch_start, ch_end, is_log=False, zoom_y=1.0, fit_res=No
         if len(curve_x) > 0 and len(curve_fit) > 0:
             curve_x_plot = np.array([ch_to_energy(c, cal) for c in curve_x]) if is_cal else curve_x
             if len(curve_bg) > 0:
-                ax.plot(curve_x_plot, curve_bg, color="#cc0066", linestyle="--", linewidth=1.2, label="Background")
-            ax.plot(curve_x_plot, curve_fit, color="#d95f02", linestyle="-", linewidth=1.8, label="Fit")
+                ax.plot(curve_x_plot, curve_bg, color="#cc0066", linestyle="--", linewidth=1.2, label="Background", zorder=3)
+            ax.plot(curve_x_plot, curve_fit, color="#d95f02", linestyle="-", linewidth=1.8, label="Fit", zorder=4)
 
             if "peaks" in fit_res and len(fit_res["peaks"]) > 0:
                 p_list = fit_res["peaks"]
                 for p in p_list:
                     p_mu = ch_to_energy(p["centroid_ch"], cal) if is_cal else p["centroid_ch"]
-                    ax.axvline(p_mu, color="#d95f02", linestyle=":", linewidth=0.7, alpha=0.65)
+                    ax.axvline(p_mu, color="#d95f02", linestyle=":", linewidth=0.7, alpha=0.65, zorder=2)
                 tot_a = sum(p.get("area", 0.0) for p in p_list)
-                info_txt = f"Multi-Peak Fit: {len(p_list)} peaks\nTotal Net Area: {tot_a:,.1f} counts\nPeak-Aware Continuum BG"
-                ax.text(0.04, 0.94, info_txt, transform=ax.transAxes, verticalalignment="top",
-                        fontsize=9, fontfamily="serif", bbox=dict(boxstyle="round,pad=0.4", facecolor="white", edgecolor="#999999", alpha=0.92))
+                red_chi2 = fit_res.get("red_chi2", 0.0)
+                info_txt = f"Multi-Peak Fit: {len(p_list)} peaks\nTotal Net Area: {tot_a:,.1f} counts\n$\\chi^2_\\nu$: {red_chi2:.2f}"
+                box_x = 0.04
+                box_ha = "left"
+                tallest_p = max(p_list, key=lambda p: p.get("amplitude", p.get("counts", p.get("area", 0.0))))
+                tallest_mu = ch_to_energy(tallest_p["centroid_ch"], cal) if is_cal else tallest_p["centroid_ch"]
+                if (tallest_mu - min(x_lim_0, x_lim_1)) / max(1e-6, abs(x_lim_1 - x_lim_0)) <= 0.5:
+                    box_x = 0.96
+                    box_ha = "right"
+                ax.text(box_x, 0.94, info_txt, transform=ax.transAxes, verticalalignment="top", horizontalalignment=box_ha,
+                        fontsize=9, fontfamily="serif", bbox=dict(boxstyle="round,pad=0.4", facecolor="white", edgecolor="#999999", alpha=0.92), zorder=7)
             else:
                 mu = fit_res.get("centroid_ch")
                 if mu is not None:
                     mu_plot = ch_to_energy(mu, cal) if is_cal else mu
-                    ax.axvline(mu_plot, color="#d95f02", linestyle=":", linewidth=1.0)
+                    ax.axvline(mu_plot, color="#d95f02", linestyle=":", linewidth=1.0, zorder=2)
 
                 area_str = f"{fit_res.get('area', 0):.1f} ± {fit_res.get('area_err', 0):.1f}"
                 if is_cal:
@@ -1517,8 +1605,96 @@ def generate_pdf_1d(spec, ch_start, ch_end, is_log=False, zoom_y=1.0, fit_res=No
                 centroid_str = f"{centroid_val:.2f} ± {centroid_err:.2f}"
                 fwhm_str = f"{fwhm_val:.2f} ± {fwhm_err:.2f}"
                 info_txt = f"Centroid: {centroid_str} {unit_str}\nArea: {area_str} counts\nFWHM: {fwhm_str} {unit_str}\n$\\chi^2_\\nu$: {fit_res.get('red_chi2', 0):.2f}"
-                ax.text(0.04, 0.94, info_txt, transform=ax.transAxes, verticalalignment="top",
-                        fontsize=9, fontfamily="serif", bbox=dict(boxstyle="round,pad=0.4", facecolor="white", edgecolor="#999999", alpha=0.92))
+                box_x = 0.04
+                box_ha = "left"
+                if mu is not None:
+                    if (mu_plot - min(x_lim_0, x_lim_1)) / max(1e-6, abs(x_lim_1 - x_lim_0)) <= 0.5:
+                        box_x = 0.96
+                        box_ha = "right"
+                ax.text(box_x, 0.94, info_txt, transform=ax.transAxes, verticalalignment="top", horizontalalignment=box_ha,
+                        fontsize=9, fontfamily="serif", bbox=dict(boxstyle="round,pad=0.4", facecolor="white", edgecolor="#999999", alpha=0.92), zorder=7)
+
+    # 4. Plot Peak Labels with Carets and Collision Detection
+    if visible_peaks:
+        peak_plot_coords = []
+        for p in visible_peaks:
+            ch = float(p.get("channel", p.get("centroid_ch", p.get("ch"))))
+            x_val = ch_to_energy(ch, cal) if is_cal else ch
+
+            # Summit counts
+            ch_idx = int(round(ch)) - ch_start
+            if 0 <= ch_idx < len(sub_y):
+                y_val = float(sub_y[ch_idx])
+            else:
+                y_val = float(p.get("counts", p.get("amplitude", 0.0)))
+            if is_log and y_val <= 0:
+                y_val = 1.0
+
+            # Text label
+            lbl = p.get("lbl") or p.get("label")
+            if not lbl:
+                if is_cal:
+                    e_val = p.get("energy", p.get("centroid_e"))
+                    if e_val is None:
+                        e_val = ch_to_energy(ch, cal)
+                    lbl = f"{float(e_val):.1f}"
+                else:
+                    lbl = f"{float(ch):.1f}"
+            else:
+                lbl = str(lbl)
+
+            is_fitted = bool(p.get("fitted"))
+            peak_plot_coords.append({
+                "p": p,
+                "x": x_val,
+                "y": y_val,
+                "lbl": lbl,
+                "fitted": is_fitted
+            })
+
+        peak_plot_coords.sort(key=lambda item: item["x"])
+        x_span = abs(x_lim_1 - x_lim_0)
+        is_dense = False
+        if len(peak_plot_coords) > 1 and x_span > 0:
+            for i in range(len(peak_plot_coords) - 1):
+                if abs(peak_plot_coords[i+1]["x"] - peak_plot_coords[i]["x"]) < 0.055 * x_span:
+                    is_dense = True
+                    break
+
+        for idx, item in enumerate(peak_plot_coords):
+            x_p = item["x"]
+            y_p = item["y"]
+            lbl_text = item["lbl"]
+            is_fit = item["fitted"]
+
+            color = "#008837" if is_fit else "#2b5c8f"
+
+            if is_log:
+                y_cur_max = ax.get_ylim()[1]
+                y_cur_min = ax.get_ylim()[0]
+                log_span = np.log10(y_cur_max) - np.log10(y_cur_min)
+                y_caret = 10 ** min(np.log10(y_cur_max) - 0.15 * log_span, np.log10(max(1.0, y_p)) + 0.06 * log_span)
+                y_text = 10 ** (np.log10(y_caret) + 0.04 * log_span)
+            else:
+                y_cur_max = ax.get_ylim()[1]
+                y_cur_min = ax.get_ylim()[0]
+                y_span = y_cur_max - y_cur_min
+                y_caret = min(y_cur_max - 0.12 * y_span, y_p + 0.04 * y_span)
+                y_text = y_caret + 0.025 * y_span
+
+            # Downward caret marker pointing at peak summit
+            ax.scatter([x_p], [y_caret], marker="v", s=28, color=color, edgecolors="none", zorder=6)
+            # Dotted stem connecting caret to peak summit
+            ax.plot([x_p, x_p], [y_p, y_caret], color=color, linestyle=":", linewidth=0.75, alpha=0.65, zorder=5)
+
+            rot = 90 if is_dense else 0
+            ax.text(
+                x_p, y_text, lbl_text,
+                rotation=rot, ha="center", va="bottom",
+                fontsize=8, fontfamily="serif", fontweight="bold", color=color,
+                zorder=7,
+                bbox=dict(boxstyle="round,pad=0.15", facecolor="white", edgecolor="none", alpha=0.82)
+            )
 
     fig.tight_layout()
     buf = io.BytesIO()
@@ -2864,7 +3040,7 @@ def parse_gate_args(tokens: list, session: "CMATSession"):
                 curr_pair = []
             current_type = "w"
             continue
-        if t_low in ("b", "bg", "background"):
+        if t_low in ("x", "b", "bg", "background"):
             if len(curr_pair) == 2:
                 (w_gates if current_type == "w" else b_gates).append(curr_pair)
                 curr_pair = []
@@ -2937,6 +3113,7 @@ class CMATSession:
         self.cal = {0: c0, 1: c1}
         self.gates = {0: None, 1: None}
         self.fits_1d = {0: None, 1: None}
+        self.search_peaks_1d = {0: [], 1: []}
         self.fit_2d = None
 
     def add_matrix_file(self, path: Path, name: str = None, cal: dict = None) -> int:
@@ -3216,7 +3393,7 @@ class CMATCommandInterpreter:
         print("    cal <a0> <a1> [a2]                  Set quadratic calibration for both axes simultaneously")
         print()
         print("  1D Coincidence Gating:")
-        print("    gate <axis> w <w0> <w1> [b <b0> <b1>] Coincidence gate with normalized BG subtraction")
+        print("    gate <axis> w <w0> <w1> [x <x0> <x1>] Coincidence gate with normalized BG subtraction")
         print("    gate clear [axis]                   Clear coincidence gates and restore full projection")
         print("    gate show                           Display active gate windows and BG scale factor")
         print()
@@ -3392,7 +3569,7 @@ class CMATCommandInterpreter:
                     b_str = ", ".join(f"[{b[0]}..{b[1]}]" for b in g.get("b_gates", [])) if g.get("b_gates") else "None"
                     print(f"  Gate on {det} -> Slices on {opp}:")
                     print(f"    Peak Windows (W)      : {w_str} (width: {g.get('w_width', 0)} ch)")
-                    print(f"    Background Windows (B): {b_str} (width: {g.get('b_width', 0)} ch)")
+                    print(f"    Background Windows (X): {b_str} (width: {g.get('b_width', 0)} ch)")
                     print(f"    BG Scale Factor       : {g.get('scale', 0.0):.4f}")
                     print(f"    Net Gated Counts      : {g.get('net_counts', 0):,}")
                 else:
@@ -3422,7 +3599,7 @@ class CMATCommandInterpreter:
         print(f"[*] Applied coincidence gate on {src_det}:")
         print(f"    Peak Windows (W)      : {w_str} (total width: {gate_res['w_width']} ch)")
         if gate_res["b_gates"]:
-            print(f"    Background Windows (B): {b_str} (total width: {gate_res['b_width']} ch)")
+            print(f"    Background Windows (X): {b_str} (total width: {gate_res['b_width']} ch)")
             print(f"    BG Normalization Scale: {gate_res['scale']:.4f}")
         print(f"    Gated Coincidence on  : {dst_det} (Total Net Counts: {gate_res['net_counts']:,})")
 
@@ -3456,6 +3633,7 @@ class CMATCommandInterpreter:
         res = find_peaks_1d(spec, ch_min=c_min, ch_max=c_max, method=method, min_snr=snr, fwhm_est=fwhm, cal=axis_cal)
 
         peaks = res.get("peaks", [])
+        self.session.search_peaks_1d[axis] = peaks
         is_gated = bool(self.session.gates.get(1 - axis))
         det_name = f"Det {axis + 1} ({'X' if axis == 0 else 'Y'}{' Gated' if is_gated else ''})"
         bar = "─" * 75
@@ -3633,7 +3811,7 @@ class CMATCommandInterpreter:
     def cmd_pdf_1d(self, args: list):
         pos, flags = parse_cmd_tokens(args)
         if len(pos) < 2:
-            print("[!] Usage: pdf_1d <axis> <output_filename.pdf> [--range min max] [--log] [--zoom_y 1.0] [--fit] [--title '...']", file=sys.stderr)
+            print("[!] Usage: pdf_1d <axis> <output_filename.pdf> [--range min max] [--log] [--zoom_y 1.0] [--fit] [--grid both|major|off] [--peaks] [--title '...']", file=sys.stderr)
             return
         axis = int(pos[0])
         outfile = Path(pos[1])
@@ -3656,11 +3834,23 @@ class CMATCommandInterpreter:
         is_log = bool(flags.get("log"))
         zoom_y = float(flags.get("zoom_y", 1.0))
         fit_res = self.session.fits_1d.get(axis) if flags.get("fit") else None
+        grid_mode = str(flags.get("grid", "both")).lower()
         title = flags.get("title")
+
+        peaks = None
+        if flags.get("peaks") or flags.get("labels") or ("peaks" in flags):
+            p_arg = flags.get("peaks")
+            if isinstance(p_arg, str) and p_arg.lower() not in ("true", "1", "yes"):
+                try:
+                    peaks = [float(x.strip()) for x in p_arg.split(",") if x.strip()]
+                except Exception:
+                    peaks = self.session.search_peaks_1d.get(axis, [])
+            else:
+                peaks = self.session.search_peaks_1d.get(axis, [])
 
         pdf_bytes = generate_pdf_1d(
             spec, ch_start, ch_end, is_log=is_log, zoom_y=zoom_y, fit_res=fit_res,
-            cal=self.session.get_cal(axis), title=title
+            cal=self.session.get_cal(axis), title=title, grid_mode=grid_mode, peaks=peaks
         )
         outfile.parent.mkdir(parents=True, exist_ok=True)
         outfile.write_bytes(pdf_bytes)
@@ -4325,10 +4515,27 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             is_synced = int(query.get("is_synced", [1])[0]) == 1
             is_log = int(query.get("is_log", [0])[0]) == 1
             zoom_y = float(query.get("zoom_y", [1.0])[0])
+            grid_mode = query.get("grid_mode", ["both"])[0]
+
+            peaks_json = query.get("peaks", [""])[0]
+            peaks = []
+            if peaks_json:
+                try:
+                    peaks = json.loads(peaks_json)
+                except Exception:
+                    peaks = []
+
             has_fit = int(query.get("has_fit", [0])[0]) == 1
             fit_ch = float(query.get("fit_ch", [0])[0]) if has_fit else None
             fit_type = query.get("fit_type", ["gaussian"])[0]
             fwhm_mult = float(query.get("fwhm_mult", [4.0])[0])
+
+            has_multi_fit = int(query.get("has_multi_fit", [0])[0]) == 1
+            multi_peaks = query.get("multi_peaks", [""])[0]
+            multi_fit_type = query.get("multi_fit_type", [fit_type])[0]
+            fwhm_est = float(query.get("fwhm_est", [4.0])[0])
+            region_str = query.get("region", [""])[0]
+            region = [float(r.strip()) for r in region_str.split(",") if r.strip()] if region_str else None
 
             w_str = query.get("w_gates", [""])[0]
             b_str = query.get("b_gates", [""])[0]
@@ -4363,14 +4570,39 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             axis_cal = session.get_cal(axis)
 
             fit_res = None
-            if has_fit and fit_ch is not None:
+            if has_multi_fit and multi_peaks:
+                try:
+                    p_chs = [float(c.strip()) for c in multi_peaks.split(",") if c.strip()]
+                    fit_res = fit_all_peaks_1d(
+                        spec, ch_start, ch_end, p_chs,
+                        fit_type=multi_fit_type,
+                        fwhm_est=fwhm_est,
+                        cal=axis_cal,
+                        fwhm_mult=fwhm_mult,
+                        region=region
+                    )
+                except Exception as e:
+                    print(f"[!] PDF multi-fit error: {e}", file=sys.stderr)
+                    fit_res = None
+            elif has_fit and fit_ch is not None:
                 try:
                     fit_res = fit_gaussian_peak(np.arange(len(spec)) + 0.5, spec, fit_ch, fit_type=fit_type, fwhm_mult=fwhm_mult, cal=axis_cal)
-                except Exception:
+                except Exception as e:
+                    print(f"[!] PDF single fit error: {e}", file=sys.stderr)
                     fit_res = None
+            elif axis in session.fits_1d and session.fits_1d[axis]:
+                fit_res = session.fits_1d[axis]
 
             try:
-                pdf_bytes = generate_pdf_1d(spec, ch_start, ch_end, is_log=is_log, zoom_y=zoom_y, fit_res=fit_res, cal=axis_cal)
+                pdf_bytes = generate_pdf_1d(
+                    spec, ch_start, ch_end,
+                    is_log=is_log,
+                    zoom_y=zoom_y,
+                    fit_res=fit_res,
+                    cal=axis_cal,
+                    grid_mode=grid_mode,
+                    peaks=peaks
+                )
                 self.send_response(200)
                 self.send_header("Content-type", "application/pdf")
                 self.send_header("Content-Disposition", f'attachment; filename="{self.reader.filename.stem}_{det_name}_{ch_start}_{ch_end}.pdf"')

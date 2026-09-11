@@ -69,16 +69,16 @@ cal show
 # gated, continuum-subtracted coincidence spectrum onto the opposite axis.
 #
 # Syntax:
-#   gate <axis> w <w0> <w1> [w <w2> <w3> ...] [b <b0> <b1> ...]
+#   gate <axis> w <w0> <w1> [w <w2> <w3> ...] [x <x0> <x1> ...]
 #
 # Parameters:
 #   axis       : Gating axis (0 for Det 1 / X, 1 for Det 2 / Y)
 #   w <min max>: Peak gate window channels (can specify multiple windows)
-#   b <min max>: Background subtraction window channels (optional)
+#   x <min max>: Background subtraction window channels (optional)
 #   --energy   : Interpret gate bounds in calibrated keV instead of channels
 
 # Set a peak window at ch 1170..1176 on Det 1 (Axis 0) with sideband BG windows:
-gate 0 w 1170 1176 b 1150 1160 b 1185 1195
+gate 0 w 1170 1176 x 1150 1160 x 1185 1195
 
 # Inspect currently applied coincidence gates and background scale factors
 gate show

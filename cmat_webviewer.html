@@ -15,6 +15,7 @@
     overflow: hidden;
   }
   header {
+    position: relative;
     background: #1a1a1a;
     padding: 0 18px;
     height: 46px;
@@ -27,7 +28,7 @@
     box-sizing: border-box;
     flex-shrink: 0;
   }
-  .title { font-size: 1.1rem; font-weight: bold; color: #00e5ff; display: flex; align-items: center; gap: 8px; }
+  .title { font-size: 1.1rem; font-weight: bold; color: #00e5ff; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
   .badge { background: #263238; color: #80cbc4; font-size: 0.75rem; padding: 3px 8px; border-radius: 4px; }
   .hud {
     font-family: monospace;
@@ -48,9 +49,14 @@
     overflow: hidden;
     text-overflow: ellipsis;
     flex-shrink: 0;
+    margin-left: auto;
+    max-width: 48%;
   }
 
   .matrix-bar {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
     display: flex;
     align-items: center;
     gap: 6px;
@@ -59,6 +65,7 @@
     border-radius: 6px;
     padding: 3px 8px;
     box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
+    z-index: 10;
   }
   .matrix-badge-label {
     font-size: 0.72rem;
@@ -243,6 +250,27 @@
   button:hover { background: #00acc1; }
   button.secondary { background: #37474f; }
   button.secondary:hover { background: #546e7a; }
+  button.btn-pdf {
+    width: auto;
+    padding: 2px 7px;
+    font-size: 0.72rem;
+    background: #1b5e20;
+    border: 1px solid #4caf50;
+    color: #ffffff;
+    cursor: pointer;
+    border-radius: 3px;
+    font-weight: 600;
+    margin-top: 0;
+    transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  button.btn-pdf:hover {
+    background: #2e7d32 !important;
+    border-color: #81c784 !important;
+    box-shadow: 0 0 6px rgba(76, 175, 80, 0.55);
+  }
+  button.btn-pdf:active {
+    background: #144a17 !important;
+  }
   .range-val { font-family: monospace; font-size: 0.78rem; color: #80d8ff; float: right; }
 
   .workspace { flex: 1; display: flex; flex-direction: row; padding: 8px; gap: 6px; overflow: hidden; }
@@ -386,6 +414,26 @@
     transition: all 0.15s ease;
   }
   .scale-toggle-btn:hover { background: #383838; color: #fff; border-color: #666; }
+  .grid-toggle-btn {
+    background: #252525;
+    border: 1px solid #444;
+    color: #888;
+    padding: 2px 7px;
+    font-size: 0.68rem;
+    font-family: monospace;
+    font-weight: bold;
+    border-radius: 3px;
+    cursor: pointer;
+    width: auto;
+    margin-top: 0;
+    transition: all 0.15s ease;
+  }
+  .grid-toggle-btn:hover { background: #383838; color: #fff; border-color: #666; }
+  .grid-toggle-btn.active {
+    background: #0d3844;
+    border-color: #00e5ff;
+    color: #00e5ff;
+  }
   .fit-compact-box {
     display: flex;
     flex-direction: column;
@@ -441,7 +489,6 @@
       <select id="matrixSelect" class="matrix-select" title="Active Matrix ([ and ] keys to cycle)"></select>
     </div>
     <button id="btnNextMatrix" class="matrix-nav-btn" title="Next Matrix [ ] ]">▶</button>
-    <button id="btnOpenMatrix" class="matrix-open-btn" title="Open or Upload a .cmat matrix file">📂 Open...</button>
     <input type="file" id="matrixFileInput" accept=".cmat" style="display:none;">
   </div>
 
@@ -454,12 +501,16 @@
     <div class="control-group" id="groupMatrixManager">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
         <h3 style="margin: 0; color: #ffd600;">Active Matrix</h3>
-        <span id="matrixCountBadge" class="badge" style="background:#263238; color:#ffd600; font-size:0.7rem;">1 / 1</span>
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <span id="matrixCountBadge" class="badge" style="background:#263238; color:#ffd600; font-size:0.7rem;">1 / 1</span>
+          <button id="btnHideSidebarTop" class="mini-btn-collapse" title="Collapse Menu [M]">&lt; Hide</button>
+        </div>
       </div>
-      <div id="matrixCardDetails" style="background: #181818; border: 1px solid #333; border-radius: 4px; padding: 6px 8px; margin-bottom: 8px; font-size: 0.72rem; line-height: 1.4;">
-        <div style="font-weight: bold; color: #00e5ff; word-break: break-all;" id="sideMatName">-</div>
-        <div style="color: #aaa;">Shape: <span id="sideMatShape" style="color:#eee;">-</span> | Counts: <span id="sideMatCounts" style="color:#eee;">-</span></div>
-        <div style="color: #aaa;">Max Bin: <span id="sideMatMax" style="color:#eee;">-</span> | <span id="sideMatSymm" style="color:#69f0ae;">-</span></div>
+      <div id="matrixCardDetails" style="background: #181818; border: 1px solid #333; border-radius: 4px; padding: 6px 8px; margin-bottom: 8px; font-size: 0.72rem; line-height: 1.45;">
+        <div style="font-weight: bold; color: #00e5ff; word-break: break-all; margin-bottom: 2px;" id="sideMatName">-</div>
+        <div style="color: #aaa;">Shape: <span id="sideMatShape" style="color:#eee; font-family: monospace;">-</span></div>
+        <div style="color: #aaa;">Counts: <span id="sideMatCounts" style="color:#eee; font-family: monospace;">-</span></div>
+        <div style="color: #aaa;">Max Bin: <span id="sideMatMax" style="color:#eee; font-family: monospace;">-</span> &bull; <span id="sideMatSymm" style="color:#69f0ae;">-</span></div>
       </div>
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 6px;">
         <button id="btnSidebarPrevMat" class="secondary" title="Previous Matrix [ [ ]" style="padding: 4px 6px; font-size: 0.75rem;">◀ Prev [</button>
@@ -470,18 +521,6 @@
       <small style="color: #888; font-size: 0.65rem; display: block; margin-top: 5px; line-height: 1.2;">
         💡 Zoom, coincidence gates, and peak fits are locked and automatically re-evaluated across matrices for 1:1 differential analysis.
       </small>
-    </div>
-
-    <!-- 1. Navigation & Scroll (Top) -->
-    <div class="control-group">
-      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-        <h3 style="margin: 0;">Navigation &amp; Scroll</h3>
-        <button id="btnHideSidebar" class="mini-btn-collapse" title="Collapse Menu [M]">&lt; Hide</button>
-      </div>
-      <label>Scroll Zoom Step <span class="range-val" id="scrollSensLabel">4%</span></label>
-      <input type="range" id="scrollSensSlider" min="1" max="15" value="4">
-      <button id="btnHelp" class="secondary" style="background:#4a148c; margin-top:8px;">Help / Shortcuts [?]</button>
-      <button id="btnQuit" class="secondary" style="background:#b71c1c; margin-top:5px;">Quit Viewer [Q]</button>
     </div>
 
     <!-- 2. Peak Fitting (1D & 2D) -->
@@ -538,6 +577,13 @@
         <option value="synced" selected>Synced with 2D Window Zoom</option>
         <option value="full">Full 0..4095 Range</option>
       </select>
+
+      <label style="margin-top: 6px;">1D Histogram Gridlines</label>
+      <select id="grid1DSelect">
+        <option value="both" selected>Major &amp; Minor Gridlines</option>
+        <option value="major">Major Gridlines Only</option>
+        <option value="none">Disabled (No Gridlines)</option>
+      </select>
     </div>
 
     <!-- 4. 1D Coincidence Gating -->
@@ -547,7 +593,7 @@
         No active gate.<br>
         <span style="color: #888;">Hover on 1D view:</span><br>
         <span style="color: #00e676;">[W]</span>: Gate limits (L / R pairs)<br>
-        <span style="color: #ff5252;">[B]</span>: Background (L / R pairs)<br>
+        <span style="color: #ff5252;">[X]</span>: Background (L / R pairs)<br>
         <span style="color: #ffd600;">[Z]</span>: Clear gate / Cancel
       </div>
       <button id="btnSidebarClearGate" class="secondary" style="display:none; background:#b71c1c; border-color:#d32f2f; margin-top:2px;">Clear 1D Gate [Z]</button>
@@ -593,6 +639,18 @@
         Saves current settings to <code style="color:#00e5ff;">python-cmat-config.txt</code> in working directory.
       </small>
     </div>
+
+    <!-- 6. Navigation & Scroll (Bottom) -->
+    <div class="control-group">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+        <h3 style="margin: 0;">Navigation &amp; Scroll</h3>
+        <button id="btnHideSidebar" class="mini-btn-collapse" title="Collapse Menu [M]">&lt; Hide</button>
+      </div>
+      <label>Scroll Zoom Step <span class="range-val" id="scrollSensLabel">4%</span></label>
+      <input type="range" id="scrollSensSlider" min="1" max="15" value="4">
+      <button id="btnHelp" class="secondary" style="background:#4a148c; margin-top:8px;">Help / Shortcuts [?]</button>
+      <button id="btnQuit" class="secondary" style="background:#b71c1c; margin-top:5px;">Quit Viewer [Q]</button>
+    </div>
   </aside>
 
   <div class="workspace">
@@ -602,7 +660,7 @@
         <span id="overlayStatus">Limits: [L: - | R: - | D: - | U: -] &nbsp;•&nbsp; 'E' Expand &nbsp;•&nbsp; 'F' Full View</span>
         <div style="display: flex; gap: 8px; align-items: center;">
           <button id="btnScaleToggle2D" class="scale-toggle-btn" title="Cycle 2D Scale Mode: Logarithmic → Linear → Power [L]">LOG</button>
-          <button id="btnPrintPDF2D" style="width: auto; padding: 2px 8px; font-size: 0.72rem; background: #1b5e20; border-color: #4caf50; color: #fff;">Print PDF</button>
+          <button id="btnPrintPDF2D" class="btn-pdf" title="Print Publication 2D Coincidence Matrix PDF">Print PDF</button>
           <span style="color: #777;">Click &amp; Drag to box-zoom</span>
         </div>
       </div>
@@ -614,6 +672,7 @@
           <div style="display: flex; align-items: center; gap: 8px; overflow: hidden;">
             <span class="panel-1d-title" id="specTitleX" style="color: #00e5ff;">Det 1 (X Projection, Sliced Y)</span>
             <button id="btnScaleToggleX" class="scale-toggle-btn" title="Det 1 Vertical Scale: Linear (Click or press 'L' to toggle)">LIN</button>
+            <button id="btnGridToggleX" class="grid-toggle-btn active" title="1D Gridlines: Major &amp; Minor (Click to cycle Both / Major / Off)">GRID: ALL</button>
             <button id="btnClearGateX" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem;" title="Clear Gate [Z / Esc]">Clear Gate [Z]</button>
             <button id="btnClearRegionX" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem; background: #6a1b9a; border-color: #ab47bc; color: #f3e5f5;" title="Clear Fit Region [R / =]" onclick="clearFitRegion(0)">Region [R] ✕</button>
           </div>
@@ -621,7 +680,7 @@
             <button id="btnFindPeaksX" class="secondary" style="width: auto; padding: 2px 7px; font-size: 0.72rem; color: #ffd54f; border-color: #ffb300;" title="Automatic Peak Search [P]">Find Peaks [P]</button>
             <button id="btnFitAllPeaksX" class="secondary" style="width: auto; padding: 2px 7px; font-size: 0.72rem; color: #00e676; border-color: #00c853;" title="Fit All Displayed Peaks (Peak-Aware Background) [H]">Fit All [H]</button>
             <button id="btnClearPeaksX" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem;" title="Clear Found Peaks &amp; Fits [=]">Clear Peaks</button>
-            <button id="btnPrintPDF1DX" style="width: auto; padding: 2px 7px; font-size: 0.72rem; background: #1b5e20; border-color: #4caf50; color: #fff;">Print PDF</button>
+            <button id="btnPrintPDF1DX" class="btn-pdf" title="Print Publication 1D Spectrum PDF (Det 1)">Print PDF</button>
             <button id="btnExport1DX" style="width: auto; padding: 2px 7px; font-size: 0.72rem;">Export .dat</button>
           </div>
         </div>
@@ -632,6 +691,7 @@
           <div style="display: flex; align-items: center; gap: 8px; overflow: hidden;">
             <span class="panel-1d-title" id="specTitleY" style="color: #ff9800;">Det 2 (Y Projection, Sliced X)</span>
             <button id="btnScaleToggleY" class="scale-toggle-btn" title="Det 2 Vertical Scale: Linear (Click or press 'L' to toggle)">LIN</button>
+            <button id="btnGridToggleY" class="grid-toggle-btn active" title="1D Gridlines: Major &amp; Minor (Click to cycle Both / Major / Off)">GRID: ALL</button>
             <button id="btnClearGateY" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem;" title="Clear Gate [Z / Esc]">Clear Gate [Z]</button>
             <button id="btnClearRegionY" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem; background: #6a1b9a; border-color: #ab47bc; color: #f3e5f5;" title="Clear Fit Region [R / =]" onclick="clearFitRegion(1)">Region [R] ✕</button>
           </div>
@@ -639,7 +699,7 @@
             <button id="btnFindPeaksY" class="secondary" style="width: auto; padding: 2px 7px; font-size: 0.72rem; color: #ffd54f; border-color: #ffb300;" title="Automatic Peak Search [P]">Find Peaks [P]</button>
             <button id="btnFitAllPeaksY" class="secondary" style="width: auto; padding: 2px 7px; font-size: 0.72rem; color: #00e676; border-color: #00c853;" title="Fit All Displayed Peaks (Peak-Aware Background) [H]">Fit All [H]</button>
             <button id="btnClearPeaksY" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem;" title="Clear Found Peaks &amp; Fits [=]">Clear Peaks</button>
-            <button id="btnPrintPDF1DY" style="width: auto; padding: 2px 7px; font-size: 0.72rem; background: #1b5e20; border-color: #4caf50; color: #fff;">Print PDF</button>
+            <button id="btnPrintPDF1DY" class="btn-pdf" title="Print Publication 1D Spectrum PDF (Det 2)">Print PDF</button>
             <button id="btnExport1DY" style="width: auto; padding: 2px 7px; font-size: 0.72rem;">Export .dat</button>
           </div>
         </div>
@@ -754,7 +814,7 @@
     <tr><td>1 / 2 / 4</td><td>Direct 2D scale: 1 (Linear), 2 (Power / Sqrt), 4 (Log)</td></tr>
     <tr><td>C / c</td><td>Cycle colormaps</td></tr>
     <tr><td>W / w</td><td>Set Gate limits (consecutive pairs: left &amp; right) on 1D spectrum</td></tr>
-    <tr><td>B / b</td><td>Set Background limits (consecutive pairs: left &amp; right) on 1D spectrum</td></tr>
+    <tr><td>X / x</td><td>Set Background limits (consecutive pairs: left &amp; right) on 1D spectrum</td></tr>
     <tr><td>Z / z</td><td>Cancel pending limit or clear active 1D coincidence gate</td></tr>
     <tr><td>M / m</td><td>Toggle left menu panel (collapse / expand)</td></tr>
     <tr><td>Drag Divider</td><td>Adjust width of 2D matrix vs 1D projections (double-click to reset)</td></tr>
@@ -851,6 +911,9 @@
   // 1D Vertical Scales: { 0: 'linear', 1: 'linear' }
   let projScale1D = { 0: 'linear', 1: 'linear' };
 
+  // 1D Histogram Gridlines Mode: 'both' (Major & Minor), 'major', 'none'
+  let grid1DMode = localStorage.getItem('cmat_grid_1d') || 'both';
+
   // Current Focused / Hovered Panel for contextual shortcuts ('2d', '1d-0', '1d-1')
   let currentHoveredPanel = '2d';
 
@@ -898,9 +961,9 @@
     return Math.round(Math.max(0, Math.min(1, frac)) * 1000);
   }
 
-  // Plot Margins
-  const margin2D = { left: 55, bottom: 40, top: 12, right: 15 };
-  const margin1D = { left: 55, bottom: 28, top: 10, right: 14 };
+  // Plot Margins - Expanded to fit clear 18px / 16px axis text & titles without clipping
+  const margin2D = { left: 78, bottom: 56, top: 16, right: 20 };
+  const margin1D = { left: 75, bottom: 54, top: 14, right: 18 };
 
   // Precalculated 256-entry Uint32 Color LUT
   let colorLUT = new Uint32Array(256);
@@ -908,20 +971,26 @@
   // chToEnergy(ch, axis) is defined at top of script with per-axis calibration support
 
   function getPlotRect2D() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas2d.width / dpr;
+    const h = canvas2d.height / dpr;
     return {
       x: margin2D.left,
       y: margin2D.top,
-      w: Math.max(10, canvas2d.width - margin2D.left - margin2D.right),
-      h: Math.max(10, canvas2d.height - margin2D.top - margin2D.bottom)
+      w: Math.max(10, w - margin2D.left - margin2D.right),
+      h: Math.max(10, h - margin2D.top - margin2D.bottom)
     };
   }
 
   function getPlotRect1D(canvas) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.width / dpr;
+    const h = canvas.height / dpr;
     return {
       x: margin1D.left,
       y: margin1D.top,
-      w: Math.max(10, canvas.width - margin1D.left - margin1D.right),
-      h: Math.max(10, canvas.height - margin1D.top - margin1D.bottom)
+      w: Math.max(10, w - margin1D.left - margin1D.right),
+      h: Math.max(10, h - margin1D.top - margin1D.bottom)
     };
   }
 
@@ -981,15 +1050,20 @@
   }
 
   function resizeCanvases() {
+    const dpr = window.devicePixelRatio || 1;
     const p2d = document.querySelector('.panel-2d');
     const ftr = document.querySelector('.panel-2d-footer');
     const ftrH = ftr ? ftr.offsetHeight : 26;
     if (p2d) {
       const w2d = p2d.clientWidth;
       const h2d = p2d.clientHeight - ftrH;
-      if (w2d > 0 && h2d > 0 && (canvas2d.width !== w2d || canvas2d.height !== h2d)) {
-        canvas2d.width = w2d;
-        canvas2d.height = h2d;
+      if (w2d > 0 && h2d > 0) {
+        const tw = Math.round(w2d * dpr);
+        const th = Math.round(h2d * dpr);
+        if (canvas2d.width !== tw || canvas2d.height !== th) {
+          canvas2d.width = tw;
+          canvas2d.height = th;
+        }
       }
     }
 
@@ -997,9 +1071,13 @@
       const rectX = canvas1dX.getBoundingClientRect();
       const w1dX = Math.floor(rectX.width);
       const h1dX = Math.floor(rectX.height);
-      if (w1dX > 0 && h1dX > 0 && (canvas1dX.width !== w1dX || canvas1dX.height !== h1dX)) {
-        canvas1dX.width = w1dX;
-        canvas1dX.height = h1dX;
+      if (w1dX > 0 && h1dX > 0) {
+        const tw = Math.round(w1dX * dpr);
+        const th = Math.round(h1dX * dpr);
+        if (canvas1dX.width !== tw || canvas1dX.height !== th) {
+          canvas1dX.width = tw;
+          canvas1dX.height = th;
+        }
       }
     }
 
@@ -1007,9 +1085,13 @@
       const rectY = canvas1dY.getBoundingClientRect();
       const w1dY = Math.floor(rectY.width);
       const h1dY = Math.floor(rectY.height);
-      if (w1dY > 0 && h1dY > 0 && (canvas1dY.width !== w1dY || canvas1dY.height !== h1dY)) {
-        canvas1dY.width = w1dY;
-        canvas1dY.height = h1dY;
+      if (w1dY > 0 && h1dY > 0) {
+        const tw = Math.round(w1dY * dpr);
+        const th = Math.round(h1dY * dpr);
+        if (canvas1dY.width !== tw || canvas1dY.height !== th) {
+          canvas1dY.width = tw;
+          canvas1dY.height = th;
+        }
       }
     }
   }
@@ -1035,6 +1117,8 @@
     if (btnToggle) btnToggle.addEventListener('click', toggleSidebar);
     const btnHide = document.getElementById('btnHideSidebar');
     if (btnHide) btnHide.addEventListener('click', toggleSidebar);
+    const btnHideTop = document.getElementById('btnHideSidebarTop');
+    if (btnHideTop) btnHideTop.addEventListener('click', toggleSidebar);
 
     if (localStorage.getItem('cmat_sidebar_collapsed') === '1') {
       const sb = document.getElementById('sidebar');
@@ -1137,8 +1221,7 @@
       mats.forEach((m, i) => {
         const opt = document.createElement('option');
         opt.value = i;
-        const countStr = m.total_counts ? (m.total_counts >= 1e6 ? (m.total_counts / 1e6).toFixed(2) + 'M' : (m.total_counts / 1e3).toFixed(1) + 'k') : '-';
-        opt.text = `[${i + 1}/${mats.length}] ${m.name} (${m.shape[0]}×${m.shape[1]} | ${countStr} cts)`;
+        opt.text = `[${i + 1}/${mats.length}] ${m.name} (${m.shape[0]}×${m.shape[1]})`;
         if (i === activeIdx) opt.selected = true;
         sel.appendChild(opt);
       });
@@ -1491,17 +1574,23 @@
       }
     }
 
+    if (cfg.grid_1d) {
+      grid1DMode = cfg.grid_1d;
+    }
+
     setupEvents();
     updateScaleBadge2D();
     updateScaleBadges1D();
+    updateGridBadges1D();
     await fetchTileAndRender();
     await fetch1DProjection();
   }
 
   async function fetchTileAndRender() {
+    const dpr = window.devicePixelRatio || 1;
     const pr = getPlotRect2D();
-    const reqW = Math.min(1024, Math.max(128, Math.round(pr.w)));
-    const reqH = Math.min(1024, Math.max(128, Math.round(pr.h)));
+    const reqW = Math.min(2048, Math.max(128, Math.round(pr.w * dpr)));
+    const reqH = Math.min(2048, Math.max(128, Math.round(pr.h * dpr)));
 
     const url = `/api/tile?x0=${Math.floor(view.x0)}&x1=${Math.ceil(view.x1)}&y0=${Math.floor(view.y0)}&y1=${Math.ceil(view.y1)}&w=${reqW}&h=${reqH}`;
     const res = await fetch(url);
@@ -1531,7 +1620,7 @@
       if (btnClrY) btnClrY.style.display = 'none';
       if (btnSidebarClr) btnSidebarClr.style.display = 'none';
       if (sideStatus) {
-        sideStatus.innerHTML = `No active gate.<br><span style="color:#888;">Hover on 1D view:</span><br><span style="color:#00e676;">[W]</span>: Gate limits (L / R pairs)<br><span style="color:#ff5252;">[B]</span>: Background (L / R pairs)<br><span style="color:#ffd600;">[Z]</span>: Clear gate / Cancel`;
+        sideStatus.innerHTML = `No active gate.<br><span style="color:#888;">Hover on 1D view:</span><br><span style="color:#00e676;">[W]</span>: Gate limits (L / R pairs)<br><span style="color:#ff5252;">[X]</span>: Background (L / R pairs)<br><span style="color:#ffd600;">[Z]</span>: Clear gate / Cancel`;
       }
       return;
     }
@@ -1544,12 +1633,12 @@
     const dstDet = (d.dest_axis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
 
     if (d.axis === 0) {
-      document.getElementById('specTitleX').innerText = `Det 1 (Gated: W=${wStr}, B=${bStr})`;
+      document.getElementById('specTitleX').innerText = `Det 1 (Gated: W=${wStr}, X=${bStr})`;
       document.getElementById('specTitleY').innerText = `Det 2 (Coincidence Cut: ${scaleStr}, Net: ${d.net_counts.toLocaleString()} cts)`;
       if (btnClrX) btnClrX.style.display = 'none';
       if (btnClrY) btnClrY.style.display = 'inline-block';
     } else {
-      document.getElementById('specTitleY').innerText = `Det 2 (Gated: W=${wStr}, B=${bStr})`;
+      document.getElementById('specTitleY').innerText = `Det 2 (Gated: W=${wStr}, X=${bStr})`;
       document.getElementById('specTitleX').innerText = `Det 1 (Coincidence Cut: ${scaleStr}, Net: ${d.net_counts.toLocaleString()} cts)`;
       if (btnClrX) btnClrX.style.display = 'inline-block';
       if (btnClrY) btnClrY.style.display = 'none';
@@ -1560,7 +1649,7 @@
     if (sideStatus) {
       sideStatus.innerHTML = `<strong style="color:#69f0ae;">Active Cut:</strong> ${srcDet} &rarr; ${dstDet}<br>`
         + `<span style="color:#00e676;">• Gates (W):</span> ${wStr} (${d.total_w_ch} ch)<br>`
-        + `<span style="color:#ff5252;">• Bg (B):</span> ${bStr} (${d.total_b_ch} ch, ${scaleStr})<br>`
+        + `<span style="color:#ff5252;">• Bg (X):</span> ${bStr} (${d.total_b_ch} ch, ${scaleStr})<br>`
         + `<span style="color:#ffd600;">• Net Cts:</span> ${d.net_counts.toLocaleString()} &plusmn; ${d.net_err.toFixed(1)}`;
     }
   }
@@ -1618,18 +1707,18 @@
         document.getElementById('hudCoords').innerText = `[${detLabel}] Gate W${wIdx} set: [${c0}..${c1}] (${c1 - c0 + 1} ch). Cutting coincidence on ${oppLabel}...`;
         fetchGatedProjection1D();
       }
-    } else if (type === 'b') {
+    } else if (type === 'x' || type === 'b') {
       if (gate1DState.pending_b === null) {
         gate1DState.pending_b = curCh;
         gate1DState.pending_w = null;
-        document.getElementById('hudCoords').innerText = `[${detLabel}] Background B${gate1DState.b_gates.length + 1} Limit 1: ch ${curCh}. Move cursor and press 'B' for Limit 2.`;
+        document.getElementById('hudCoords').innerText = `[${detLabel}] Background X${gate1DState.b_gates.length + 1} Limit 1: ch ${curCh}. Move cursor and press 'X' for Limit 2.`;
       } else {
         const c0 = Math.min(gate1DState.pending_b, curCh);
         const c1 = Math.max(gate1DState.pending_b, curCh);
         gate1DState.b_gates.push([c0, c1]);
         gate1DState.pending_b = null;
         const bIdx = gate1DState.b_gates.length;
-        document.getElementById('hudCoords').innerText = `[${detLabel}] Background B${bIdx} set: [${c0}..${c1}] (${c1 - c0 + 1} ch). Updating coincidence on ${oppLabel}...`;
+        document.getElementById('hudCoords').innerText = `[${detLabel}] Background X${bIdx} set: [${c0}..${c1}] (${c1 - c0 + 1} ch). Updating coincidence on ${oppLabel}...`;
         if (gate1DState.w_gates.length > 0) {
           fetchGatedProjection1D();
         }
@@ -1709,8 +1798,10 @@
 
   function render2D() {
     updateScaleBadge2D();
-    const cw = canvas2d.width, ch = canvas2d.height;
-    ctx2d.clearRect(0, 0, cw, ch);
+    const dpr = window.devicePixelRatio || 1;
+    ctx2d.setTransform(1, 0, 0, 1, 0, 0);
+    ctx2d.clearRect(0, 0, canvas2d.width, canvas2d.height);
+    ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
     const pr = getPlotRect2D();
 
     // 1. Draw Density Heatmap
@@ -1760,12 +1851,12 @@
       ctx2d.restore();
     }
 
-    // 2. Axes Border & Grid Ticks
+    // 2. Axes Border & Grid Ticks (Large 16px bold text, sharp vector glyphs)
     ctx2d.strokeStyle = '#444';
-    ctx2d.lineWidth = 1;
+    ctx2d.lineWidth = 1.2;
     ctx2d.strokeRect(pr.x, pr.y, pr.w, pr.h);
-    ctx2d.fillStyle = '#999';
-    ctx2d.font = '10px monospace';
+    ctx2d.fillStyle = '#bbb';
+    ctx2d.font = 'bold 16px system-ui, -apple-system, sans-serif';
     ctx2d.textAlign = 'center';
 
     const numTicks = 6;
@@ -1773,17 +1864,34 @@
       const frac = i / numTicks;
       const chX = Math.round(view.x0 + frac * (view.x1 - view.x0));
       const chY = Math.round(view.y0 + frac * (view.y1 - view.y0));
-      const px = pr.x + frac * pr.w;
-      const py = pr.y + pr.h - frac * pr.h;
+      const px = Math.round(pr.x + frac * pr.w);
+      const py = Math.round(pr.y + pr.h - frac * pr.h);
       ctx2d.beginPath();
-      ctx2d.moveTo(px, pr.y + pr.h); ctx2d.lineTo(px, pr.y + pr.h + 5); ctx2d.stroke();
-      ctx2d.fillText(chX.toString(), px, pr.y + pr.h + 16);
+      ctx2d.moveTo(px, pr.y + pr.h); ctx2d.lineTo(px, pr.y + pr.h + 6); ctx2d.stroke();
+      ctx2d.fillText(chX.toString(), px, pr.y + pr.h + 22);
       ctx2d.beginPath();
-      ctx2d.moveTo(pr.x, py); ctx2d.lineTo(pr.x - 5, py); ctx2d.stroke();
+      ctx2d.moveTo(pr.x, py); ctx2d.lineTo(pr.x - 6, py); ctx2d.stroke();
       ctx2d.textAlign = 'right';
-      ctx2d.fillText(chY.toString(), pr.x - 8, py + 3);
+      ctx2d.fillText(chY.toString(), pr.x - 10, py + 6);
       ctx2d.textAlign = 'center';
     }
+
+    // 2D Axis Titles
+    const isCalX = isAxisCalibrated(0);
+    const isCalY = isAxisCalibrated(1);
+    ctx2d.fillStyle = '#00e5ff';
+    ctx2d.font = 'bold 16px system-ui, -apple-system, sans-serif';
+    ctx2d.textAlign = 'center';
+    ctx2d.fillText(isCalX ? 'Det 1 / X Energy (keV)' : 'Det 1 / X Channel', pr.x + pr.w / 2, pr.y + pr.h + 44);
+
+    ctx2d.save();
+    ctx2d.translate(pr.x - 54, pr.y + pr.h / 2);
+    ctx2d.rotate(-Math.PI / 2);
+    ctx2d.fillStyle = '#ff9800';
+    ctx2d.font = 'bold 16px system-ui, -apple-system, sans-serif';
+    ctx2d.textAlign = 'center';
+    ctx2d.fillText(isCalY ? 'Det 2 / Y Energy (keV)' : 'Det 2 / Y Channel', 0, 0);
+    ctx2d.restore();
 
     // 3. Limit Markers
     ctx2d.save();
@@ -1931,23 +2039,25 @@
       ctx2d.moveTo(ptC.x, ptC.y - 8); ctx2d.lineTo(ptC.x, ptC.y + 8);
       ctx2d.stroke();
 
-      // D. Callout badge with Centroid & Volume
+      // D. Callout badge with Centroid & Volume (Twice the size: 18px bold)
       const isCalX = isAxisCalibrated(0);
       const isCalY = isAxisCalibrated(1);
       const xStr = isCalX ? `${f2d.centroid_x_e} keV` : `ch ${f2d.centroid_x_ch}`;
       const yStr = isCalY ? `${f2d.centroid_y_e} keV` : `ch ${f2d.centroid_y_ch}`;
       const posStr = `(${xStr}, ${yStr})`;
       const lbl = `${posStr} | Vol: ${f2d.volume.toLocaleString()} cts`;
-      ctx2d.font = 'bold 9px monospace';
+      ctx2d.font = 'bold 18px system-ui, -apple-system, sans-serif';
       const tW = ctx2d.measureText(lbl).width;
-      ctx2d.fillStyle = 'rgba(15, 18, 24, 0.92)';
-      ctx2d.fillRect(ptC.x + 8, ptC.y - 17, tW + 8, 16);
+      const bH = 32;
+      const bY = ptC.y - 40;
+      ctx2d.fillStyle = 'rgba(15, 18, 24, 0.94)';
+      ctx2d.fillRect(ptC.x + 10, bY, tW + 16, bH);
       ctx2d.strokeStyle = '#ffd600';
-      ctx2d.lineWidth = 1;
-      ctx2d.strokeRect(ptC.x + 8, ptC.y - 17, tW + 8, 16);
+      ctx2d.lineWidth = 1.8;
+      ctx2d.strokeRect(ptC.x + 10, bY, tW + 16, bH);
       ctx2d.fillStyle = '#ffd600';
       ctx2d.textAlign = 'left';
-      ctx2d.fillText(lbl, ptC.x + 12, ptC.y - 5);
+      ctx2d.fillText(lbl, ptC.x + 18, bY + 22);
     }
     updateMarkerStatus();
   }
@@ -2742,8 +2852,10 @@
   }
 
   function render1DSpectrum(canvas, ctx, spec, axis, cursorCh) {
-    const cw = canvas.width, ch = canvas.height;
-    ctx.clearRect(0, 0, cw, ch);
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     if (!spec || spec.length === 0) return;
 
     const pr = getPlotRect1D(canvas);
@@ -2818,6 +2930,118 @@
       }
       norm = Math.max(0, Math.min(1, norm));
       return pr.y + pr.h * (1 - norm);
+    }
+
+    // 0. Major & Minor Gridlines (rendered in the background behind spectrum data)
+    if (grid1DMode !== 'none') {
+      ctx.save();
+      const numMajorX = 5;
+      const numMajorY = 3;
+
+      // Minor Gridlines (Faint hairline)
+      if (grid1DMode === 'both') {
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)';
+        ctx.lineWidth = 1.0;
+        ctx.setLineDash([]);
+        ctx.beginPath();
+
+        // X Minor Gridlines (4 subdivisions per major interval)
+        for (let i = 0; i < numMajorX; i++) {
+          for (let s = 1; s < 4; s++) {
+            const frac = (i + s / 4) / numMajorX;
+            const x = Math.round(pr.x + frac * pr.w) + 0.5;
+            ctx.moveTo(x, pr.y);
+            ctx.lineTo(x, pr.y + pr.h);
+          }
+        }
+
+        // Y Minor Gridlines
+        if (isLog) {
+          const logMinInt = Math.floor(yMinDisplay);
+          const logMaxInt = Math.ceil(yMaxDisplay);
+          const logSpan = yMaxDisplay - yMinDisplay;
+          if (logSpan >= 1.0) {
+            for (let dec = logMinInt; dec <= logMaxInt; dec++) {
+              for (let m = 2; m <= 9; m++) {
+                const logVal = dec + Math.log10(m);
+                if (logVal >= yMinDisplay && logVal <= yMaxDisplay) {
+                  const norm = (logVal - yMinDisplay) / logSpan;
+                  const py = Math.round(pr.y + pr.h - norm * pr.h) + 0.5;
+                  ctx.moveTo(pr.x, py);
+                  ctx.lineTo(pr.x + pr.w, py);
+                }
+              }
+            }
+          } else {
+            // Tight zoom within single decade: 4 subdivisions per interval
+            for (let j = 0; j < numMajorY; j++) {
+              for (let s = 1; s < 4; s++) {
+                const frac = (j + s / 4) / numMajorY;
+                const py = Math.round(pr.y + pr.h - frac * pr.h) + 0.5;
+                ctx.moveTo(pr.x, py);
+                ctx.lineTo(pr.x + pr.w, py);
+              }
+            }
+          }
+        } else {
+          // Linear: 2 subdivisions between each major interval
+          for (let j = 0; j < numMajorY; j++) {
+            const frac = (j + 0.5) / numMajorY;
+            const py = Math.round(pr.y + pr.h - frac * pr.h) + 0.5;
+            ctx.moveTo(pr.x, py);
+            ctx.lineTo(pr.x + pr.w, py);
+          }
+        }
+        ctx.stroke();
+      }
+
+      // Major Gridlines (Crisp dashed lines)
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.12)';
+      ctx.lineWidth = 1.0;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+
+      // X Major Gridlines (aligned with interior axis ticks)
+      for (let i = 1; i < numMajorX; i++) {
+        const frac = i / numMajorX;
+        const x = Math.round(pr.x + frac * pr.w) + 0.5;
+        ctx.moveTo(x, pr.y);
+        ctx.lineTo(x, pr.y + pr.h);
+      }
+
+      // Y Major Gridlines
+      if (isLog) {
+        const logMinInt = Math.floor(yMinDisplay);
+        const logMaxInt = Math.ceil(yMaxDisplay);
+        const logSpan = yMaxDisplay - yMinDisplay;
+        if (logSpan >= 1.0) {
+          for (let dec = logMinInt; dec <= logMaxInt; dec++) {
+            if (dec >= yMinDisplay && dec <= yMaxDisplay) {
+              const norm = (dec - yMinDisplay) / logSpan;
+              const py = Math.round(pr.y + pr.h - norm * pr.h) + 0.5;
+              ctx.moveTo(pr.x, py);
+              ctx.lineTo(pr.x + pr.w, py);
+            }
+          }
+        } else {
+          for (let j = 1; j < numMajorY; j++) {
+            const frac = j / numMajorY;
+            const py = Math.round(pr.y + pr.h - frac * pr.h) + 0.5;
+            ctx.moveTo(pr.x, py);
+            ctx.lineTo(pr.x + pr.w, py);
+          }
+        }
+      } else {
+        for (let j = 1; j < numMajorY; j++) {
+          const frac = j / numMajorY;
+          const py = Math.round(pr.y + pr.h - frac * pr.h) + 0.5;
+          ctx.moveTo(pr.x, py);
+          ctx.lineTo(pr.x + pr.w, py);
+        }
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
     }
 
     // A. Stepped Histogram
@@ -3066,7 +3290,7 @@
           // Badge on top
           ctx.save();
           ctx.font = 'bold 9px monospace';
-          const badgeText = `B${i + 1}`;
+          const badgeText = `X${i + 1}`;
           ctx.fillStyle = 'rgba(28, 12, 12, 0.9)';
           ctx.fillRect(xL, pr.y + 2, 22, 13);
           ctx.strokeStyle = '#ff5252';
@@ -3102,7 +3326,7 @@
         ctx.restore();
       }
 
-      // Pending B limit
+      // Pending X limit
       if (gate1DState.pending_b !== null && gate1DState.pending_b >= chStart && gate1DState.pending_b <= chEnd) {
         const pX = pr.x + ((gate1DState.pending_b + 0.5 - chStart) / span) * pr.w;
         ctx.strokeStyle = '#ff5252';
@@ -3116,7 +3340,7 @@
 
         ctx.save();
         ctx.font = 'bold 9px monospace';
-        const txt = `B${gate1DState.b_gates.length + 1} L:${gate1DState.pending_b}`;
+        const txt = `X${gate1DState.b_gates.length + 1} L:${gate1DState.pending_b}`;
         const tW = ctx.measureText(txt).width;
         ctx.fillStyle = 'rgba(255, 82, 82, 0.92)';
         ctx.fillRect(pX - 2, pr.y + 2, tW + 6, 14);
@@ -3291,8 +3515,8 @@
         ctx.stroke();
       }
 
-      // 2. Render clear 12px text labels without rectangles when space permits
-      ctx.font = 'bold 12px monospace';
+      // 2. Render sharp 12px text labels without rectangles when space permits
+      ctx.font = 'bold 12px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
       ctx.textAlign = 'center';
 
       // Sort by prominence / counts descending so prominent peaks get placed first; hovered peak has top priority
@@ -3327,95 +3551,72 @@
           if (!vp.isNearCursor) {
             placedIntervals.push({ left: boxLeft, right: boxRight });
           }
-          const lblY = Math.max(pr.y + 13, vp.caretTipY - 10);
+          const lblY = Math.max(pr.y + 14, vp.caretTipY - 10);
           labelsToDraw.push({ vp, lblX, lblY });
         }
       }
 
-      // Render clean 12px text labels without bounding boxes
+      // Render clean, vector-sharp 12px text labels with integer pixel snapping
       for (const item of labelsToDraw) {
         const { vp, lblX, lblY } = item;
         const isHovered = vp.isNearCursor;
+        const drawX = Math.round(lblX);
+        const drawY = Math.round(lblY);
 
-        // High-contrast dark outline to guarantee crisp legibility against any curve or background
-        ctx.strokeStyle = 'rgba(10, 10, 10, 0.95)';
-        ctx.lineWidth = 3.2;
+        // Crisp dark outline without blurring into glyph stems
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+        ctx.lineWidth = 2.0;
         ctx.lineJoin = 'round';
-        ctx.strokeText(vp.pLbl, lblX, lblY);
+        ctx.strokeText(vp.pLbl, drawX, drawY);
 
         // Vibrant gold text for candidate peaks, soft cyan for manual peaks, soft green for fitted peaks (white on hover)
         const isFitted = Boolean(vp.p && vp.p.fitted);
         const isManual = Boolean(vp.p && vp.p.manual);
         ctx.fillStyle = isHovered ? '#ffffff' : (isFitted ? '#81c784' : (isManual ? '#80d8ff' : '#ffd54f'));
-        ctx.fillText(vp.pLbl, lblX, lblY);
+        ctx.fillText(vp.pLbl, drawX, drawY);
       }
 
       ctx.restore();
     }
 
-    // E. On-Canvas HUD Badge
-    let hudText;
-    const isGatedDest = (gate1DState.axis !== null && gate1DState.axis === (1 - axis) && gate1DState.w_gates.length > 0);
-    const detLabel = (axis === 0) ? (isGatedDest ? 'Det 1 [Coinc Cut]' : 'Det 1 (X)') : (isGatedDest ? 'Det 2 [Coinc Cut]' : 'Det 2 (Y)');
-    if (cursorCh !== null && cursorCh >= 0 && cursorCh < spec.length) {
-      const eVal = chToEnergy(cursorCh + 0.5).toFixed(1);
-      const cVal = spec[cursorCh] || 0;
-      hudText = isCal
-        ? `${detLabel} | Ch: ${cursorCh} | ${eVal} keV | Cts: ${cVal}`
-        : `${detLabel} | Ch: ${cursorCh} | Cts: ${cVal}`;
-    } else {
-      hudText = isGatedDest ? `${detLabel} (Ctrl+Click to Fit)` : `${detLabel} Spectrum (Ctrl+Click to Fit)`;
-    }
-
-    ctx.save();
-    ctx.font = 'bold 9px monospace';
-    const textW = ctx.measureText(hudText).width;
-    const badgeX = pr.x + pr.w - textW - 12;
-    const badgeY = pr.y + 3;
-    ctx.fillStyle = 'rgba(20, 20, 20, 0.88)';
-    ctx.strokeStyle = (cursorCh !== null) ? '#ffd600' : '#444';
-    ctx.lineWidth = 1;
-    ctx.fillRect(badgeX, badgeY, textW + 8, 15);
-    ctx.strokeRect(badgeX, badgeY, textW + 8, 15);
-    ctx.fillStyle = (cursorCh !== null) ? '#ffd600' : '#888';
-    ctx.textAlign = 'left';
-    ctx.fillText(hudText, badgeX + 4, badgeY + 11);
-    ctx.restore();
-
-    // E. Axes Ticks on X
-    ctx.fillStyle = '#999';
-    ctx.font = '9px monospace';
+    // E. Axes Ticks on X (Doubled size, sharp & clear)
+    ctx.fillStyle = '#bbb';
+    ctx.font = 'bold 16px system-ui, -apple-system, sans-serif';
     ctx.textAlign = 'center';
     const numTicks = 5;
     for (let i = 0; i <= numTicks; i++) {
       const frac = i / numTicks;
       const c = Math.round(chStart + frac * (span - 1));
-      const x = pr.x + frac * pr.w;
+      const x = Math.round(pr.x + frac * pr.w);
       ctx.beginPath();
       ctx.moveTo(x, pr.y + pr.h);
-      ctx.lineTo(x, pr.y + pr.h + 3);
+      ctx.lineTo(x, pr.y + pr.h + 5);
       ctx.stroke();
       if (isCal) {
         const eStr = chToEnergy(c + 0.5, axis).toFixed(0);
-        ctx.fillText(`${eStr}k (${c})`, x, pr.y + pr.h + 12);
+        ctx.fillText(`${eStr}k (${c})`, x, pr.y + pr.h + 20);
       } else {
-        ctx.fillText(c.toString(), x, pr.y + pr.h + 12);
+        ctx.fillText(c.toString(), x, pr.y + pr.h + 20);
       }
     }
     const xLabel = (axis === 0)
       ? (isCal ? 'Det 1 Energy (keV) / Channel' : 'Det 1 Channel')
       : (isCal ? 'Det 2 Energy (keV) / Channel' : 'Det 2 Channel');
-    ctx.fillText(xLabel, pr.x + pr.w / 2, pr.y + pr.h + 22);
+    ctx.font = 'bold 16px system-ui, -apple-system, sans-serif';
+    ctx.fillStyle = (axis === 0) ? '#00e5ff' : '#ff9800';
+    ctx.fillText(xLabel, pr.x + pr.w / 2, pr.y + pr.h + 42);
 
-    // F. Dynamic Ticks on Y
+    // F. Dynamic Ticks on Y (Doubled size, sharp & clear)
+    ctx.font = 'bold 16px system-ui, -apple-system, sans-serif';
+    ctx.fillStyle = '#bbb';
     ctx.textAlign = 'right';
     const numYTicks = 3;
     for (let j = 0; j <= numYTicks; j++) {
       const frac = j / numYTicks;
-      const py = pr.y + pr.h - frac * pr.h;
+      const py = Math.round(pr.y + pr.h - frac * pr.h);
       ctx.beginPath();
       ctx.moveTo(pr.x, py);
-      ctx.lineTo(pr.x - 4, py);
+      ctx.lineTo(pr.x - 5, py);
       ctx.stroke();
 
       let labelVal;
@@ -3427,12 +3628,13 @@
         let v = yMinDisplay + frac * (yMaxDisplay - yMinDisplay);
         labelVal = (range > 40) ? Math.round(v).toString() : v.toFixed(1);
       }
-      ctx.fillText(labelVal, pr.x - 6, py + 3);
+      ctx.fillText(labelVal, pr.x - 10, py + 5);
     }
   }
 
   function renderBoth1DSpectra() {
     updateScaleBadges1D();
+    updateGridBadges1D();
     render1DSpectrum(canvas1dX, ctx1dX, currentProjSpecX, 0, cursor1DChannelX);
     render1DSpectrum(canvas1dY, ctx1dY, currentProjSpecY, 1, cursor1DChannelY);
   }
@@ -3493,6 +3695,38 @@
     projScale1D[axis] = next;
     updateScaleBadges1D();
     renderBoth1DSpectra();
+  }
+
+  function updateGridBadges1D() {
+    const btnX = document.getElementById('btnGridToggleX');
+    const btnY = document.getElementById('btnGridToggleY');
+    const label = (grid1DMode === 'both') ? 'GRID: ALL' : (grid1DMode === 'major' ? 'GRID: MAJ' : 'GRID: OFF');
+    const title = (grid1DMode === 'both')
+      ? '1D Gridlines: Major & Minor (Click to cycle Major / Off / Both)'
+      : (grid1DMode === 'major' ? '1D Gridlines: Major Only (Click to cycle Off / Both)' : '1D Gridlines: Disabled (Click to Enable)');
+    const isActive = (grid1DMode !== 'none');
+    [btnX, btnY].forEach(btn => {
+      if (btn) {
+        btn.textContent = label;
+        btn.title = title;
+        if (isActive) btn.classList.add('active');
+        else btn.classList.remove('active');
+      }
+    });
+    const sel = document.getElementById('grid1DSelect');
+    if (sel && sel.value !== grid1DMode) sel.value = grid1DMode;
+  }
+
+  function set1DGridMode(mode) {
+    grid1DMode = mode;
+    localStorage.setItem('cmat_grid_1d', mode);
+    updateGridBadges1D();
+    renderBoth1DSpectra();
+  }
+
+  function cycle1DGridMode() {
+    const nextMode = (grid1DMode === 'both') ? 'major' : (grid1DMode === 'major' ? 'none' : 'both');
+    set1DGridMode(nextMode);
   }
 
   function updateMarkerStatus() {
@@ -3706,7 +3940,7 @@
     content += `# Channel Energy_keV Counts\n`;
 
     for (let i = chStart; i <= chEnd; i++) {
-      let e = chToEnergy(i + 0.5).toFixed(3);
+      let e = chToEnergy(i + 0.5, axis).toFixed(3);
       content += `${i} ${e} ${spec[i]}\n`;
     }
 
@@ -3718,48 +3952,112 @@
   }
 
   function printPDF1D(axis) {
-    const isSynced = (document.getElementById('projRangeSelect').value === 'synced');
-    const isLog = (projScale1D[axis] === 'log') ? 1 : 0;
-    const x0 = Math.floor(Math.max(0, view.x0));
-    const x1 = Math.ceil(Math.min(metadata.shape[0], view.x1));
-    const y0 = Math.floor(Math.max(0, view.y0));
-    const y1 = Math.ceil(Math.min(metadata.shape[1], view.y1));
-    const zoomY = zoom1DY[axis] || 1.0;
-    const fit = activeFit1D[axis];
-    const fitType = getActiveFitType();
-    const fwhmMult = document.getElementById('fwhmMultSlider1D') ? document.getElementById('fwhmMultSlider1D').value : '4.0';
+    try {
+      const isSynced = (document.getElementById('projRangeSelect').value === 'synced');
+      const isLog = (projScale1D[axis] === 'log') ? 1 : 0;
+      const x0 = Math.floor(Math.max(0, view.x0));
+      const x1 = Math.ceil(Math.min(metadata.shape[0], view.x1));
+      const y0 = Math.floor(Math.max(0, view.y0));
+      const y1 = Math.ceil(Math.min(metadata.shape[1], view.y1));
+      const zoomY = zoom1DY[axis] || 1.0;
+      const fit = activeFit1D[axis];
+      const fitType = getActiveFitType();
+      const fwhmMult = document.getElementById('fwhmMultSlider1D') ? document.getElementById('fwhmMultSlider1D').value : '4.0';
+      const gridMode = grid1DMode || 'both';
 
-    let url = `/api/export_pdf_1d?axis=${axis}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}&is_synced=${isSynced ? 1 : 0}&is_log=${isLog}&zoom_y=${zoomY}`;
-    if (gate1DState.axis !== null && gate1DState.axis === (1 - axis) && gate1DState.w_gates.length > 0) {
-      url += `&w_gates=${encodeURIComponent(JSON.stringify(gate1DState.w_gates))}&b_gates=${encodeURIComponent(JSON.stringify(gate1DState.b_gates))}`;
+      let url = `/api/export_pdf_1d?axis=${axis}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}&is_synced=${isSynced ? 1 : 0}&is_log=${isLog}&zoom_y=${zoomY}&grid_mode=${encodeURIComponent(gridMode)}`;
+      if (gate1DState.axis !== null && gate1DState.axis === (1 - axis) && gate1DState.w_gates.length > 0) {
+        url += `&w_gates=${encodeURIComponent(JSON.stringify(gate1DState.w_gates))}&b_gates=${encodeURIComponent(JSON.stringify(gate1DState.b_gates))}`;
+      }
+
+      // Collect visible peak markers and labels
+      const chStart = isSynced ? (axis === 0 ? x0 : y0) : 0;
+      const chEnd = isSynced ? (axis === 0 ? x1 : y1) : ((metadata && metadata.shape && metadata.shape[axis]) || 4096);
+      const isCal = isAxisCalibrated(axis);
+      const visiblePeaks = (foundPeaks1D[axis] || [])
+        .filter(p => p && p.channel !== undefined && p.channel >= chStart && p.channel <= chEnd)
+        .map(p => {
+          const chNum = Number(p.channel);
+          let eNum = (p.energy !== undefined && p.energy !== null) ? Number(p.energy) : null;
+          if (isCal && (eNum === null || isNaN(eNum))) {
+            eNum = chToEnergy(chNum + 0.5, axis);
+          }
+          let lbl = '';
+          if (isCal && eNum !== null && !isNaN(eNum)) {
+            lbl = eNum.toFixed(1);
+          } else {
+            lbl = (!isNaN(chNum) ? chNum.toFixed(1) : String(p.channel));
+          }
+          return {
+            channel: chNum,
+            energy: eNum,
+            fitted: Boolean(p.fitted),
+            manual: Boolean(p.manual),
+            counts: p.counts || 0,
+            area: p.area,
+            label: lbl
+          };
+        });
+      if (visiblePeaks.length > 0) {
+        url += `&peaks=${encodeURIComponent(JSON.stringify(visiblePeaks))}`;
+      }
+
+      const mFit = activeMultiFit1D[axis];
+      if (mFit && mFit.peaks && mFit.peaks.length > 0) {
+        const pchs = mFit.peaks.map(p => Number(p.centroid_ch).toFixed(2)).join(',');
+        url += `&has_multi_fit=1&multi_peaks=${encodeURIComponent(pchs)}&multi_fit_type=${encodeURIComponent(mFit.fit_type || fitType)}`;
+        if (fitRegion1D[axis]) {
+          url += `&region=${encodeURIComponent(fitRegion1D[axis].join(','))}`;
+        }
+      } else if (fit && fit.centroid_ch !== undefined) {
+        url += `&has_fit=1&fit_ch=${fit.centroid_ch}&fit_type=${fitType}&fwhm_mult=${fwhmMult}`;
+      }
+
+      const w = window.open(url, '_blank');
+      if (!w) {
+        const a = document.createElement('a');
+        a.href = url;
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+    } catch (err) {
+      console.error("Print PDF 1D error:", err);
+      alert("Error generating 1D PDF: " + err.message);
     }
-    const mFit = activeMultiFit1D[axis];
-    if (mFit && mFit.peaks && mFit.peaks.length > 0) {
-      const pchs = mFit.peaks.map(p => p.centroid_ch.toFixed(2)).join(',');
-      url += `&has_multi_fit=1&multi_peaks=${encodeURIComponent(pchs)}&multi_fit_type=${encodeURIComponent(mFit.fit_type || fitType)}`;
-    } else if (fit && fit.centroid_ch !== undefined) {
-      url += `&has_fit=1&fit_ch=${fit.centroid_ch}&fit_type=${fitType}&fwhm_mult=${fwhmMult}`;
-    }
-    window.open(url, '_blank');
   }
 
   function printPDF2D() {
-    const x0 = Math.floor(Math.max(0, view.x0));
-    const x1 = Math.ceil(Math.min(metadata.shape[0], view.x1));
-    const y0 = Math.floor(Math.max(0, view.y0));
-    const y1 = Math.ceil(Math.min(metadata.shape[1], view.y1));
-    const cmap = document.getElementById('cmapSelect').value;
-    const scale = scaleMode2D;
-    const vmin = document.getElementById('vminSlider').value;
-    const vmax = currentVmax || 100;
-    const f2d = activeFit2D;
-    const fitType = getActiveFitType();
+    try {
+      const x0 = Math.floor(Math.max(0, view.x0));
+      const x1 = Math.ceil(Math.min(metadata.shape[0], view.x1));
+      const y0 = Math.floor(Math.max(0, view.y0));
+      const y1 = Math.ceil(Math.min(metadata.shape[1], view.y1));
+      const cmap = document.getElementById('cmapSelect').value;
+      const scale = scaleMode2D;
+      const vmin = document.getElementById('vminSlider').value;
+      const vmax = currentVmax || 100;
+      const f2d = activeFit2D;
+      const fitType = getActiveFitType();
 
-    let url = `/api/export_pdf_2d?x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}&cmap=${cmap}&scale=${scale}&vmin=${vmin}&vmax=${vmax}`;
-    if (f2d && f2d.centroid_x_ch !== undefined) {
-      url += `&has_fit=1&fit_x=${f2d.centroid_x_ch}&fit_y=${f2d.centroid_y_ch}&fit_type=${fitType}`;
+      let url = `/api/export_pdf_2d?x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}&cmap=${cmap}&scale=${scale}&vmin=${vmin}&vmax=${vmax}`;
+      if (f2d && f2d.centroid_x_ch !== undefined) {
+        url += `&has_fit=1&fit_x=${f2d.centroid_x_ch}&fit_y=${f2d.centroid_y_ch}&fit_type=${fitType}`;
+      }
+      const w = window.open(url, '_blank');
+      if (!w) {
+        const a = document.createElement('a');
+        a.href = url;
+        a.target = '_blank';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+    } catch (err) {
+      console.error("Print PDF 2D error:", err);
+      alert("Error generating 2D PDF: " + err.message);
     }
-    window.open(url, '_blank');
   }
 
   async function quitViewer() {
@@ -3837,6 +4135,7 @@
       peak_search_snr: parseFloat(document.getElementById('peakSearchSnrSlider')?.value || '9.0'),
       proj_range: document.getElementById('projRangeSelect').value,
       proj_scale: (projScale1D[0] === 'log' || projScale1D[1] === 'log') ? 'log' : 'linear',
+      grid_1d: grid1DMode,
     };
 
     if (metadata) {
@@ -3983,6 +4282,13 @@
     if (btnScaleToggleX) btnScaleToggleX.addEventListener('click', () => { cycle1DScale(0); unfocusControls(); });
     const btnScaleToggleY = document.getElementById('btnScaleToggleY');
     if (btnScaleToggleY) btnScaleToggleY.addEventListener('click', () => { cycle1DScale(1); unfocusControls(); });
+
+    const btnGridX = document.getElementById('btnGridToggleX');
+    if (btnGridX) btnGridX.addEventListener('click', () => { cycle1DGridMode(); unfocusControls(); });
+    const btnGridY = document.getElementById('btnGridToggleY');
+    if (btnGridY) btnGridY.addEventListener('click', () => { cycle1DGridMode(); unfocusControls(); });
+    const selGrid = document.getElementById('grid1DSelect');
+    if (selGrid) selGrid.addEventListener('change', (e) => { set1DGridMode(e.target.value); unfocusControls(); });
 
     const p2D = document.getElementById('panel2D');
     const p1DX = document.getElementById('panel1DX');
@@ -4173,7 +4479,7 @@
       }
 
       const k = e.key.toLowerCase();
-      const isShortcut = ['arrowleft', 'arrowright', 'arrowdown', 'arrowup', 'e', 'f', 'q', '=', '+', 'v', 'g', 'c', '1', '2', '4', 'l', '?', 'h', 'escape', 'm', 'w', 'b', 'z', 'p', 'r', '[', ']'].includes(k);
+      const isShortcut = ['arrowleft', 'arrowright', 'arrowdown', 'arrowup', 'e', 'f', 'q', '=', '+', 'v', 'g', 'c', '1', '2', '4', 'l', '?', 'h', 'escape', 'm', 'w', 'x', 'b', 'z', 'p', 'r', '[', ']'].includes(k);
       if (isShortcut) {
         e.preventDefault();
         unfocusControls();
@@ -4220,7 +4526,7 @@
       else if (e.key === 'q' || e.key === 'Q') quitViewer();
       else if (e.key === '=' || e.key === '+') clearAllFits();
       else if (e.key === 'w' || e.key === 'W') handleGateKeyPress('w');
-      else if (e.key === 'b' || e.key === 'B') handleGateKeyPress('b');
+      else if (e.key === 'x' || e.key === 'X' || e.key === 'b' || e.key === 'B') handleGateKeyPress('x');
       else if (e.key === 'r' || e.key === 'R') handleRegionKeyPress();
       else if (e.key === 'z' || e.key === 'Z') clear1DGates(true);
       else if (e.key === 'p' || e.key === 'P') {
@@ -4658,6 +4964,7 @@
       if (frac >= 0 && frac <= 1) {
         const ch = Math.max(0, Math.min(spec.length - 1, Math.floor(chStart + frac * span)));
         if (axis === 0) cursor1DChannelX = ch; else cursor1DChannelY = ch;
+        const val = spec[ch] || 0;
         const isCal = isAxisCalibrated(axis);
         const energy = chToEnergy(ch + 0.5, axis).toFixed(1);
         const energyStr = isCal ? ` (${energy} keV)` : '';

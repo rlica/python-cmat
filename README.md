@@ -99,7 +99,7 @@ python cmat_webviewer.py /path/to/matrix.cmat
 | **Fit All Displayed Peaks** | `H` or `h` | Fit all visible candidate peaks on Peak-Aware Continuum Background (averages low-statistics noise grass, connects smoothly under multiplets) |
 | **Clear Peak Fits & Markers** | `=` (Equals) or `+` | Clear active peak fit curves and found peak markers from 1D spectra and 2D matrix |
 | **Set Peak Gate Limits** | `W` or `w` (1D) | Set Left / Right peak coincidence gate limits ($W_k$) on 1D spectrum |
-| **Set Background Limits** | `B` or `b` (1D) | Set Left / Right background gate limits ($B_m$) for normalized subtraction |
+| **Set Background Limits** | `X` or `x` (1D) | Set Left / Right background gate limits ($X_m$) for normalized subtraction |
 | **Clear Active 1D Gate** | `Z` or `z` (1D) | Clear active coincidence gate/background cut (or cancel in-progress limit) |
 | **Pan 1D Channels (Horizontal)** | `←` / `→` (1D Focus) | Pan 1D spectrum window left / right (`Shift` for 2× speed) |
 | **Pan 1D Counts (Vertical)** | `↑` / `↓` (1D Focus) | Pan / adjust 1D vertical counts scale (`↑` magnify, `↓` compress) |
@@ -138,7 +138,7 @@ python cmat_webviewer.py ./data/*.cmat
 - **Instant Switching**: Use the header dropdown or press `[` and `]` to cycle between loaded matrices.
 - **State Preservation**: When you switch matrices, all analysis conditions remain locked:
   - 2D viewport coordinates and 1D vertical zoom scales
-  - Coincidence peak ($W$) and background ($B$) gate windows (automatically re-evaluated against the new matrix)
+  - Coincidence peak ($W$) and background ($X$) gate windows (automatically re-evaluated against the new matrix)
   - 1D single-peak and multiplet fits (automatically refitted with updated areas and FWHMs on the new matrix)
   - 2D coincidence peak fits (refitted at identical coincidence coordinates)
   - Colormaps, linear/log scales, and contrast ($V_{max}$, $V_{min}$) thresholds
@@ -299,7 +299,7 @@ cmat [inbeam]> quit
 | **`cal`** | `<axis> <a0> <a1> [a2]` | Define per-axis quadratic energy calibration |
 | **`cal show`** | *None* | Display calibration table and formulas for all axes |
 | **`cal clear`** | `[axis]` | Reset calibration to raw channel units |
-| **`gate`** | `<axis> w <w0> <w1> [b <b0> <b1>]` | Set coincidence peak (`w`) and sideband BG subtraction (`b`) windows |
+| **`gate`** | `<axis> w <w0> <w1> [x <x0> <x1>]` | Set coincidence peak (`w`) and sideband BG subtraction (`x`) windows |
 | **`gate clear`** | `[axis]` | Clear active coincidence gates and restore full projection |
 | **`gate show`** | *None* | Print active gate slices, widths, and normalization scale factors |
 | **`search`** | `[axis] [--method M] [--snr N]` | Automated peak detection (`cwt`, `prominence`, `mariscotti`) |
@@ -460,20 +460,20 @@ and the Peak-to-Total-Background ratio $\Pi = n^t_{p|p} / n^m_{p|p}$.
 
 ---
 
-### 4. 1D Multi-Gate Coincidence Slicing & Normalized Background Subtraction (`xtrackn W/B/Z`)
+### 4. 1D Multi-Gate Coincidence Slicing & Normalized Background Subtraction (`xtrackn W/X/Z`)
 
 In $\gamma$-$\gamma$ coincidence analysis, setting an energy gate on a transition in Detector 1 (X) projects the coincident spectrum in Detector 2 (Y), isolating transitions belonging to the same cascade while suppressing unassociated photopeaks.
 
 Following the classic [GASPware](https://github.com/csteke/GASPware) `xtrackn` gate methodology:
 - **Peak Gate Intervals**: Users can define arbitrary consecutive peak windows $\{ [W_{k,\text{min}}, W_{k,\text{max}}] \}_{k=1}^K$ using the `W` key (setting left and right limits at the cursor). The total peak window width is:
   $$\Delta W_{\text{tot}} = \sum_{k=1}^K (W_{k,\text{max}} - W_{k,\text{min}} + 1)$$
-- **Background Gate Intervals**: Users can define arbitrary consecutive background windows $\{ [B_{m,\text{min}}, B_{m,\text{max}}] \}_{m=1}^M$ using the `B` key on continuum regions adjacent to the peak. The total background window width is:
-  $$\Delta B_{\text{tot}} = \sum_{m=1}^M (B_{m,\text{max}} - B_{m,\text{min}} + 1)$$
+- **Background Gate Intervals**: Users can define arbitrary consecutive background windows $\{ [X_{m,\text{min}}, X_{m,\text{max}}] \}_{m=1}^M$ using the `X` key on continuum regions adjacent to the peak. The total background window width is:
+  $$\Delta X_{\text{tot}} = \sum_{m=1}^M (X_{m,\text{max}} - X_{m,\text{min}} + 1)$$
 - **Coincidence Slicing**: Slicing the 2D matrix $M$ along the gated axis produces 1D projection vectors for each interval:
-  $$S_{W_k}(i) = \sum_{j = W_{k,\text{min}}}^{W_{k,\text{max}}} M_{i, j}, \quad S_{B_m}(i) = \sum_{j = B_{m,\text{min}}}^{B_{m,\text{max}}} M_{i, j}$$
-- **Normalized Background Subtraction**: When background regions are present ($\Delta B_{\text{tot}} > 0$), the net coincidence spectrum $S_{\text{net}}$ is computed by subtracting the background slices scaled by the channel width ratio:
-  $$\text{Scale} = \frac{\Delta W_{\text{tot}}}{\Delta B_{\text{tot}}}$$
-  $$S_{\text{net}}(i) = \sum_{k=1}^K S_{W_k}(i) - \text{Scale} \cdot \sum_{m=1}^M S_{B_m}(i)$$
+  $$S_{W_k}(i) = \sum_{j = W_{k,\text{min}}}^{W_{k,\text{max}}} M_{i, j}, \quad S_{X_m}(i) = \sum_{j = X_{m,\text{min}}}^{X_{m,\text{max}}} M_{i, j}$$
+- **Normalized Background Subtraction**: When background regions are present ($\Delta X_{\text{tot}} > 0$), the net coincidence spectrum $S_{\text{net}}$ is computed by subtracting the background slices scaled by the channel width ratio:
+  $$\text{Scale} = \frac{\Delta W_{\text{tot}}}{\Delta X_{\text{tot}}}$$
+  $$S_{\text{net}}(i) = \sum_{k=1}^K S_{W_k}(i) - \text{Scale} \cdot \sum_{m=1}^M S_{X_m}(i)$$
   *(When no background limits are set, $\text{Scale} = 0$ and $S_{\text{net}} = \sum_k S_{W_k}$ represents the raw coincident slice).*
 - **Visual Overlays & Negative Counts**:
   - Gated peak windows are highlighted in semi-transparent green (`#22c55e30`) on the 1D spectrum, while background windows appear in semi-transparent amber (`#f59e0b30`).
