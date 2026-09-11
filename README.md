@@ -116,11 +116,33 @@ python cmat_webviewer.py /path/to/matrix.cmat
 | **Cycle Colormap** | `C` or `c` | Cycle through Turbo, Viridis, Plasma, Inferno, Hot, Jet, Gray |
 | **Toggle Sidebar Menu** | `M` or `m` (or `Menu`) | Collapse/expand the left control panel to maximize viewing area |
 | **Adjust 2D/1D Panels** | `Drag Divider` | Adjust relative width of 2D matrix vs 1D projections (double-click to reset) |
+| **Cycle Active Matrix** | `[` / `]` (Square Brackets) | Switch to previous / next loaded matrix while preserving zoom, gates, and fits |
+| **Open Local Matrix** | `Ctrl + O` or `📂 Open...` | Open local file dialog to load another `.cmat` matrix into the viewer |
 | **Save Config** | `Save Config` (Sidebar) | Save active viewer parameters to `python-cmat-config.txt` in working directory |
 | **Quit Viewer** | `Q` or `q` | Close browser tab and terminate terminal server process |
 | **Print 2D PDF** | `Print PDF` (2D footer) | Export publication-quality vector PDF of current 2D matrix (Times New Roman, Energy keV axes, colorbar) |
 | **Print 1D PDF** | `Print PDF` (1D header) | Export publication-quality vector PDF of active 1D spectrum (Times New Roman, Energy keV axis, stepped histogram, fit curves) |
 | **Help Modal** | `?` | Open keyboard shortcuts reference |
+
+### Multi-Matrix Loading & Differential Analysis
+You can open multiple `.cmat` files at startup or dynamically load them inside the browser:
+
+```bash
+# Load multiple matrices or glob patterns on startup
+python cmat_webviewer.py run01.cmat run02.cmat run03.cmat
+
+# Or use wildcards:
+python cmat_webviewer.py ./data/*.cmat
+```
+
+- **Instant Switching**: Use the header dropdown or press `[` and `]` to cycle between loaded matrices.
+- **State Preservation**: When you switch matrices, all analysis conditions remain locked:
+  - 2D viewport coordinates and 1D vertical zoom scales
+  - Coincidence peak ($W$) and background ($B$) gate windows (automatically re-evaluated against the new matrix)
+  - 1D single-peak and multiplet fits (automatically refitted with updated areas and FWHMs on the new matrix)
+  - 2D coincidence peak fits (refitted at identical coincidence coordinates)
+  - Colormaps, linear/log scales, and contrast ($V_{max}$, $V_{min}$) thresholds
+- **In-Browser Loading**: Click `📂 Open...` to upload any local `.cmat` file directly into your session, or click `💻 Load Server Path...` in the sidebar to load any matrix located on the server filesystem.
 
 ---
 

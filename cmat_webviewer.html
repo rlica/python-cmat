@@ -50,6 +50,113 @@
     flex-shrink: 0;
   }
 
+  .matrix-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: #141414;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 3px 8px;
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
+  }
+  .matrix-badge-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #ffd600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    user-select: none;
+  }
+  .matrix-select-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+  }
+  .matrix-select {
+    background: #1f1f1f;
+    color: #00e5ff;
+    border: 1px solid #444;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 3px 22px 3px 8px;
+    max-width: 290px;
+    cursor: pointer;
+    outline: none;
+    transition: all 0.15s;
+    appearance: none;
+    -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg fill='%2300e5ff' height='12' viewBox='0 0 24 24' width='12' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M7 10l5 5 5-5z'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 6px center;
+  }
+  .matrix-select:hover, .matrix-select:focus {
+    border-color: #00e5ff;
+    box-shadow: 0 0 8px rgba(0, 229, 255, 0.35);
+  }
+  .matrix-nav-btn {
+    background: #252525;
+    color: #aaa;
+    border: 1px solid #3d3d3d;
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 0.75rem;
+    cursor: pointer;
+    line-height: 1.3;
+    transition: all 0.15s;
+    width: auto;
+    margin: 0;
+  }
+  .matrix-nav-btn:hover:not(:disabled) {
+    background: #333;
+    color: #ffd600;
+    border-color: #ffd600;
+  }
+  .matrix-nav-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+  .matrix-open-btn {
+    background: linear-gradient(135deg, #00897b, #004d40);
+    color: #fff;
+    border: 1px solid #00bfa5;
+    border-radius: 4px;
+    padding: 2px 9px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    line-height: 1.3;
+    transition: all 0.15s;
+    width: auto;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .matrix-open-btn:hover {
+    background: linear-gradient(135deg, #00bfa5, #00695c);
+    box-shadow: 0 0 8px rgba(0, 191, 165, 0.45);
+  }
+  .matrix-toast {
+    position: fixed;
+    top: 52px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(18, 18, 18, 0.95);
+    color: #69f0ae;
+    border: 1px solid #00e676;
+    border-radius: 6px;
+    padding: 7px 18px;
+    font-size: 0.84rem;
+    font-weight: 600;
+    box-shadow: 0 4px 20px rgba(0, 230, 118, 0.3);
+    z-index: 10000;
+    pointer-events: none;
+    backdrop-filter: blur(8px);
+    transition: opacity 0.25s ease, transform 0.25s ease;
+  }
+
   main { display: flex; flex: 1; overflow: hidden; }
 
   aside {
@@ -324,14 +431,47 @@
 <header>
   <div class="title">
     <button id="btnToggleSidebar" class="btn-sidebar-toggle" title="Toggle Sidebar Menu [M]">Menu</button>
-    <span>GASPware 2D Matrix Visualizer</span>
-    <span class="badge" id="matInfo">Loading...</span>
+    <span>GASPware Visualizer</span>
   </div>
+
+  <div class="matrix-bar">
+    <span class="matrix-badge-label">Matrix:</span>
+    <button id="btnPrevMatrix" class="matrix-nav-btn" title="Previous Matrix [ [ ]">◀</button>
+    <div class="matrix-select-wrap">
+      <select id="matrixSelect" class="matrix-select" title="Active Matrix ([ and ] keys to cycle)"></select>
+    </div>
+    <button id="btnNextMatrix" class="matrix-nav-btn" title="Next Matrix [ ] ]">▶</button>
+    <button id="btnOpenMatrix" class="matrix-open-btn" title="Open or Upload a .cmat matrix file">📂 Open...</button>
+    <input type="file" id="matrixFileInput" accept=".cmat" style="display:none;">
+  </div>
+
   <div class="hud" id="hudCoords">Det 1 (X): - | Det 2 (Y): - | Counts: -</div>
 </header>
 
 <main>
   <aside id="sidebar">
+    <!-- 0. Matrix Comparison & Active File -->
+    <div class="control-group" id="groupMatrixManager">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+        <h3 style="margin: 0; color: #ffd600;">Active Matrix</h3>
+        <span id="matrixCountBadge" class="badge" style="background:#263238; color:#ffd600; font-size:0.7rem;">1 / 1</span>
+      </div>
+      <div id="matrixCardDetails" style="background: #181818; border: 1px solid #333; border-radius: 4px; padding: 6px 8px; margin-bottom: 8px; font-size: 0.72rem; line-height: 1.4;">
+        <div style="font-weight: bold; color: #00e5ff; word-break: break-all;" id="sideMatName">-</div>
+        <div style="color: #aaa;">Shape: <span id="sideMatShape" style="color:#eee;">-</span> | Counts: <span id="sideMatCounts" style="color:#eee;">-</span></div>
+        <div style="color: #aaa;">Max Bin: <span id="sideMatMax" style="color:#eee;">-</span> | <span id="sideMatSymm" style="color:#69f0ae;">-</span></div>
+      </div>
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 6px;">
+        <button id="btnSidebarPrevMat" class="secondary" title="Previous Matrix [ [ ]" style="padding: 4px 6px; font-size: 0.75rem;">◀ Prev [</button>
+        <button id="btnSidebarNextMat" class="secondary" title="Next Matrix [ ] ]" style="padding: 4px 6px; font-size: 0.75rem;">Next ] ▶</button>
+      </div>
+      <button id="btnSidebarOpenLocal" class="primary" style="margin-bottom: 4px; background: linear-gradient(135deg, #1565c0, #0d47a1); font-size: 0.76rem; padding: 5px 8px;">📂 Open Local .cmat...</button>
+      <button id="btnSidebarOpenServer" class="secondary" style="background: #2e3a4e; font-size: 0.76rem; padding: 5px 8px;">💻 Load Server Path...</button>
+      <small style="color: #888; font-size: 0.65rem; display: block; margin-top: 5px; line-height: 1.2;">
+        💡 Zoom, coincidence gates, and peak fits are locked and automatically re-evaluated across matrices for 1:1 differential analysis.
+      </small>
+    </div>
+
     <!-- 1. Navigation & Scroll (Top) -->
     <div class="control-group">
       <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
@@ -618,11 +758,24 @@
     <tr><td>Z / z</td><td>Cancel pending limit or clear active 1D coincidence gate</td></tr>
     <tr><td>M / m</td><td>Toggle left menu panel (collapse / expand)</td></tr>
     <tr><td>Drag Divider</td><td>Adjust width of 2D matrix vs 1D projections (double-click to reset)</td></tr>
+    <tr><td>[ / ] (Brackets)</td><td>Switch between loaded matrices (prev / next) preserving analysis state</td></tr>
+    <tr><td>Ctrl + O</td><td>Open local .cmat matrix file dialog</td></tr>
     <tr><td>Q / q</td><td>Quit viewer (close browser tab and stop terminal server)</td></tr>
     <tr><td>Esc / ?</td><td>Close Help / Cancel pending gate</td></tr>
   </table>
   <button onclick="document.getElementById('helpModal').style.display='none'" style="margin-top: 15px;">Close</button>
 </div>
+
+<div class="help-modal" id="serverPathModal" style="display:none; max-width: 480px;">
+  <h2 style="color: #00e5ff; margin-bottom: 8px;">Load Matrix from Server Path</h2>
+  <p style="font-size: 0.8rem; color: #aaa; margin-bottom: 12px;">Enter absolute or relative path to a <code style="color:#ffd600;">.cmat</code> file on the server:</p>
+  <input type="text" id="serverPathInput" placeholder="e.g. ./GeE-symm.cmat or /path/to/matrix.cmat" style="width: 100%; padding: 8px 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; font-family: monospace; font-size: 0.85rem; margin-bottom: 12px; box-sizing: border-box;">
+  <div style="display: flex; justify-content: flex-end; gap: 8px;">
+    <button id="btnServerPathCancel" class="secondary" style="width: auto; padding: 6px 14px; margin: 0;">Cancel</button>
+    <button id="btnServerPathSubmit" class="primary" style="width: auto; padding: 6px 16px; background: #00c853; margin: 0;">Load Matrix</button>
+  </div>
+</div>
+<div id="matrixToast" class="matrix-toast" style="display: none;"></div>
 
 <script>
   let metadata = null;
@@ -631,6 +784,11 @@
   let currentProjSlice = { x0: 0, x1: 4096, y0: 0, y1: 4096 };
   let foundPeaks1D = { 0: [], 1: [] };
   let isSearchingPeaks = false;
+  let lastFit1DParams = { 0: null, 1: null };
+  let lastFit2DParams = null;
+  let lastMultiFitParams = { 0: null, 1: null };
+  let isSwitchingMatrix = false;
+  let toastTimer = null;
 
   // Viewport in channel coordinates
   let view = { x0: 0, x1: 4096, y0: 0, y1: 4096 };
@@ -930,6 +1088,290 @@
     });
   }
 
+  function showMatrixToast(msg, isError = false) {
+    const toast = document.getElementById('matrixToast');
+    if (!toast) return;
+    toast.innerText = msg;
+    toast.style.display = 'block';
+    toast.style.opacity = '1';
+    toast.style.borderColor = isError ? '#ff5252' : '#00e676';
+    toast.style.color = isError ? '#ff8a80' : '#69f0ae';
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      toast.style.opacity = '0';
+      setTimeout(() => { toast.style.display = 'none'; }, 250);
+    }, 2500);
+  }
+
+  function updateMatrixUI() {
+    if (!metadata) return;
+    const mats = metadata.matrices || [
+      { index: 0, name: metadata.filename, shape: metadata.shape, total_counts: metadata.total_counts, is_symmetric: metadata.is_symmetric }
+    ];
+    const activeIdx = metadata.active_index !== undefined ? metadata.active_index : 0;
+
+    // Header Dropdown
+    const sel = document.getElementById('matrixSelect');
+    if (sel) {
+      sel.innerHTML = '';
+      mats.forEach((m, i) => {
+        const opt = document.createElement('option');
+        opt.value = i;
+        const countStr = m.total_counts ? (m.total_counts >= 1e6 ? (m.total_counts / 1e6).toFixed(2) + 'M' : (m.total_counts / 1e3).toFixed(1) + 'k') : '-';
+        opt.text = `[${i + 1}/${mats.length}] ${m.name} (${m.shape[0]}×${m.shape[1]} | ${countStr} cts)`;
+        if (i === activeIdx) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
+
+    // Header navigation buttons
+    const prevBtn = document.getElementById('btnPrevMatrix');
+    const nextBtn = document.getElementById('btnNextMatrix');
+    if (prevBtn) prevBtn.disabled = (mats.length <= 1);
+    if (nextBtn) nextBtn.disabled = (mats.length <= 1);
+
+    // Sidebar card details
+    const cur = mats[activeIdx] || mats[0];
+    const sideName = document.getElementById('sideMatName');
+    if (sideName) sideName.innerText = cur.name;
+    const sideShape = document.getElementById('sideMatShape');
+    if (sideShape) sideShape.innerText = `${cur.shape[0]}×${cur.shape[1]}`;
+    const sideCounts = document.getElementById('sideMatCounts');
+    if (sideCounts) sideCounts.innerText = cur.total_counts ? cur.total_counts.toLocaleString() : '-';
+    const sideMax = document.getElementById('sideMatMax');
+    if (sideMax) sideMax.innerText = cur.max_count !== undefined ? cur.max_count.toLocaleString() : (metadata.max_count ? metadata.max_count.toLocaleString() : '-');
+    const sideSymm = document.getElementById('sideMatSymm');
+    if (sideSymm) sideSymm.innerText = cur.is_symmetric ? 'Symmetric' : 'Asymmetric';
+    const countBadge = document.getElementById('matrixCountBadge');
+    if (countBadge) countBadge.innerText = `${activeIdx + 1} / ${mats.length}`;
+
+    const sidePrev = document.getElementById('btnSidebarPrevMat');
+    const sideNext = document.getElementById('btnSidebarNextMat');
+    if (sidePrev) sidePrev.disabled = (mats.length <= 1);
+    if (sideNext) sideNext.disabled = (mats.length <= 1);
+  }
+
+  async function reapplyGates() {
+    if (gate1DState.axis === null || !gate1DState.w_gates || gate1DState.w_gates.length === 0) return;
+    try {
+      const wStr = JSON.stringify(gate1DState.w_gates);
+      const bStr = JSON.stringify(gate1DState.b_gates);
+      const res = await fetch(`/api/gate_1d?axis=${gate1DState.axis}&w_gates=${encodeURIComponent(wStr)}&b_gates=${encodeURIComponent(bStr)}`);
+      const data = await res.json();
+      if (data && data.net_spec) {
+        gate1DState.last_res = data;
+        if (gate1DState.axis === 0) {
+          currentProjSpecY = data.net_spec;
+        } else {
+          currentProjSpecX = data.net_spec;
+        }
+        updateGateUI();
+      }
+    } catch (err) {
+      console.error("Error reapplying gate on new matrix:", err);
+    }
+  }
+
+  async function reapplyMultiFit(axis) {
+    const p = lastMultiFitParams[axis];
+    if (!p) return;
+    const x0 = Math.floor(Math.max(0, view.x0));
+    const x1 = Math.ceil(Math.min(metadata.shape[0], view.x1));
+    const y0 = Math.floor(Math.max(0, view.y0));
+    const y1 = Math.ceil(Math.min(metadata.shape[1], view.y1));
+    const chMin = (axis === 0) ? x0 : y0;
+    const chMax = (axis === 0) ? x1 : y1;
+    const fitType = getActiveFitType();
+    const fwhmEst = parseFloat(document.getElementById('peakSearchFwhmSlider')?.value || '4.0');
+    const minSnr = parseFloat(document.getElementById('peakSearchSnrSlider')?.value || '9.0');
+
+    let url = `/api/fit_all_peaks_1d?axis=${axis}&ch_min=${chMin}&ch_max=${chMax}&peaks=${encodeURIComponent(p.peakChannels)}&fit_type=${fitType}&fwhm_est=${fwhmEst}&min_snr=${minSnr}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}`;
+    if (gate1DState.axis !== null && gate1DState.axis === (1 - axis) && gate1DState.w_gates.length > 0) {
+      url += `&w_gates=${encodeURIComponent(JSON.stringify(gate1DState.w_gates))}&b_gates=${encodeURIComponent(JSON.stringify(gate1DState.b_gates))}`;
+    }
+
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.success) {
+        activeMultiFit1D[axis] = data;
+        showMultiFitCard(data, axis);
+        renderBoth1DSpectra();
+      }
+    } catch (e) {
+      console.warn("Failed to reapply multi-fit:", e);
+    }
+  }
+
+  async function switchMatrix(newIndex) {
+    if (isSwitchingMatrix) return;
+    if (newIndex === undefined || newIndex === null || isNaN(newIndex)) return;
+    newIndex = parseInt(newIndex, 10);
+    if (metadata && metadata.active_index === newIndex) return;
+
+    isSwitchingMatrix = true;
+    showMatrixToast(`Switching matrix to #${newIndex + 1}...`);
+
+    try {
+      const res = await fetch(`/api/select_matrix?index=${newIndex}`);
+      const data = await res.json();
+      if (!data || data.error) {
+        console.error("Matrix switch error:", data?.error);
+        showMatrixToast(`Error switching matrix: ${data?.error || 'Unknown error'}`, true);
+        isSwitchingMatrix = false;
+        return;
+      }
+
+      metadata = data;
+      updateMatrixUI();
+
+      // Preserve 2D Viewport (clamped to new matrix dimensions)
+      view.x0 = Math.max(0, Math.min(metadata.shape[0] - 1, view.x0));
+      view.x1 = Math.max(view.x0 + 1, Math.min(metadata.shape[0], view.x1));
+      view.y0 = Math.max(0, Math.min(metadata.shape[1] - 1, view.y0));
+      view.y1 = Math.max(view.y0 + 1, Math.min(metadata.shape[1], view.y1));
+
+      // Re-fetch 2D tile and projection under same view
+      await fetchTileAndRender();
+      await fetch1DProjection();
+
+      // Re-apply 1D Coincidence Gates if active
+      if (gate1DState.axis !== null && gate1DState.w_gates && gate1DState.w_gates.length > 0) {
+        await reapplyGates();
+      }
+
+      // Re-apply 2D Coincidence Peak Fit if active
+      if (lastFit2DParams) {
+        await requestPeakFit2D(lastFit2DParams.x, lastFit2DParams.y);
+      }
+
+      // Re-apply 1D Single Peak Fits if active
+      for (const ax of [0, 1]) {
+        if (lastFit1DParams[ax]) {
+          await requestPeakFit(ax, lastFit1DParams[ax].ch);
+        }
+      }
+
+      // Re-apply 1D Multiplet Fits if active
+      for (const ax of [0, 1]) {
+        if (lastMultiFitParams[ax]) {
+          await reapplyMultiFit(ax);
+        }
+      }
+
+      render2D();
+      renderBoth1DSpectra();
+
+      showMatrixToast(`Active: ${metadata.filename} [${metadata.active_index + 1}/${metadata.matrices ? metadata.matrices.length : 1}] (Conditions preserved)`);
+    } catch (err) {
+      console.error("Network error switching matrix:", err);
+      showMatrixToast("Network error switching matrix.", true);
+    } finally {
+      isSwitchingMatrix = false;
+    }
+  }
+
+  function cycleMatrix(direction) {
+    if (!metadata || !metadata.matrices || metadata.matrices.length <= 1) return;
+    const len = metadata.matrices.length;
+    const curIdx = metadata.active_index !== undefined ? metadata.active_index : 0;
+    const newIdx = (curIdx + direction + len) % len;
+    switchMatrix(newIdx);
+  }
+
+  async function uploadMatrixFile(file) {
+    if (!file) return;
+    showMatrixToast(`Uploading ${file.name}...`);
+    try {
+      const res = await fetch(`/api/upload_matrix?filename=${encodeURIComponent(file.name)}`, {
+        method: 'POST',
+        body: file
+      });
+      const data = await res.json();
+      if (data.error) {
+        showMatrixToast(`Upload error: ${data.error}`, true);
+        return;
+      }
+      metadata = data;
+      updateMatrixUI();
+
+      // Preserve Viewport, Colormap, Gates, Fits
+      view.x0 = Math.max(0, Math.min(metadata.shape[0] - 1, view.x0));
+      view.x1 = Math.max(view.x0 + 1, Math.min(metadata.shape[0], view.x1));
+      view.y0 = Math.max(0, Math.min(metadata.shape[1] - 1, view.y0));
+      view.y1 = Math.max(view.y0 + 1, Math.min(metadata.shape[1], view.y1));
+
+      await fetchTileAndRender();
+      await fetch1DProjection();
+
+      if (gate1DState.axis !== null && gate1DState.w_gates && gate1DState.w_gates.length > 0) {
+        await reapplyGates();
+      }
+      if (lastFit2DParams) {
+        await requestPeakFit2D(lastFit2DParams.x, lastFit2DParams.y);
+      }
+      for (const ax of [0, 1]) {
+        if (lastFit1DParams[ax]) {
+          await requestPeakFit(ax, lastFit1DParams[ax].ch);
+        }
+      }
+      render2D();
+      renderBoth1DSpectra();
+
+      showMatrixToast(`Successfully loaded ${file.name} (Conditions preserved)`);
+    } catch (err) {
+      console.error("Upload error:", err);
+      showMatrixToast(`Failed to upload: ${err.message}`, true);
+    }
+  }
+
+  async function loadServerMatrixPath(pathStr) {
+    if (!pathStr || !pathStr.trim()) return;
+    showMatrixToast(`Loading ${pathStr}...`);
+    try {
+      const res = await fetch('/api/load_matrix_path', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: pathStr.trim() })
+      });
+      const data = await res.json();
+      if (data.error) {
+        showMatrixToast(`Load error: ${data.error}`, true);
+        return;
+      }
+      metadata = data;
+      updateMatrixUI();
+
+      // Preserve Viewport, Colormap, Gates, Fits
+      view.x0 = Math.max(0, Math.min(metadata.shape[0] - 1, view.x0));
+      view.x1 = Math.max(view.x0 + 1, Math.min(metadata.shape[0], view.x1));
+      view.y0 = Math.max(0, Math.min(metadata.shape[1] - 1, view.y0));
+      view.y1 = Math.max(view.y0 + 1, Math.min(metadata.shape[1], view.y1));
+
+      await fetchTileAndRender();
+      await fetch1DProjection();
+
+      if (gate1DState.axis !== null && gate1DState.w_gates && gate1DState.w_gates.length > 0) {
+        await reapplyGates();
+      }
+      if (lastFit2DParams) {
+        await requestPeakFit2D(lastFit2DParams.x, lastFit2DParams.y);
+      }
+      for (const ax of [0, 1]) {
+        if (lastFit1DParams[ax]) {
+          await requestPeakFit(ax, lastFit1DParams[ax].ch);
+        }
+      }
+      render2D();
+      renderBoth1DSpectra();
+
+      showMatrixToast(`Successfully loaded ${metadata.filename} (Conditions preserved)`);
+    } catch (err) {
+      console.error("Server path load error:", err);
+      showMatrixToast(`Failed to load: ${err.message}`, true);
+    }
+  }
+
   async function init() {
     initSidebar();
     initPanelResizer();
@@ -942,7 +1384,7 @@
 
     const res = await fetch('/api/metadata');
     metadata = await res.json();
-    document.getElementById('matInfo').innerText = `${metadata.filename} (${metadata.shape[0]}×${metadata.shape[1]})`;
+    updateMatrixUI();
     view = { x0: 0, x1: metadata.shape[0], y0: 0, y1: metadata.shape[1] };
 
     // Apply configuration defaults
@@ -1533,6 +1975,7 @@
     const data = await res.json();
     if (data.success) {
       activeFit2D = data;
+      lastFit2DParams = { x: (data.centroid_x_ch !== undefined ? data.centroid_x_ch : x), y: (data.centroid_y_ch !== undefined ? data.centroid_y_ch : y) };
 
       const isCal = metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0);
       const modelTag = (data.fit_type === 'hypermet') ? '2D Hypermet Fit (Convolved Tail + Step)' : ((data.fit_type === 'gaussian_tail') ? '2D Peak Fit (Left-Tail RadWare)' : '2D Gaussian Fit (Symmetric)');
@@ -2037,6 +2480,8 @@
       if (fitCardMulti) fitCardMulti.style.display = 'none';
 
       activeFit1D[axis] = data;
+      lastFit1DParams[axis] = { axis, ch: (data.centroid_ch !== undefined ? data.centroid_ch : fitCh) };
+      lastMultiFitParams[axis] = null;
       const isCal = metadata.cal && (metadata.cal[0] !== 0 || metadata.cal[1] !== 1.0);
       const modelTag = (data.fit_type === 'hypermet') ? '1D Hypermet Fit (Convolved Tail + Step)' : ((data.fit_type === 'gaussian_tail') ? '1D Peak Fit (Left-Tail RadWare)' : '1D Gaussian Fit');
       document.getElementById('fitTitle1D').innerText = `${modelTag} [${detLabel}]: ${isCal ? data.centroid_e + ' keV' : 'ch ' + data.centroid_ch}`;
@@ -2146,6 +2591,9 @@
       const data = await res.json();
       if (data.success) {
         activeMultiFit1D[axis] = data;
+        lastMultiFitParams[axis] = { axis, peakChannels };
+        activeFit1D[axis] = null;
+        lastFit1DParams[axis] = null;
 
         // Update markers in foundPeaks1D[axis] with fitted centroid and net area
         if (data.peaks && data.peaks.length > 0) {
@@ -2232,8 +2680,11 @@
     if (axis === null || axis === undefined) {
       activeMultiFit1D[0] = null;
       activeMultiFit1D[1] = null;
+      lastMultiFitParams[0] = null;
+      lastMultiFitParams[1] = null;
     } else {
       activeMultiFit1D[axis] = null;
+      lastMultiFitParams[axis] = null;
     }
     const hasAny = (activeMultiFit1D[0] !== null || activeMultiFit1D[1] !== null);
     const card = document.getElementById('fitCardMulti1D');
@@ -3309,12 +3760,15 @@
   function clearFit1D() {
     activeFit1D[0] = null;
     activeFit1D[1] = null;
+    lastFit1DParams[0] = null;
+    lastFit1DParams[1] = null;
     document.getElementById('fitCard1D').style.display = 'none';
     renderBoth1DSpectra();
   }
 
   function clearFit2D() {
     activeFit2D = null;
+    lastFit2DParams = null;
     document.getElementById('fitCard2D').style.display = 'none';
     render2D();
   }
@@ -3404,6 +3858,72 @@
   function setupEvents() {
     const btnSaveCfg = document.getElementById('btnSaveConfig');
     if (btnSaveCfg) btnSaveCfg.addEventListener('click', saveConfig);
+
+    // Matrix selection & comparison events
+    const matSel = document.getElementById('matrixSelect');
+    if (matSel) matSel.addEventListener('change', (e) => switchMatrix(e.target.value));
+
+    const btnPrev = document.getElementById('btnPrevMatrix');
+    if (btnPrev) btnPrev.addEventListener('click', () => cycleMatrix(-1));
+    const btnNext = document.getElementById('btnNextMatrix');
+    if (btnNext) btnNext.addEventListener('click', () => cycleMatrix(1));
+
+    const btnSidePrev = document.getElementById('btnSidebarPrevMat');
+    if (btnSidePrev) btnSidePrev.addEventListener('click', () => cycleMatrix(-1));
+    const btnSideNext = document.getElementById('btnSidebarNextMat');
+    if (btnSideNext) btnSideNext.addEventListener('click', () => cycleMatrix(1));
+
+    const fileInp = document.getElementById('matrixFileInput');
+    if (fileInp) {
+      fileInp.addEventListener('change', (e) => {
+        if (e.target.files && e.target.files.length > 0) {
+          uploadMatrixFile(e.target.files[0]);
+          e.target.value = '';
+        }
+      });
+    }
+
+    const btnOpen = document.getElementById('btnOpenMatrix');
+    if (btnOpen && fileInp) btnOpen.addEventListener('click', () => fileInp.click());
+
+    const btnSideOpen = document.getElementById('btnSidebarOpenLocal');
+    if (btnSideOpen && fileInp) btnSideOpen.addEventListener('click', () => fileInp.click());
+
+    const modalServer = document.getElementById('serverPathModal');
+    const inputServer = document.getElementById('serverPathInput');
+    const btnSideServer = document.getElementById('btnSidebarOpenServer');
+    if (btnSideServer && modalServer) {
+      btnSideServer.addEventListener('click', () => {
+        modalServer.style.display = 'block';
+        if (inputServer) inputServer.focus();
+      });
+    }
+    const btnCancelServer = document.getElementById('btnServerPathCancel');
+    if (btnCancelServer && modalServer) {
+      btnCancelServer.addEventListener('click', () => {
+        modalServer.style.display = 'none';
+      });
+    }
+    const btnSubmitServer = document.getElementById('btnServerPathSubmit');
+    if (btnSubmitServer && modalServer && inputServer) {
+      btnSubmitServer.addEventListener('click', () => {
+        const val = inputServer.value.trim();
+        modalServer.style.display = 'none';
+        if (val) loadServerMatrixPath(val);
+      });
+    }
+    if (inputServer) {
+      inputServer.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const val = inputServer.value.trim();
+          modalServer.style.display = 'none';
+          if (val) loadServerMatrixPath(val);
+        } else if (e.key === 'Escape') {
+          modalServer.style.display = 'none';
+        }
+      });
+    }
 
     document.getElementById('cmapSelect').addEventListener('change', () => { updateColorLUT(); render2D(); });
     const vmaxSlider = document.getElementById('vmaxSlider');
@@ -3623,8 +4143,17 @@
     }, { passive: true });
 
     window.addEventListener('keydown', (e) => {
+      // Don't trigger viewer hotkeys when typing in text inputs or selects
+      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) {
+        if (e.key === 'Escape') {
+          const sm = document.getElementById('serverPathModal');
+          if (sm) sm.style.display = 'none';
+        }
+        return;
+      }
+
       const k = e.key.toLowerCase();
-      const isShortcut = ['arrowleft', 'arrowright', 'arrowdown', 'arrowup', 'e', 'f', 'q', '=', '+', 'v', 'g', 'c', '1', '2', '4', 'l', '?', 'h', 'escape', 'm', 'w', 'b', 'z', 'p', 'r'].includes(k);
+      const isShortcut = ['arrowleft', 'arrowright', 'arrowdown', 'arrowup', 'e', 'f', 'q', '=', '+', 'v', 'g', 'c', '1', '2', '4', 'l', '?', 'h', 'escape', 'm', 'w', 'b', 'z', 'p', 'r', '[', ']'].includes(k);
       if (isShortcut) {
         e.preventDefault();
         unfocusControls();
@@ -3739,10 +4268,21 @@
           else if (foundPeaks1D[0].length > 0) activeAxis = 0;
         }
         fitAllPeaks1D(activeAxis);
+      } else if (e.key === '[' || e.code === 'BracketLeft') {
+        cycleMatrix(-1);
+      } else if (e.key === ']' || e.code === 'BracketRight') {
+        cycleMatrix(1);
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'o' || e.key === 'O')) {
+        e.preventDefault();
+        const fi = document.getElementById('matrixFileInput');
+        if (fi) fi.click();
       } else if (e.key === 'Escape') {
         const hm = document.getElementById('helpModal');
+        const sm = document.getElementById('serverPathModal');
         if (hm && hm.style.display === 'block') {
           hm.style.display = 'none';
+        } else if (sm && sm.style.display === 'block') {
+          sm.style.display = 'none';
         } else if (gate1DState.pending_w !== null || gate1DState.pending_b !== null || gate1DState.axis !== null) {
           clear1DGates(true);
         }

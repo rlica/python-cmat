@@ -39,6 +39,7 @@ import socket
 import argparse
 import webbrowser
 import threading
+import glob
 import numpy as np
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
@@ -2599,12 +2600,94 @@ def print_multi_fit_terminal_report(res: dict, det_name: str, matrix_name: str, 
 
 
 class CMATWebHandler(BaseHTTPRequestHandler):
+    matrices: list = []
+    active_index: int = 0
     reader: CMATReader = None
     matrix: np.ndarray = None
     proj: np.ndarray = None
     cal: list = [0.0, 1.0, 0.0]
+    global_cal: list = [0.0, 1.0, 0.0]
     config: dict = None
     config_path: Path = None
+
+    @classmethod
+    def add_matrix_file(cls, path: Path, name: str = None, cal: list = None) -> int:
+        path = Path(path).resolve()
+        for idx, m in enumerate(cls.matrices):
+            if m["path"] == str(path):
+                return idx
+
+        reader = CMATReader(path)
+        mat = reader.to_numpy()
+        proj = reader.get_projection()
+        matrix_name = name or path.name
+
+        matrix_entry = {
+            "index": len(cls.matrices),
+            "name": matrix_name,
+            "filename": path.name,
+            "path": str(path),
+            "reader": reader,
+            "matrix": mat,
+            "proj": proj,
+            "shape": list(mat.shape),
+            "total_counts": int(np.sum(mat)),
+            "max_count": int(np.max(mat)),
+            "nonzero_bins": int(np.count_nonzero(mat)),
+            "is_symmetric": bool(reader.is_symmetric),
+            "cal": cal if cal is not None else cls.global_cal,
+        }
+        cls.matrices.append(matrix_entry)
+        cls.sync_class_attrs()
+        return len(cls.matrices) - 1
+
+    @classmethod
+    def get_active_matrix(cls):
+        if cls.matrices and 0 <= cls.active_index < len(cls.matrices):
+            return cls.matrices[cls.active_index]
+        return None
+
+    @classmethod
+    def sync_class_attrs(cls):
+        m = cls.get_active_matrix()
+        if m:
+            cls.reader = m["reader"]
+            cls.matrix = m["matrix"]
+            cls.proj = m["proj"]
+            cls.cal = m["cal"]
+
+    @property
+    def active_matrix_data(self):
+        return self.get_active_matrix()
+
+    def get_metadata_dict(self):
+        info = self.reader.get_info() if self.reader else {}
+        active_mat = self.active_matrix_data
+        if active_mat:
+            info["filename"] = active_mat["name"]
+            info["filepath"] = active_mat["path"]
+        info["cal"] = self.cal
+        info["config"] = self.config or DEFAULT_CONFIG
+        info["config_file"] = self.config_path.name if self.config_path else CONFIG_FILENAME
+        info["max_count"] = int(np.max(self.matrix)) if self.matrix is not None else 0
+        info["total_counts"] = int(np.sum(self.matrix)) if self.matrix is not None else 0
+        info["nonzero_bins"] = int(np.count_nonzero(self.matrix)) if self.matrix is not None else 0
+        info["active_index"] = self.active_index
+        info["matrices"] = [
+            {
+                "index": m["index"],
+                "name": m["name"],
+                "filename": m["filename"],
+                "path": m["path"],
+                "shape": m["shape"],
+                "total_counts": m["total_counts"],
+                "max_count": m["max_count"],
+                "nonzero_bins": m["nonzero_bins"],
+                "is_symmetric": m["is_symmetric"],
+            }
+            for m in self.matrices
+        ]
+        return info
 
     def log_message(self, format, *args):
         pass
@@ -2628,13 +2711,28 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-type", "application/json")
             self.end_headers()
-            info = self.reader.get_info()
-            info["cal"] = self.cal
-            info["config"] = self.config or DEFAULT_CONFIG
-            info["config_file"] = self.config_path.name if self.config_path else CONFIG_FILENAME
-            info["max_count"] = int(np.max(self.matrix))
-            info["total_counts"] = int(np.sum(self.matrix))
-            info["nonzero_bins"] = int(np.count_nonzero(self.matrix))
+            info = self.get_metadata_dict()
+            self.wfile.write(json.dumps(info).encode("utf-8"))
+
+        elif self.path.startswith("/api/select_matrix"):
+            from urllib.parse import urlparse, parse_qs
+            query = parse_qs(urlparse(self.path).query)
+            idx_str = query.get("index", [query.get("id", ["0"])[0]])[0]
+            try:
+                idx = int(idx_str)
+            except ValueError:
+                idx = 0
+
+            if 0 <= idx < len(CMATWebHandler.matrices):
+                CMATWebHandler.active_index = idx
+                CMATWebHandler.sync_class_attrs()
+                m = CMATWebHandler.matrices[idx]
+                print(f"\n[*] Active matrix switched to [{idx + 1}/{len(CMATWebHandler.matrices)}]: {m['name']} (Shape: {m['shape'][0]}×{m['shape'][1]}, Total counts: {m['total_counts']:,})", flush=True)
+
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            info = self.get_metadata_dict()
             self.wfile.write(json.dumps(info).encode("utf-8"))
 
         elif self.path.startswith("/api/fit_peak_2d"):
@@ -3121,6 +3219,91 @@ class CMATWebHandler(BaseHTTPRequestHandler):
                 self.send_header("Content-type", "application/json")
                 self.end_headers()
                 self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+
+        elif self.path.startswith("/api/upload_matrix"):
+            from urllib.parse import urlparse, parse_qs
+            query = parse_qs(urlparse(self.path).query)
+            filename = query.get("filename", ["uploaded_matrix.cmat"])[0]
+            safe_name = Path(filename).name
+            if not safe_name.endswith(".cmat"):
+                safe_name += ".cmat"
+
+            content_len = int(self.headers.get("Content-Length", 0))
+            if content_len <= 0:
+                self.send_response(400)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": "Empty upload payload"}).encode("utf-8"))
+                return
+
+            upload_dir = Path.cwd() / ".cmat_uploads"
+            upload_dir.mkdir(parents=True, exist_ok=True)
+            target_path = upload_dir / safe_name
+
+            bytes_read = 0
+            with open(target_path, "wb") as f:
+                while bytes_read < content_len:
+                    chunk = self.rfile.read(min(65536, content_len - bytes_read))
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    bytes_read += len(chunk)
+
+            try:
+                new_idx = CMATWebHandler.add_matrix_file(target_path, name=safe_name, cal=self.cal)
+                CMATWebHandler.active_index = new_idx
+                CMATWebHandler.sync_class_attrs()
+                m = CMATWebHandler.matrices[new_idx]
+                print(f"\n[+] Successfully uploaded and loaded: {safe_name} ({m['shape'][0]}×{m['shape'][1]}, {m['total_counts']:,} counts)", flush=True)
+
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                info = self.get_metadata_dict()
+                self.wfile.write(json.dumps(info).encode("utf-8"))
+            except Exception as e:
+                print(f"[!] Error loading uploaded matrix: {e}", file=sys.stderr)
+                self.send_response(500)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+
+        elif self.path == "/api/load_matrix_path":
+            content_len = int(self.headers.get("Content-Length", 0))
+            body_bytes = self.rfile.read(content_len)
+            try:
+                data = json.loads(body_bytes.decode("utf-8"))
+                path_str = data.get("path", "").strip()
+                if not path_str:
+                    raise ValueError("No path provided")
+
+                target_path = Path(path_str).expanduser()
+                if not target_path.is_absolute():
+                    target_path = (Path.cwd() / target_path).resolve()
+                else:
+                    target_path = target_path.resolve()
+
+                if not target_path.exists():
+                    raise FileNotFoundError(f"Matrix file not found: {target_path}")
+
+                new_idx = CMATWebHandler.add_matrix_file(target_path, cal=self.cal)
+                CMATWebHandler.active_index = new_idx
+                CMATWebHandler.sync_class_attrs()
+                m = CMATWebHandler.matrices[new_idx]
+                print(f"\n[+] Successfully loaded matrix from path: {target_path.name} ({m['shape'][0]}×{m['shape'][1]}, {m['total_counts']:,} counts)", flush=True)
+
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                info = self.get_metadata_dict()
+                self.wfile.write(json.dumps(info).encode("utf-8"))
+            except Exception as e:
+                print(f"[!] Error loading matrix path: {e}", file=sys.stderr)
+                self.send_response(400)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+
         else:
             self.send_error(404, "Not Found")
 
@@ -3139,9 +3322,14 @@ def main():
     config = load_or_create_config(config_path)
 
     parser = argparse.ArgumentParser(
-        description="Launch modern Web-based interactive 2D viewer with classic binned 1D histogram."
+        description="Launch modern Web-based interactive 2D viewer with classic binned 1D histogram and multi-matrix comparison."
     )
-    parser.add_argument("input", type=str, help="Path to input .cmat file")
+    parser.add_argument(
+        "input",
+        nargs="+",
+        type=str,
+        help="Path to one or more input .cmat file(s) (e.g. run1.cmat run2.cmat or *.cmat)",
+    )
     parser.add_argument(
         "-H", "--host",
         type=str,
@@ -3177,10 +3365,32 @@ def main():
 
     args = parser.parse_args()
 
-    input_path = Path(args.input)
-    if not input_path.exists():
-        print(f"Error: File '{input_path}' not found.", file=sys.stderr)
+    # Expand any globs/wildcards in input arguments
+    file_paths = []
+    for item in args.input:
+        matched = glob.glob(item)
+        if matched:
+            file_paths.extend([Path(p) for p in sorted(matched)])
+        else:
+            file_paths.append(Path(item))
+
+    # De-duplicate while preserving CLI order
+    seen = set()
+    unique_paths = []
+    for p in file_paths:
+        res = p.resolve()
+        if res not in seen:
+            seen.add(res)
+            unique_paths.append(p)
+
+    if not unique_paths:
+        print("Error: No input files found.", file=sys.stderr)
         sys.exit(1)
+
+    for p in unique_paths:
+        if not p.exists():
+            print(f"Error: File '{p}' not found.", file=sys.stderr)
+            sys.exit(1)
 
     # Resolve settings: CLI arguments override config file defaults
     host = args.host if args.host is not None else str(config.get("host", "0.0.0.0")).strip()
@@ -3206,17 +3416,21 @@ def main():
     else:
         cal = parse_cal_string(config.get("cal", [0.0, 1.0, 0.0]))
 
-    print(f"[*] Loading matrix from {input_path} ...")
-    reader = CMATReader(input_path)
-    mat = reader.to_numpy()
-    proj = reader.get_projection()
-
-    CMATWebHandler.reader = reader
-    CMATWebHandler.matrix = mat
-    CMATWebHandler.proj = proj
-    CMATWebHandler.cal = cal
+    CMATWebHandler.matrices = []
+    CMATWebHandler.active_index = 0
     CMATWebHandler.config = config
     CMATWebHandler.config_path = config_path
+    CMATWebHandler.global_cal = cal
+
+    print(f"[*] Loading {len(unique_paths)} matrix file{'s' if len(unique_paths) > 1 else ''}...")
+    for idx, p in enumerate(unique_paths):
+        t0 = time.time()
+        m_idx = CMATWebHandler.add_matrix_file(p, cal=cal)
+        m = CMATWebHandler.matrices[m_idx]
+        print(f"    [{idx + 1}/{len(unique_paths)}] Loaded '{m['name']}' ({m['shape'][0]}×{m['shape'][1]}, {m['total_counts']:,} counts, {time.time()-t0:.2f}s)")
+
+    CMATWebHandler.active_index = 0
+    CMATWebHandler.sync_class_attrs()
 
     # Bind HTTP server
     bind_host = "" if host in ("0.0.0.0", "", "::") else host
