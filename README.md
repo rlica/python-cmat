@@ -92,14 +92,16 @@ python cmat_webviewer.py /path/to/matrix.cmat
 | **Full Zoom Out (2D)** | `Double Click` (2D) | Fully zoom out 2D matrix and both 1D spectra (Full View) |
 | **Full Zoom Out (1D)** | `Double Click` (1D) | Fully zoom out clicked 1D projection only (X range & Y scale; preserves other gate) |
 | **2D Coincidence Peak Fit** | `Ctrl / Cmd + Click` (2D) or `V` | True 2D coincidence peak fit (Gaussian/RadWare/Hypermet) with Gamba & Morhác 4-component BG decomposition |
-| **1D Peak / Multiplet Fit** | `Ctrl / Cmd + Click` (1D) or `V` | Fit 1D peak or multiplet (fits all clustered `G` markers together as a multiplet with full covariance) |
+| **1D Peak / Multiplet Fit** | `Ctrl / Cmd + Click` (1D) or `V` | Fit 1D peak or multiplet (constrained by background regions `B` if set; full covariance) |
 | **Automatic 1D Peak Search** | `P` or `p` | Automatically find peaks in focused 1D spectrum (Prominence / CWT / Mariscotti methods) |
 | **Add / Remove Manual Peak Marker** | `G` or `g` | Add manual peak marker at cursor (or remove if hovering existing marker); setup multiplets for `V` or `H` |
-| **Set Fit Region Limits** | `R` or `r` (1D) | Set Left / Right fit region limits for 'V' with straight-line background (1-FWHM wings) |
-| **Fit All Displayed Peaks** | `H` or `h` | Fit all visible candidate peaks on Peak-Aware Continuum Background (averages low-statistics noise grass, connects smoothly under multiplets) |
-| **Clear Peak Fits & Markers** | `=` (Equals) or `+` | Clear active peak fit curves and found peak markers from 1D spectra and 2D matrix |
-| **Set Peak Gate Limits** | `W` or `w` (1D) | Set Left / Right peak coincidence gate limits ($W_k$) on 1D spectrum |
-| **Set Background Limits** | `X` or `x` (1D) | Set Left / Right background gate limits ($X_m$) for normalized subtraction |
+| **Set Fit / Integration Region** | `R` or `r` (1D) | Set Left / Right limits for peak region $[r_0, r_1]$ used by fitting ('V') and integration ('I') |
+| **Set 1D Background Windows** | `B` or `b` (1D) | Set Left / Right baseline sample intervals for 1D peak fitting ('V') and integration ('I') |
+| **Integrate Peak Area** | `I` or `i` (1D) | Integrate peak over Region ('R') subtracting linear/polynomial background ('B' or boundary slope) |
+| **Fit All Displayed Peaks** | `H` or `h` | Fit all visible candidate peaks on Peak-Aware Continuum Background (averages noise grass, connects under multiplets) |
+| **Clear Peak Fits & Markers** | `=` (Equals) or `+` | Clear active peak fit curves, integration results, and found peak markers |
+| **Set Coincidence Gate Limits** | `W` or `w` (1D) | Set Left / Right peak coincidence gate limits ($W_k$) on 1D spectrum |
+| **Set Coincidence BG Gate Limits** | `X` or `x` (1D) | Set Left / Right background gate limits ($X_m$) for 2D coincidence matrix slicing and normalized subtraction |
 | **Clear Active 1D Gate** | `Z` or `z` (1D) | Clear active coincidence gate/background cut (or cancel in-progress limit) |
 | **Pan 1D Channels (Horizontal)** | `←` / `→` (1D Focus) | Pan 1D spectrum window left / right (`Shift` for 2× speed) |
 | **Pan 1D Counts (Vertical)** | `↑` / `↓` (1D Focus) | Pan / adjust 1D vertical counts scale (`↑` magnify, `↓` compress) |
@@ -306,6 +308,8 @@ cmat [inbeam]> quit
 | **`fit_1d`** | `<axis> <ch_or_e> [--model M]` | Single peak fit (`gaussian`, `gaussian_tail`, `hypermet`) |
 | **`fit_multiplet`**| `<axis> <p1> <p2> ...` | Simultaneously fit coupled multiplet cluster with covariance |
 | **`fit_all`** | `[axis] [--range min max] [--snr N]`| Auto-fit all candidate peaks on Peak-Aware Continuum baseline |
+| **`bg_1d`** | `<axis> <b0> <b1> [...]` or `clear` | Set or clear 1D spectroscopy background windows for fitting & integration |
+| **`integrate`** | `<axis> <r0> <r1> [--bg ..] [--poly 1\|2]` | Integrate peak area over region with polynomial background subtraction |
 | **`fit_2d`** | `<x> <y> [--roi N] [--verbose]` | True 2D coincidence peak fit (Gamba 4-component decomposition) |
 | **`clear_fits`** | `[1d\|2d\|all]` | Clear stored fit results from memory |
 | **`pdf_1d`** | `<axis> <out.pdf> [--fit] [--title T]`| Export publication-quality vector PDF of 1D/gated spectrum |

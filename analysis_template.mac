@@ -126,6 +126,25 @@ fit_multiplet 1 315.0 322.0 --model gaussian
 fit_all 1 --range 300 800 --snr 10.0 --model gaussian
 
 # ------------------------------------------------------------------------------
+# 5b. 1D PEAK INTEGRATION & BACKGROUND REGIONS
+# ------------------------------------------------------------------------------
+# Define spectroscopy baseline sample regions for 1D fitting and integration:
+# Syntax:
+#   bg_1d <axis> <b0> <b1> [<b2> <b3> ...]    # Define one or more background windows
+#   bg_1d clear [axis]                         # Clear 1D background windows
+#
+# Example: Define two background sideband windows around ch 1173:
+bg_1d 0 1140 1150 1185 1195
+
+# Integrate peak counts over region [r0..r1] with background subtraction:
+# Syntax:
+#   integrate <axis> <r0> <r1> [--bg b0 b1 ...] [--poly 1|2]
+#
+# Computes Gross, Background, Net Area, Centroid (ch & keV), FWHM, and Peak/BG:
+integrate 0 1160 1180 --bg 1140 1150 --bg 1185 1195
+
+
+# ------------------------------------------------------------------------------
 # 6. 2D COINCIDENCE PEAK FITTING (GAMBA DECOMPOSITION)
 # ------------------------------------------------------------------------------
 # Simultaneously fit 2D coincidence photopeaks directly on the 2D matrix

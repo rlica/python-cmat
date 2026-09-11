@@ -675,8 +675,10 @@
             <button id="btnGridToggleX" class="grid-toggle-btn active" title="1D Gridlines: Major &amp; Minor (Click to cycle Both / Major / Off)">GRID: ALL</button>
             <button id="btnClearGateX" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem;" title="Clear Gate [Z / Esc]">Clear Gate [Z]</button>
             <button id="btnClearRegionX" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem; background: #6a1b9a; border-color: #ab47bc; color: #f3e5f5;" title="Clear Fit Region [R / =]" onclick="clearFitRegion(0)">Region [R] ✕</button>
+            <button id="btnClearBgX" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem; background: #4a148c; border-color: #8e24aa; color: #f3e5f5;" title="Clear 1D Background Windows [B]" onclick="clearFitBgRegions(0)">BG [B] ✕</button>
           </div>
           <div style="display: flex; gap: 6px;">
+            <button id="btnIntegrateX" class="secondary" style="width: auto; padding: 2px 7px; font-size: 0.72rem; color: #00e5ff; border-color: #00b0ff;" title="Integrate Peak in Region [I]">Integrate [I]</button>
             <button id="btnFindPeaksX" class="secondary" style="width: auto; padding: 2px 7px; font-size: 0.72rem; color: #ffd54f; border-color: #ffb300;" title="Automatic Peak Search [P]">Find Peaks [P]</button>
             <button id="btnFitAllPeaksX" class="secondary" style="width: auto; padding: 2px 7px; font-size: 0.72rem; color: #00e676; border-color: #00c853;" title="Fit All Displayed Peaks (Peak-Aware Background) [H]">Fit All [H]</button>
             <button id="btnClearPeaksX" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem;" title="Clear Found Peaks &amp; Fits [=]">Clear Peaks</button>
@@ -694,8 +696,10 @@
             <button id="btnGridToggleY" class="grid-toggle-btn active" title="1D Gridlines: Major &amp; Minor (Click to cycle Both / Major / Off)">GRID: ALL</button>
             <button id="btnClearGateY" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem;" title="Clear Gate [Z / Esc]">Clear Gate [Z]</button>
             <button id="btnClearRegionY" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem; background: #6a1b9a; border-color: #ab47bc; color: #f3e5f5;" title="Clear Fit Region [R / =]" onclick="clearFitRegion(1)">Region [R] ✕</button>
+            <button id="btnClearBgY" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem; background: #4a148c; border-color: #8e24aa; color: #f3e5f5;" title="Clear 1D Background Windows [B]" onclick="clearFitBgRegions(1)">BG [B] ✕</button>
           </div>
           <div style="display: flex; gap: 6px;">
+            <button id="btnIntegrateY" class="secondary" style="width: auto; padding: 2px 7px; font-size: 0.72rem; color: #00e5ff; border-color: #00b0ff;" title="Integrate Peak in Region [I]">Integrate [I]</button>
             <button id="btnFindPeaksY" class="secondary" style="width: auto; padding: 2px 7px; font-size: 0.72rem; color: #ffd54f; border-color: #ffb300;" title="Automatic Peak Search [P]">Find Peaks [P]</button>
             <button id="btnFitAllPeaksY" class="secondary" style="width: auto; padding: 2px 7px; font-size: 0.72rem; color: #00e676; border-color: #00c853;" title="Fit All Displayed Peaks (Peak-Aware Background) [H]">Fit All [H]</button>
             <button id="btnClearPeaksY" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem;" title="Clear Found Peaks &amp; Fits [=]">Clear Peaks</button>
@@ -704,6 +708,30 @@
           </div>
         </div>
         <canvas id="canvas1dY"></canvas>
+      </div>
+
+      <!-- 1D Peak Integration Results Card -->
+      <div class="fit-results-card fit-card-1d" id="integrateCard1D" style="display: none; border-color: #00b0ff; margin-bottom: 6px;">
+        <div class="fit-header" style="color: #00e5ff;">
+          <span id="integrateTitle1D">1D Peak Integration</span>
+          <div style="display: flex; gap: 6px;">
+            <button class="fit-btn-toggle" id="btnCopyIntegrate1D" title="Copy results to clipboard">Copy</button>
+            <button class="fit-btn-close" id="btnCloseIntegrate1D" title="Close integration card">✕</button>
+          </div>
+        </div>
+        <div class="fit-compact-box" id="integrateCompactBox1D">
+          <div class="fit-compact-line" id="integrateCompactLine1D">-</div>
+        </div>
+        <div class="fit-grid" id="integrateGrid1D" style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #333;">
+          <div class="fit-item"><span class="lbl">Region:</span><span class="val" id="intRegion1D">-</span></div>
+          <div class="fit-item"><span class="lbl">BG Model:</span><span class="val" id="intBgModel1D">-</span></div>
+          <div class="fit-item"><span class="lbl">Gross Counts:</span><span class="val" id="intGross1D">-</span></div>
+          <div class="fit-item"><span class="lbl">BG Counts:</span><span class="val" id="intBgCounts1D">-</span></div>
+          <div class="fit-item"><span class="lbl">Net Area:</span><span class="val" id="intNetArea1D" style="color: #00e5ff; font-weight: bold;">-</span></div>
+          <div class="fit-item"><span class="lbl">Centroid:</span><span class="val" id="intCentroid1D">-</span></div>
+          <div class="fit-item"><span class="lbl">FWHM:</span><span class="val" id="intFWHM1D">-</span></div>
+          <div class="fit-item"><span class="lbl">Peak / BG:</span><span class="val" id="intPeakBg1D">-</span></div>
+        </div>
       </div>
 
       <!-- 1D Fit Results Card -->
@@ -798,12 +826,14 @@
     <tr><td>Double Click (2D)</td><td>Fully zoom out 2D matrix and both 1D spectra (Full View)</td></tr>
     <tr><td>Double Click (1D)</td><td>Fully zoom out clicked 1D projection only (X range &amp; Y scale)</td></tr>
     <tr><td>Ctrl / Cmd + Click (2D)</td><td>2D Coincidence Peak Fit (Gaussian/HPGe + BG &amp; Random Subtraction)</td></tr>
-    <tr><td>V / v</td><td>Fit peak or multiplet at current cursor position (2D coincidence or 1D histogram)</td></tr>
+    <tr><td>R / r</td><td>Set 1D Fit / Integration Region limits (Limit 1, Limit 2)</td></tr>
+    <tr><td>B / b</td><td>Set 1D Background Window limits for fitting ('V') and integration ('I')</td></tr>
+    <tr><td>I / i</td><td>Integrate peak over Region ('R') subtracting background ('B' or boundary slope)</td></tr>
+    <tr><td>V / v</td><td>Fit peak or multiplet at cursor (constrained by 'B' background windows if set)</td></tr>
+    <tr><td>H / h</td><td>Fit all visible peaks on focused 1D display (Peak-Aware Background)</td></tr>
     <tr><td>P / p</td><td>Automatic 1D Peak Search on focused spectrum (CWT method)</td></tr>
     <tr><td>G / g</td><td>Add / remove manual peak marker at cursor (on Det 1 or Det 2)</td></tr>
-    <tr><td>R / r</td><td>Set 1D Fit Region limits for 'V' (Limit 1, Limit 2) with straight-line background</td></tr>
-    <tr><td>H / h</td><td>Fit all visible peaks on focused 1D display (Peak-Aware Background)</td></tr>
-    <tr><td>= (Equals) / +</td><td>Clear active peak fits (1D and 2D) and found peak markers</td></tr>
+    <tr><td>= (Equals) / +</td><td>Clear active peak fits (1D and 2D), integration results, and peak markers</td></tr>
     <tr><td>Arrows in 1D (←, →)</td><td>Pan 1D spectrum channels left / right (Shift + Arrow for 2× fast pan)</td></tr>
     <tr><td>Arrows in 1D (↑, ↓)</td><td>Pan / zoom 1D vertical counts scale (↑ taller peaks, ↓ shorter peaks)</td></tr>
     <tr><td>Arrows in 2D (←, →, ↓, ↑)</td><td>Set Left / Right (Xmin/Xmax) &amp; Down / Up (Ymin/Ymax) limits at cursor</td></tr>
@@ -813,15 +843,15 @@
     <tr><td>L / l</td><td>Cycle scale for focused panel: 2D (Log -> Lin -> Power) or 1D (Lin / Log)</td></tr>
     <tr><td>1 / 2 / 4</td><td>Direct 2D scale: 1 (Linear), 2 (Power / Sqrt), 4 (Log)</td></tr>
     <tr><td>C / c</td><td>Cycle colormaps</td></tr>
-    <tr><td>W / w</td><td>Set Gate limits (consecutive pairs: left &amp; right) on 1D spectrum</td></tr>
-    <tr><td>X / x</td><td>Set Background limits (consecutive pairs: left &amp; right) on 1D spectrum</td></tr>
+    <tr><td>W / w</td><td>Set Coincidence Peak Gate limits (consecutive pairs: left &amp; right) on 1D spectrum</td></tr>
+    <tr><td>X / x</td><td>Set Coincidence Background Gate limits (consecutive pairs: left &amp; right) on 1D spectrum</td></tr>
     <tr><td>Z / z</td><td>Cancel pending limit or clear active 1D coincidence gate</td></tr>
     <tr><td>M / m</td><td>Toggle left menu panel (collapse / expand)</td></tr>
     <tr><td>Drag Divider</td><td>Adjust width of 2D matrix vs 1D projections (double-click to reset)</td></tr>
     <tr><td>[ / ] (Brackets)</td><td>Switch between loaded matrices (prev / next) preserving analysis state</td></tr>
     <tr><td>Ctrl + O</td><td>Open local .cmat matrix file dialog</td></tr>
     <tr><td>Q / q</td><td>Quit viewer (close browser tab and stop terminal server)</td></tr>
-    <tr><td>Esc / ?</td><td>Close Help / Cancel pending gate</td></tr>
+    <tr><td>Esc / ?</td><td>Close Help / Cancel pending gate / Cancel pending BG region</td></tr>
   </table>
   <button onclick="document.getElementById('helpModal').style.display='none'" style="margin-top: 15px;">Close</button>
 </div>
@@ -1289,6 +1319,9 @@
     const minSnr = parseFloat(document.getElementById('peakSearchSnrSlider')?.value || '9.0');
 
     let url = `/api/fit_all_peaks_1d?axis=${axis}&ch_min=${chMin}&ch_max=${chMax}&peaks=${encodeURIComponent(p.peakChannels)}&fit_type=${fitType}&fwhm_est=${fwhmEst}&min_snr=${minSnr}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}`;
+    if (fitBgRegions1D[axis] && fitBgRegions1D[axis].length > 0) {
+      url += `&bg_regions=${encodeURIComponent(JSON.stringify(fitBgRegions1D[axis]))}`;
+    }
     if (gate1DState.axis !== null && gate1DState.axis === (1 - axis) && gate1DState.w_gates.length > 0) {
       url += `&w_gates=${encodeURIComponent(JSON.stringify(gate1DState.w_gates))}&b_gates=${encodeURIComponent(JSON.stringify(gate1DState.b_gates))}`;
     }
@@ -2067,6 +2100,9 @@
   let activeMultiFit1D = { 0: null, 1: null };
   let fitRegion1D = { 0: null, 1: null };
   let pendingRegion1D = { 0: null, 1: null };
+  let fitBgRegions1D = { 0: [], 1: [] };
+  let pendingBgRegion1D = { 0: null, 1: null };
+  let activeIntegration1D = { 0: null, 1: null };
   let isFittingAllPeaks = false;
 
   function getActiveFitType() {
@@ -2372,6 +2408,235 @@
     }
   }
 
+  function updateFitBgRegionUI(axis) {
+    if (axis === null || axis === undefined) {
+      updateFitBgRegionUI(0);
+      updateFitBgRegionUI(1);
+      return;
+    }
+    const btn = (axis === 0) ? document.getElementById('btnClearBgX') : document.getElementById('btnClearBgY');
+    if (!btn) return;
+    const count = (fitBgRegions1D[axis] || []).length;
+    if (count > 0) {
+      btn.innerText = `BG (${count}) ✕`;
+      btn.style.display = 'inline-block';
+      btn.title = `Clear ${count} 1D Background Window(s) on Det ${axis + 1} [B]`;
+    } else if (pendingBgRegion1D[axis] !== null) {
+      btn.innerText = `BG1: ${pendingBgRegion1D[axis]} ✕`;
+      btn.style.display = 'inline-block';
+      btn.title = `Pending Background Limit 1: ch ${pendingBgRegion1D[axis]}. Click or Esc to cancel.`;
+    } else {
+      btn.style.display = 'none';
+    }
+  }
+
+  function clearFitBgRegions(axis) {
+    if (axis === null || axis === undefined) {
+      fitBgRegions1D[0] = [];
+      fitBgRegions1D[1] = [];
+      pendingBgRegion1D[0] = null;
+      pendingBgRegion1D[1] = null;
+      updateFitBgRegionUI(0);
+      updateFitBgRegionUI(1);
+    } else {
+      fitBgRegions1D[axis] = [];
+      pendingBgRegion1D[axis] = null;
+      updateFitBgRegionUI(axis);
+    }
+    renderBoth1DSpectra();
+  }
+
+  function handleFitBgKeyPress() {
+    let activeAxis = null;
+    let activeCh = null;
+    if (hovered1DAxis === 0 && cursor1DChannelX !== null) {
+      activeAxis = 0;
+      activeCh = cursor1DChannelX;
+    } else if (hovered1DAxis === 1 && cursor1DChannelY !== null) {
+      activeAxis = 1;
+      activeCh = cursor1DChannelY;
+    } else if (targetPanel === '1d-0') {
+      activeAxis = 0;
+      activeCh = (cursor1DChannelX !== null) ? cursor1DChannelX : Math.round(view.x0 + (view.x1 - view.x0) / 2);
+    } else if (targetPanel === '1d-1') {
+      activeAxis = 1;
+      activeCh = (cursor1DChannelY !== null) ? cursor1DChannelY : Math.round(view.y0 + (view.y1 - view.y0) / 2);
+    } else {
+      activeAxis = (foundPeaks1D[1].length > 0 && foundPeaks1D[0].length === 0) ? 1 : 0;
+      activeCh = (activeAxis === 0) ? cursorChannel.x : cursorChannel.y;
+    }
+    if (activeAxis === null || activeCh === null) return;
+    const detLabel = (activeAxis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
+
+    if (pendingBgRegion1D[activeAxis] === null) {
+      pendingBgRegion1D[activeAxis] = activeCh;
+      updateFitBgRegionUI(activeAxis);
+      renderBoth1DSpectra();
+      document.getElementById('hudCoords').innerText = `[${detLabel}] BG Window Limit 1: ch ${activeCh}. Move cursor and press 'B' for Limit 2.`;
+    } else {
+      const b0 = Math.min(pendingBgRegion1D[activeAxis], activeCh);
+      const b1 = Math.max(pendingBgRegion1D[activeAxis], activeCh);
+      pendingBgRegion1D[activeAxis] = null;
+      if (b1 - b0 >= 1) {
+        fitBgRegions1D[activeAxis].push([b0, b1]);
+        updateFitBgRegionUI(activeAxis);
+        renderBoth1DSpectra();
+        const num = fitBgRegions1D[activeAxis].length;
+        document.getElementById('hudCoords').innerText = `[${detLabel}] Added BG Window #${num}: [${b0}..${b1}]. Press 'B' for more, 'I' to integrate, or 'V' to fit.`;
+      } else {
+        updateFitBgRegionUI(activeAxis);
+        renderBoth1DSpectra();
+        document.getElementById('hudCoords').innerText = `BG Window cancelled (minimum 1 channel width required).`;
+      }
+    }
+  }
+
+  async function handleIntegrateKeyPress(forcedAxis = null) {
+    let activeAxis = forcedAxis;
+    if (activeAxis === null) {
+      if (hovered1DAxis === 0) activeAxis = 0;
+      else if (hovered1DAxis === 1) activeAxis = 1;
+      else if (targetPanel === '1d-0') activeAxis = 0;
+      else if (targetPanel === '1d-1') activeAxis = 1;
+      else {
+        activeAxis = (foundPeaks1D[1].length > 0 && foundPeaks1D[0].length === 0) ? 1 : 0;
+      }
+    }
+
+    const reg = fitRegion1D[activeAxis];
+    if (!reg) {
+      document.getElementById('hudCoords').innerText = `Please define peak integration region first using 'R' (press 'R' for Limit 1, then 'R' for Limit 2).`;
+      return;
+    }
+
+    const detName = (activeAxis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
+    document.getElementById('hudCoords').innerText = `Integrating peak on ${detName} [${reg[0]}..${reg[1]}]...`;
+
+    const x0 = Math.floor(Math.max(0, view.x0));
+    const x1 = Math.ceil(Math.min(metadata.shape[0], view.x1));
+    const y0 = Math.floor(Math.max(0, view.y0));
+    const y1 = Math.ceil(Math.min(metadata.shape[1], view.y1));
+
+    let url = `/api/integrate_1d?axis=${activeAxis}&region=${reg[0]},${reg[1]}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}`;
+    const bgList = fitBgRegions1D[activeAxis] || [];
+    if (bgList.length > 0) {
+      url += `&bg_regions=${encodeURIComponent(JSON.stringify(bgList))}`;
+    }
+    if (gate1DState.axis !== null && gate1DState.axis === (1 - activeAxis) && gate1DState.w_gates.length > 0) {
+      url += `&w_gates=${encodeURIComponent(JSON.stringify(gate1DState.w_gates))}&b_gates=${encodeURIComponent(JSON.stringify(gate1DState.b_gates))}`;
+    }
+
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.success) {
+        activeIntegration1D[activeAxis] = data;
+        renderBoth1DSpectra();
+        showIntegrationCard(data, activeAxis);
+        const netStr = `${Math.round(data.net_area).toLocaleString()} ± ${Math.round(data.sigma_net).toLocaleString()}`;
+        const centStr = isAxisCalibrated(activeAxis) ? `${data.centroid_e.toFixed(2)} keV` : `ch ${data.centroid_ch.toFixed(1)}`;
+        document.getElementById('hudCoords').innerText = `[${detName}] Net Area: ${netStr} cts | Centroid: ${centStr} | FWHM: ${data.fwhm_ch.toFixed(1)} ch`;
+      } else {
+        document.getElementById('hudCoords').innerText = `Peak integration failed: ${data.error || 'Unknown error'}`;
+      }
+    } catch (e) {
+      console.error(e);
+      document.getElementById('hudCoords').innerText = `Peak integration network error.`;
+    }
+  }
+
+  function showIntegrationCard(data, axis) {
+    const card = document.getElementById('integrateCard1D');
+    if (!card || !data) return;
+
+    const detName = (axis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
+    const isCal = isAxisCalibrated(axis);
+
+    const titleElem = document.getElementById('integrateTitle1D');
+    if (titleElem) titleElem.innerText = `1D Peak Integration: ${detName}`;
+
+    const netCts = `${Math.round(data.net_area).toLocaleString()} ± ${Math.round(data.sigma_net).toLocaleString()} cts`;
+    const cent = isCal ? `${data.centroid_e.toFixed(2)} ± ${data.sigma_centroid_e.toFixed(2)} keV` : `ch ${data.centroid_ch.toFixed(2)} ± ${data.sigma_centroid_ch.toFixed(2)}`;
+    const compactLine = document.getElementById('integrateCompactLine1D');
+    if (compactLine) {
+      compactLine.innerHTML = `<strong>Net Area:</strong> <span style="color:#00e5ff">${netCts}</span> &nbsp;|&nbsp; <strong>Centroid:</strong> ${cent}`;
+    }
+
+    const regStr = isCal ? `ch [${data.r0}..${data.r1}] (${data.r0_e.toFixed(1)}..${data.r1_e.toFixed(1)} keV)` : `ch [${data.r0}..${data.r1}] (${data.r1 - data.r0 + 1} ch)`;
+    document.getElementById('intRegion1D').innerText = regStr;
+
+    const bgModelStr = (data.bg_model || 'linear').replace('_', ' ').toUpperCase() + ` (${data.bg_regions_used ? data.bg_regions_used.length : 0} windows, ${data.bg_channels_count || 0} ch)`;
+    document.getElementById('intBgModel1D').innerText = bgModelStr;
+
+    document.getElementById('intGross1D').innerText = `${data.gross_counts.toLocaleString()} ± ${Math.round(data.sigma_gross).toLocaleString()}`;
+    document.getElementById('intBgCounts1D').innerText = `${Math.round(data.bg_counts).toLocaleString()} ± ${Math.round(data.sigma_bg).toLocaleString()}`;
+    const pct = ((data.net_area / Math.max(1, data.gross_counts)) * 100).toFixed(1);
+    document.getElementById('intNetArea1D').innerText = `${netCts} (${pct}% net)`;
+
+    document.getElementById('intCentroid1D').innerText = cent;
+    const fwhmStr = isCal ? `${data.fwhm_e.toFixed(2)} keV (${data.fwhm_ch.toFixed(2)} ch)` : `${data.fwhm_ch.toFixed(2)} ch`;
+    document.getElementById('intFWHM1D').innerText = fwhmStr;
+
+    document.getElementById('intPeakBg1D').innerText = `${data.peak_to_bg.toFixed(2)}`;
+
+    card.style.display = 'block';
+  }
+
+  function clearIntegration1D(axis) {
+    if (axis === null || axis === undefined) {
+      activeIntegration1D[0] = null;
+      activeIntegration1D[1] = null;
+    } else {
+      activeIntegration1D[axis] = null;
+    }
+    const card = document.getElementById('integrateCard1D');
+    if (card) card.style.display = 'none';
+    renderBoth1DSpectra();
+  }
+
+  function copyIntegrationResults(axis) {
+    const data = (axis !== null && axis !== undefined) ? activeIntegration1D[axis] : (activeIntegration1D[0] || activeIntegration1D[1]);
+    if (!data) return;
+    const ax = (axis !== null && axis !== undefined) ? axis : (activeIntegration1D[0] ? 0 : 1);
+    const detName = (ax === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
+    const isCal = isAxisCalibrated(ax);
+
+    let text = `================================================================================\n`;
+    text += ` 1D PEAK INTEGRATION REPORT\n`;
+    text += ` Detector:  ${detName}\n`;
+    if (isCal) {
+      text += ` Region:    Ch [${data.r0} .. ${data.r1}]  (Energy: ${data.r0_e.toFixed(2)} .. ${data.r1_e.toFixed(2)} keV)\n`;
+    } else {
+      text += ` Region:    Ch [${data.r0} .. ${data.r1}]\n`;
+    }
+    text += ` BG Model:  ${data.bg_model} (${data.bg_regions_used ? data.bg_regions_used.length : 0} windows, ${data.bg_channels_count || 0} channels)\n`;
+    text += `--------------------------------------------------------------------------------\n`;
+    text += ` Gross Counts:       ${data.gross_counts} +/- ${data.sigma_gross.toFixed(1)}\n`;
+    text += ` Background Counts:  ${data.bg_counts.toFixed(1)} +/- ${data.sigma_bg.toFixed(1)}\n`;
+    const pct = ((data.net_area / Math.max(1, data.gross_counts)) * 100).toFixed(1);
+    text += ` Net Peak Area:      ${data.net_area.toFixed(1)} +/- ${data.sigma_net.toFixed(1)} (${pct}% net)\n`;
+    if (isCal) {
+      text += ` Centroid:           Ch ${data.centroid_ch.toFixed(2)} +/- ${data.sigma_centroid_ch.toFixed(2)}  -->  ${data.centroid_e.toFixed(2)} +/- ${data.sigma_centroid_e.toFixed(2)} keV\n`;
+      text += ` FWHM:               ${data.fwhm_ch.toFixed(2)} ch  -->  ${data.fwhm_e.toFixed(2)} keV\n`;
+    } else {
+      text += ` Centroid:           Ch ${data.centroid_ch.toFixed(2)} +/- ${data.sigma_centroid_ch.toFixed(2)}\n`;
+      text += ` FWHM:               ${data.fwhm_ch.toFixed(2)} ch\n`;
+    }
+    text += ` Peak / BG Ratio:    ${data.peak_to_bg.toFixed(2)}\n`;
+    text += `================================================================================\n`;
+
+    navigator.clipboard.writeText(text).then(() => {
+      const btn = document.getElementById('btnCopyIntegrate1D');
+      if (btn) {
+        const orig = btn.innerText;
+        btn.innerText = 'Copied!';
+        setTimeout(() => { btn.innerText = orig; }, 1500);
+      }
+    }).catch(err => {
+      console.error('Copy failed:', err);
+    });
+  }
+
   function addManualPeakMarker(axis, rawCh) {
     if (rawCh === null || rawCh === undefined || isNaN(rawCh)) return;
     const spec = (axis === 0) ? currentProjSpecX : currentProjSpecY;
@@ -2459,6 +2724,9 @@
         const peakChannels = regionPeaks.map(p => p.channel.toFixed(2)).join(',');
 
         let url = `/api/fit_all_peaks_1d?axis=${axis}&region=${r0},${r1}&peaks=${encodeURIComponent(peakChannels)}&fit_type=${fitType}&fwhm_est=${fwhmEst}&fwhm_mult=${fwhmMult}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}`;
+        if (fitBgRegions1D[axis] && fitBgRegions1D[axis].length > 0) {
+          url += `&bg_regions=${encodeURIComponent(JSON.stringify(fitBgRegions1D[axis]))}`;
+        }
         if (gate1DState.axis !== null && gate1DState.axis === (1 - axis) && gate1DState.w_gates.length > 0) {
           url += `&w_gates=${encodeURIComponent(JSON.stringify(gate1DState.w_gates))}&b_gates=${encodeURIComponent(JSON.stringify(gate1DState.b_gates))}`;
         }
@@ -2543,6 +2811,9 @@
       const chMax = Math.min(specLen - 1, Math.ceil(maxCluster + padW));
 
       let url = `/api/fit_all_peaks_1d?axis=${axis}&ch_min=${chMin}&ch_max=${chMax}&peaks=${encodeURIComponent(peakChannels)}&fit_type=${fitType}&fwhm_est=${fwhmEst}&min_snr=${minSnr}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}&fwhm_mult=${fwhmMult}`;
+      if (fitBgRegions1D[axis] && fitBgRegions1D[axis].length > 0) {
+        url += `&bg_regions=${encodeURIComponent(JSON.stringify(fitBgRegions1D[axis]))}`;
+      }
       if (gate1DState.axis !== null && gate1DState.axis === (1 - axis) && gate1DState.w_gates.length > 0) {
         url += `&w_gates=${encodeURIComponent(JSON.stringify(gate1DState.w_gates))}&b_gates=${encodeURIComponent(JSON.stringify(gate1DState.b_gates))}`;
       }
@@ -2708,6 +2979,9 @@
     if (btn) btn.innerText = 'Fitting...';
 
     let url = `/api/fit_all_peaks_1d?axis=${axis}&ch_min=${chMin}&ch_max=${chMax}&peaks=${encodeURIComponent(peakChannels)}&fit_type=${fitType}&fwhm_est=${fwhmEst}&min_snr=${minSnr}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}`;
+    if (fitBgRegions1D[axis] && fitBgRegions1D[axis].length > 0) {
+      url += `&bg_regions=${encodeURIComponent(JSON.stringify(fitBgRegions1D[axis]))}`;
+    }
     if (gate1DState.axis !== null && gate1DState.axis === (1 - axis) && gate1DState.w_gates.length > 0) {
       url += `&w_gates=${encodeURIComponent(JSON.stringify(gate1DState.w_gates))}&b_gates=${encodeURIComponent(JSON.stringify(gate1DState.b_gates))}`;
     }
@@ -3468,6 +3742,161 @@
       ctx.restore();
     }
 
+    // Pending Background Limit 1 (B)
+    if (pendingBgRegion1D[axis] !== null && pendingBgRegion1D[axis] >= chStart && pendingBgRegion1D[axis] <= chEnd) {
+      const pX = pr.x + ((pendingBgRegion1D[axis] + 0.5 - chStart) / span) * pr.w;
+      ctx.strokeStyle = '#ce93d8';
+      ctx.lineWidth = 1.8;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(pX, pr.y);
+      ctx.lineTo(pX, pr.y + pr.h);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.save();
+      ctx.font = 'bold 9px monospace';
+      const txt = `BG1: ch ${pendingBgRegion1D[axis]}`;
+      const tW = ctx.measureText(txt).width;
+      ctx.fillStyle = 'rgba(74, 20, 140, 0.92)';
+      ctx.fillRect(pX - 2, pr.y + 18, tW + 6, 14);
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'left';
+      ctx.fillText(txt, pX + 1, pr.y + 28);
+      ctx.restore();
+    }
+
+    // 1D Background Regions (B)
+    const bgRegions = fitBgRegions1D[axis] || [];
+    for (let bIdx = 0; bIdx < bgRegions.length; bIdx++) {
+      const [b0, b1] = bgRegions[bIdx];
+      if (b1 >= chStart && b0 <= chEnd) {
+        const px0 = pr.x + ((Math.max(chStart, b0) - chStart) / span) * pr.w;
+        const px1 = pr.x + ((Math.min(chEnd, b1) + 1 - chStart) / span) * pr.w;
+
+        // Shaded Band
+        ctx.fillStyle = 'rgba(156, 39, 176, 0.16)';
+        ctx.fillRect(px0, pr.y, Math.max(2, px1 - px0), pr.h);
+
+        // Boundary lines
+        ctx.strokeStyle = '#ab47bc';
+        ctx.lineWidth = 1.6;
+        ctx.beginPath();
+        if (b0 >= chStart && b0 <= chEnd) {
+          const lx = pr.x + ((b0 + 0.5 - chStart) / span) * pr.w;
+          ctx.moveTo(lx, pr.y);
+          ctx.lineTo(lx, pr.y + pr.h);
+        }
+        if (b1 >= chStart && b1 <= chEnd) {
+          const rx = pr.x + ((b1 + 0.5 - chStart) / span) * pr.w;
+          ctx.moveTo(rx, pr.y);
+          ctx.lineTo(rx, pr.y + pr.h);
+        }
+        ctx.stroke();
+
+        // Badge at top
+        ctx.save();
+        ctx.font = 'bold 9px monospace';
+        const bgBadge = `BG${bIdx + 1}: ${b0}..${b1}`;
+        const bW = ctx.measureText(bgBadge).width;
+        const bMidX = Math.max(pr.x + 2, Math.min(pr.x + pr.w - bW - 4, (px0 + px1) / 2 - bW / 2));
+        ctx.fillStyle = 'rgba(74, 20, 140, 0.88)';
+        ctx.fillRect(bMidX - 2, pr.y + 2, bW + 4, 13);
+        ctx.strokeStyle = '#ba68c8';
+        ctx.strokeRect(bMidX - 2, pr.y + 2, bW + 4, 13);
+        ctx.fillStyle = '#f3e5f5';
+        ctx.fillText(bgBadge, bMidX, pr.y + 11);
+        ctx.restore();
+      }
+    }
+
+    // Active Peak Integration Overlay (I)
+    const intData = activeIntegration1D[axis];
+    if (intData && intData.success && intData.r1 >= chStart && intData.r0 <= chEnd) {
+      // 1. Shaded Net Area between Baseline and Histogram
+      const r0 = intData.r0;
+      const r1 = intData.r1;
+      const coeffs = intData.poly_coeffs || [];
+      const evalBg = (ch) => {
+        const x = ch + 0.5;
+        if (coeffs.length === 1) return Math.max(0, coeffs[0]);
+        if (coeffs.length === 2) return Math.max(0, coeffs[0] + coeffs[1] * x);
+        if (coeffs.length >= 3) return Math.max(0, coeffs[0] + coeffs[1] * x + coeffs[2] * (x ** 2));
+        return 0;
+      };
+
+      const startI = Math.max(r0, chStart);
+      const endI = Math.min(r1, chEnd);
+      if (endI >= startI) {
+        ctx.beginPath();
+        for (let i = startI; i <= endI; i++) {
+          const xL = pr.x + ((i - chStart) / span) * pr.w;
+          const xR = pr.x + ((i + 1 - chStart) / span) * pr.w;
+          const y = valToPx(spec[i] || 0);
+          if (i === startI) ctx.moveTo(xL, y);
+          else ctx.lineTo(xL, y);
+          ctx.lineTo(xR, y);
+        }
+        for (let i = endI; i >= startI; i--) {
+          const xR = pr.x + ((i + 1 - chStart) / span) * pr.w;
+          const xL = pr.x + ((i - chStart) / span) * pr.w;
+          const yBg = valToPx(evalBg(i));
+          ctx.lineTo(xR, yBg);
+          ctx.lineTo(xL, yBg);
+        }
+        ctx.closePath();
+        ctx.fillStyle = 'rgba(0, 229, 255, 0.22)';
+        ctx.fill();
+      }
+
+      // 2. Baseline Curve (Dashed Amber)
+      if (intData.curve_bg && intData.curve_bg.length > 0) {
+        ctx.beginPath();
+        ctx.strokeStyle = '#ffa726';
+        ctx.lineWidth = 2.0;
+        ctx.setLineDash([4, 3]);
+        let firstPt = true;
+        for (const [ch, yVal] of intData.curve_bg) {
+          if (ch >= chStart && ch <= chEnd) {
+            const cx = pr.x + ((ch + 0.5 - chStart) / span) * pr.w;
+            const cy = valToPx(yVal);
+            if (firstPt) { ctx.moveTo(cx, cy); firstPt = false; }
+            else ctx.lineTo(cx, cy);
+          }
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // 3. Centroid Vertical Line (Cyan)
+      if (intData.centroid_ch >= chStart && intData.centroid_ch <= chEnd) {
+        const cX = pr.x + ((intData.centroid_ch - chStart) / span) * pr.w;
+        ctx.strokeStyle = '#00e5ff';
+        ctx.lineWidth = 1.8;
+        ctx.setLineDash([3, 2]);
+        ctx.beginPath();
+        ctx.moveTo(cX, pr.y);
+        ctx.lineTo(cX, pr.y + pr.h);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Badge at top
+        ctx.save();
+        ctx.font = 'bold 9px monospace';
+        const centTxt = isCal ? `${intData.centroid_e.toFixed(1)} keV` : `ch ${intData.centroid_ch.toFixed(1)}`;
+        const lbl = `Net: ${Math.round(intData.net_area).toLocaleString()} | ${centTxt}`;
+        const lW = ctx.measureText(lbl).width;
+        const badgeX = Math.max(pr.x + 2, Math.min(pr.x + pr.w - lW - 6, cX - lW / 2));
+        ctx.fillStyle = 'rgba(0, 77, 64, 0.94)';
+        ctx.fillRect(badgeX - 2, pr.y + 16, lW + 6, 14);
+        ctx.strokeStyle = '#00e5ff';
+        ctx.strokeRect(badgeX - 2, pr.y + 16, lW + 6, 14);
+        ctx.fillStyle = '#00e5ff';
+        ctx.fillText(lbl, badgeX + 1, pr.y + 26);
+        ctx.restore();
+      }
+    }
+
     ctx.restore(); // Restore plot clip so peak markers and labels are never truncated
 
     // Found Peaks Markers - Rendered unclipped so markers & badges are never truncated
@@ -4093,9 +4522,11 @@
     clearFit1D();
     clearFit2D();
     clearMultiFit1D();
+    clearIntegration1D();
     clearFoundPeaks(0);
     clearFoundPeaks(1);
     clearFitRegion(null);
+    clearFitBgRegions(null);
   }
 
   function updateFitCardsVerbosity() {
@@ -4394,6 +4825,16 @@
     const btnCloseMulti = document.getElementById('btnCloseMultiFit1D');
     if (btnCloseMulti) btnCloseMulti.addEventListener('click', () => clearMultiFit1D(null));
 
+    const btnIntX = document.getElementById('btnIntegrateX');
+    if (btnIntX) btnIntX.addEventListener('click', () => handleIntegrateKeyPress(0));
+    const btnIntY = document.getElementById('btnIntegrateY');
+    if (btnIntY) btnIntY.addEventListener('click', () => handleIntegrateKeyPress(1));
+
+    const btnCopyInt = document.getElementById('btnCopyIntegrate1D');
+    if (btnCopyInt) btnCopyInt.addEventListener('click', () => copyIntegrationResults());
+    const btnCloseInt = document.getElementById('btnCloseIntegrate1D');
+    if (btnCloseInt) btnCloseInt.addEventListener('click', () => clearIntegration1D());
+
     const snrSlider = document.getElementById('peakSearchSnrSlider');
     if (snrSlider) {
       snrSlider.addEventListener('input', (e) => {
@@ -4479,7 +4920,7 @@
       }
 
       const k = e.key.toLowerCase();
-      const isShortcut = ['arrowleft', 'arrowright', 'arrowdown', 'arrowup', 'e', 'f', 'q', '=', '+', 'v', 'g', 'c', '1', '2', '4', 'l', '?', 'h', 'escape', 'm', 'w', 'x', 'b', 'z', 'p', 'r', '[', ']'].includes(k);
+      const isShortcut = ['arrowleft', 'arrowright', 'arrowdown', 'arrowup', 'e', 'f', 'q', '=', '+', 'v', 'g', 'c', '1', '2', '4', 'l', '?', 'h', 'escape', 'm', 'w', 'x', 'b', 'i', 'z', 'p', 'r', '[', ']'].includes(k);
       if (isShortcut) {
         e.preventDefault();
         unfocusControls();
@@ -4526,7 +4967,9 @@
       else if (e.key === 'q' || e.key === 'Q') quitViewer();
       else if (e.key === '=' || e.key === '+') clearAllFits();
       else if (e.key === 'w' || e.key === 'W') handleGateKeyPress('w');
-      else if (e.key === 'x' || e.key === 'X' || e.key === 'b' || e.key === 'B') handleGateKeyPress('x');
+      else if (e.key === 'x' || e.key === 'X') handleGateKeyPress('x');
+      else if (e.key === 'b' || e.key === 'B') handleFitBgKeyPress();
+      else if (e.key === 'i' || e.key === 'I') handleIntegrateKeyPress();
       else if (e.key === 'r' || e.key === 'R') handleRegionKeyPress();
       else if (e.key === 'z' || e.key === 'Z') clear1DGates(true);
       else if (e.key === 'p' || e.key === 'P') {
@@ -4605,10 +5048,23 @@
       } else if (e.key === 'Escape') {
         const hm = document.getElementById('helpModal');
         const sm = document.getElementById('serverPathModal');
+        const ic = document.getElementById('integrateCard1D');
         if (hm && hm.style.display === 'block') {
           hm.style.display = 'none';
         } else if (sm && sm.style.display === 'block') {
           sm.style.display = 'none';
+        } else if (ic && ic.style.display === 'block') {
+          clearIntegration1D();
+        } else if (pendingBgRegion1D[0] !== null || pendingBgRegion1D[1] !== null) {
+          pendingBgRegion1D = { 0: null, 1: null };
+          updateFitBgRegionUI();
+          renderBoth1DSpectra();
+          document.getElementById('hudCoords').innerText = 'Cancelled pending 1D background window.';
+        } else if (pendingRegion1D[0] !== null || pendingRegion1D[1] !== null) {
+          pendingRegion1D = { 0: null, 1: null };
+          updateFitRegionUI();
+          renderBoth1DSpectra();
+          document.getElementById('hudCoords').innerText = 'Cancelled pending 1D fit region.';
         } else if (gate1DState.pending_w !== null || gate1DState.pending_b !== null || gate1DState.axis !== null) {
           clear1DGates(true);
         }

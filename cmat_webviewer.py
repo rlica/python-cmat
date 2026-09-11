@@ -2260,6 +2260,323 @@ def print_peaks_terminal_report(peaks_res: dict, det_name: str, matrix_name: str
         print("", flush=True)
 
 
+def integrate_peak_1d(
+    spectrum: np.ndarray,
+    region: list,
+    bg_regions: list = None,
+    poly_order: int = None,
+    cal: list = [0.0, 1.0, 0.0]
+) -> dict:
+    """
+    Integrates the number of counts in peak region [r0, r1], subtracting a background
+    defined either by user background intervals (bg_regions) or a boundary baseline.
+
+    Parameters:
+      spectrum: 1D array of channel counts
+      region: [r0, r1] channel bounds of the peak integration region
+      bg_regions: Optional list of [b_start, b_end] channel intervals
+      poly_order: Polynomial order (0 = constant, 1 = linear, 2 = quadratic).
+                  If None, auto-selected:
+                    - 0 if 1 bg region
+                    - 1 if 2 bg regions or default boundary baseline
+                    - 2 if >= 3 bg regions
+      cal: Calibration polynomial coefficients [a0, a1, a2] for E(ch) = a0 + a1*ch + a2*ch^2
+
+    Returns:
+      dict with:
+        success: bool
+        r0, r1: integration channel limits (int)
+        r0_e, r1_e: calibrated energy limits
+        gross_counts: int(G)
+        sigma_gross: sqrt(G)
+        bg_counts: float(B_tot)
+        sigma_bg: float(sigma_B_tot)
+        net_area: float(A_net)
+        sigma_net: float(sigma_A_net)
+        centroid_ch: float
+        sigma_centroid_ch: float
+        centroid_e: float
+        sigma_centroid_e: float
+        fwhm_ch: float
+        fwhm_e: float
+        peak_to_bg: float
+        bg_model: str
+        poly_coeffs: list of float
+        bg_regions_used: list of [b0, b1]
+        bg_channels_count: int
+        curve_bg: list of [float(ch), float(bg_val)]
+    """
+    if region is None or len(region) < 2:
+        return {"success": False, "error": "Peak region [r0, r1] must contain at least 2 boundary values."}
+
+    tot_len = len(spectrum)
+    r_left = min(float(region[0]), float(region[1]))
+    r_right = max(float(region[0]), float(region[1]))
+
+    i0 = max(0, int(np.floor(r_left)))
+    i1 = min(tot_len - 1, int(np.ceil(r_right)))
+    if i1 < i0:
+        return {"success": False, "error": f"Invalid peak integration range: [{i0} .. {i1}]."}
+
+    n_reg = i1 - i0 + 1
+    if n_reg < 1:
+        return {"success": False, "error": "Integration region contains no channels."}
+
+    y_reg = np.asarray(spectrum[i0:i1 + 1], dtype=np.float64)
+    gross_counts = int(np.round(np.sum(y_reg)))
+    sigma_gross = float(np.sqrt(max(0.0, float(gross_counts))))
+
+    c_a0 = float(cal[0]) if len(cal) > 0 else 0.0
+    c_a1 = float(cal[1]) if len(cal) > 1 else 1.0
+    c_a2 = float(cal[2]) if len(cal) > 2 else 0.0
+
+    def to_energy(c_val):
+        return c_a0 + c_a1 * c_val + c_a2 * (c_val ** 2)
+
+    def d_energy_d_ch(c_val):
+        return abs(c_a1 + 2.0 * c_a2 * c_val)
+
+    r0_e = to_energy(float(i0))
+    r1_e = to_energy(float(i1 + 1))
+
+    bg_chs = []
+    clean_bg_regions = []
+    if bg_regions:
+        for b_int in bg_regions:
+            if isinstance(b_int, (list, tuple)) and len(b_int) >= 2:
+                bk0 = max(0, int(np.floor(min(float(b_int[0]), float(b_int[1])))))
+                bk1 = min(tot_len - 1, int(np.ceil(max(float(b_int[0]), float(b_int[1])))))
+                if bk1 >= bk0:
+                    clean_bg_regions.append([bk0, bk1])
+                    bg_chs.extend(range(bk0, bk1 + 1))
+
+    bg_chs = np.unique(bg_chs) if bg_chs else np.array([], dtype=np.int64)
+    ch_reg_arr = np.arange(i0, i1 + 1, dtype=np.float64) + 0.5
+
+    if len(bg_chs) == 0:
+        w_bound = max(2, min(5, int(round(0.15 * n_reg))))
+        cL0 = max(0, i0 - w_bound)
+        cL1 = max(0, i0 - 1)
+        cR0 = min(tot_len - 1, i1 + 1)
+        cR1 = min(tot_len - 1, i1 + w_bound)
+
+        has_left = (cL1 >= cL0 and i0 > 0)
+        has_right = (cR1 >= cR0 and i1 < tot_len - 1)
+
+        if has_left and has_right:
+            yL = np.asarray(spectrum[cL0:cL1 + 1], dtype=np.float64)
+            yR = np.asarray(spectrum[cR0:cR1 + 1], dtype=np.float64)
+            yL_mean = float(np.mean(yL))
+            yR_mean = float(np.mean(yR))
+            xL_mid = (cL0 + cL1) / 2.0 + 0.5
+            xR_mid = (cR0 + cR1) / 2.0 + 0.5
+            dx = max(1e-6, xR_mid - xL_mid)
+            slope = (yR_mean - yL_mean) / dx
+            intercept = yL_mean - slope * xL_mid
+
+            bg_vals_reg = slope * ch_reg_arr + intercept
+            b_tot = float(np.sum(bg_vals_reg))
+
+            var_L = max(1.0, yL_mean) / max(1, len(yL))
+            var_R = max(1.0, yR_mean) / max(1, len(yR))
+            wL_sum = np.sum((xR_mid - ch_reg_arr) / dx)
+            wR_sum = np.sum((ch_reg_arr - xL_mid) / dx)
+            var_b_tot = (wL_sum ** 2) * var_L + (wR_sum ** 2) * var_R
+            sigma_b = float(np.sqrt(max(0.0, var_b_tot)))
+
+            bg_model = "boundary_linear"
+            poly_coeffs = [float(intercept), float(slope)]
+            clean_bg_regions = [[cL0, cL1], [cR0, cR1]]
+            bg_channels_count = len(yL) + len(yR)
+            plot_min_ch = cL0
+            plot_max_ch = cR1
+        else:
+            flat_y = np.asarray(spectrum[cL0:cL1+1] if has_left else (spectrum[cR0:cR1+1] if has_right else y_reg), dtype=np.float64)
+            mean_val = float(np.mean(flat_y)) if len(flat_y) > 0 else 0.0
+            bg_vals_reg = np.full(n_reg, mean_val, dtype=np.float64)
+            b_tot = float(mean_val * n_reg)
+            var_mean = max(1.0, mean_val) / max(1, len(flat_y))
+            sigma_b = float(np.sqrt(max(0.0, (n_reg ** 2) * var_mean)))
+
+            bg_model = "boundary_constant"
+            poly_coeffs = [float(mean_val)]
+            bg_channels_count = len(flat_y)
+            plot_min_ch = i0
+            plot_max_ch = i1
+    else:
+        xB = bg_chs.astype(np.float64) + 0.5
+        yB = np.asarray(spectrum[bg_chs], dtype=np.float64)
+        bg_channels_count = len(bg_chs)
+
+        if poly_order is not None:
+            order = max(0, min(2, int(poly_order)))
+            if order == 2 and bg_channels_count < 3:
+                order = 1 if bg_channels_count >= 2 else 0
+            elif order == 1 and bg_channels_count < 2:
+                order = 0
+        else:
+            if len(clean_bg_regions) >= 3 and bg_channels_count >= 5:
+                order = 2
+            elif len(clean_bg_regions) == 2 or bg_channels_count >= 2:
+                order = 1
+            else:
+                order = 0
+
+        w = 1.0 / np.maximum(1.0, yB)
+
+        if order == 0:
+            c0 = float(np.sum(w * yB) / np.sum(w))
+            var_c0 = 1.0 / np.sum(w)
+            bg_vals_reg = np.full(n_reg, c0, dtype=np.float64)
+            b_tot = float(c0 * n_reg)
+            sigma_b = float(np.sqrt(max(0.0, (n_reg ** 2) * var_c0)))
+            poly_coeffs = [c0]
+            bg_model = "constant"
+        elif order == 1:
+            X = np.column_stack([np.ones_like(xB), xB])
+            XT_W = X.T * w
+            A = np.dot(XT_W, X)
+            b_vec = np.dot(XT_W, yB)
+            try:
+                cov = np.linalg.inv(A)
+                coeffs = np.dot(cov, b_vec)
+            except np.linalg.LinAlgError:
+                coeffs = np.polyfit(xB, yB, deg=1)[::-1]
+                cov = np.eye(2) * (np.var(yB) / max(1, len(yB)))
+
+            poly_coeffs = [float(c) for c in coeffs]
+            bg_vals_reg = poly_coeffs[0] + poly_coeffs[1] * ch_reg_arr
+            b_tot = float(np.sum(bg_vals_reg))
+
+            s_vec = np.array([float(n_reg), float(np.sum(ch_reg_arr))], dtype=np.float64)
+            var_b_tot = float(np.dot(s_vec, np.dot(cov, s_vec)))
+            sigma_b = float(np.sqrt(max(0.0, var_b_tot)))
+            bg_model = "linear"
+        else:
+            X = np.column_stack([np.ones_like(xB), xB, xB ** 2])
+            XT_W = X.T * w
+            A = np.dot(XT_W, X)
+            b_vec = np.dot(XT_W, yB)
+            try:
+                cov = np.linalg.inv(A)
+                coeffs = np.dot(cov, b_vec)
+            except np.linalg.LinAlgError:
+                coeffs = np.polyfit(xB, yB, deg=2)[::-1]
+                cov = np.eye(3) * (np.var(yB) / max(1, len(yB)))
+
+            poly_coeffs = [float(c) for c in coeffs]
+            bg_vals_reg = poly_coeffs[0] + poly_coeffs[1] * ch_reg_arr + poly_coeffs[2] * (ch_reg_arr ** 2)
+            b_tot = float(np.sum(bg_vals_reg))
+
+            s_vec = np.array([float(n_reg), float(np.sum(ch_reg_arr)), float(np.sum(ch_reg_arr ** 2))], dtype=np.float64)
+            var_b_tot = float(np.dot(s_vec, np.dot(cov, s_vec)))
+            sigma_b = float(np.sqrt(max(0.0, var_b_tot)))
+            bg_model = "quadratic"
+
+        plot_min_ch = min(i0, int(np.min(bg_chs)))
+        plot_max_ch = max(i1, int(np.max(bg_chs)))
+
+    net_area = float(gross_counts - b_tot)
+    var_net = (sigma_gross ** 2) + (sigma_b ** 2)
+    sigma_net = float(np.sqrt(max(0.0, var_net)))
+
+    net_y = np.maximum(0.0, y_reg - np.maximum(0.0, bg_vals_reg))
+    sum_net_pos = float(np.sum(net_y))
+
+    if sum_net_pos > 0:
+        centroid_ch = float(np.sum(ch_reg_arr * net_y) / sum_net_pos)
+        mu2 = float(np.sum(((ch_reg_arr - centroid_ch) ** 2) * net_y) / sum_net_pos)
+        fwhm_ch = float(2.35482 * np.sqrt(max(0.0, mu2)))
+    else:
+        centroid_ch = float((i0 + i1) / 2.0 + 0.5)
+        fwhm_ch = 0.0
+
+    if fwhm_ch > 0.1 and net_area > 0:
+        sigma_centroid_ch = float(fwhm_ch / (2.35482 * np.sqrt(max(1.0, net_area))))
+    else:
+        sigma_centroid_ch = float(1.0 / np.sqrt(12.0 * max(1.0, net_area)))
+
+    centroid_e = to_energy(centroid_ch)
+    dE = d_energy_d_ch(centroid_ch)
+    sigma_centroid_e = float(dE * sigma_centroid_ch)
+    fwhm_e = float(dE * fwhm_ch)
+    peak_to_bg = float(max(0.0, net_area) / max(1.0, b_tot))
+
+    plot_min_ch = max(0, plot_min_ch)
+    plot_max_ch = min(tot_len - 1, plot_max_ch)
+    curve_chs = np.arange(plot_min_ch, plot_max_ch + 1, dtype=np.float64)
+    x_plot = curve_chs + 0.5
+    if len(poly_coeffs) == 1:
+        curve_y = np.full_like(x_plot, poly_coeffs[0])
+    elif len(poly_coeffs) == 2:
+        curve_y = poly_coeffs[0] + poly_coeffs[1] * x_plot
+    else:
+        curve_y = poly_coeffs[0] + poly_coeffs[1] * x_plot + poly_coeffs[2] * (x_plot ** 2)
+    curve_y = np.maximum(0.0, curve_y)
+
+    curve_bg = [[int(ch), round(float(y_val), 2)] for ch, y_val in zip(curve_chs, curve_y)]
+
+    return {
+        "success": True,
+        "r0": i0,
+        "r1": i1,
+        "r0_e": round(r0_e, 2),
+        "r1_e": round(r1_e, 2),
+        "gross_counts": gross_counts,
+        "sigma_gross": round(sigma_gross, 1),
+        "bg_counts": round(b_tot, 1),
+        "sigma_bg": round(sigma_b, 1),
+        "net_area": round(net_area, 1),
+        "sigma_net": round(sigma_net, 1),
+        "centroid_ch": round(centroid_ch, 2),
+        "sigma_centroid_ch": round(sigma_centroid_ch, 2),
+        "centroid_e": round(centroid_e, 2),
+        "sigma_centroid_e": round(sigma_centroid_e, 2),
+        "fwhm_ch": round(fwhm_ch, 2),
+        "fwhm_e": round(fwhm_e, 2),
+        "peak_to_bg": round(peak_to_bg, 2),
+        "bg_model": bg_model,
+        "poly_coeffs": [round(c, 6) for c in poly_coeffs],
+        "bg_regions_used": clean_bg_regions,
+        "bg_channels_count": int(bg_channels_count),
+        "curve_bg": curve_bg
+    }
+
+
+def print_integrate_terminal_report(res: dict, det_name: str = "Det 1 (X)", matrix_name: str = "matrix", is_cal: bool = False):
+    if not res.get("success"):
+        print(f"[!] Peak integration error: {res.get('error', 'Unknown')}", file=sys.stderr)
+        return
+
+    i0, i1 = res["r0"], res["r1"]
+    bg_m = res.get("bg_model", "linear").replace("_", " ").title()
+    nb_reg = len(res.get("bg_regions_used", []))
+    nb_ch = res.get("bg_channels_count", 0)
+
+    print("\n" + "=" * 80, flush=True)
+    print(" 1D PEAK INTEGRATION REPORT", flush=True)
+    print(f" Matrix:    {matrix_name}", flush=True)
+    print(f" Detector:  {det_name}", flush=True)
+    if is_cal:
+        print(f" Region:    Ch [{i0} .. {i1}]  (Energy: {res['r0_e']:.2f} .. {res['r1_e']:.2f} keV)", flush=True)
+    else:
+        print(f" Region:    Ch [{i0} .. {i1}]", flush=True)
+    print(f" BG Model:  {bg_m} ({nb_reg} background window{'s' if nb_reg != 1 else ''}, {nb_ch} channels)", flush=True)
+    print("-" * 80, flush=True)
+    print(f" Gross Counts:       {int(res['gross_counts']):<12d} +/- {res['sigma_gross']:<10.1f}", flush=True)
+    print(f" Background Counts:  {res['bg_counts']:<12.1f} +/- {res['sigma_bg']:<10.1f}", flush=True)
+    pct = (res['net_area'] / max(1.0, res['gross_counts'])) * 100.0
+    print(f" Net Peak Area:      {res['net_area']:<12.1f} +/- {res['sigma_net']:<10.1f} ({pct:.1f}% net)", flush=True)
+    if is_cal:
+        print(f" Centroid:           Ch {res['centroid_ch']:.2f} +/- {res['sigma_centroid_ch']:.2f}  -->  {res['centroid_e']:.2f} +/- {res['sigma_centroid_e']:.2f} keV", flush=True)
+        print(f" FWHM:               {res['fwhm_ch']:.2f} ch  -->  {res['fwhm_e']:.2f} keV", flush=True)
+    else:
+        print(f" Centroid:           Ch {res['centroid_ch']:.2f} +/- {res['sigma_centroid_ch']:.2f}", flush=True)
+        print(f" FWHM:               {res['fwhm_ch']:.2f} ch", flush=True)
+    print(f" Peak / BG Ratio:    {res['peak_to_bg']:.2f}", flush=True)
+    print("=" * 80 + "\n", flush=True)
+
+
 def compute_snip_background(
     spectrum: np.ndarray,
     ch_min: int = 0,
@@ -2447,14 +2764,19 @@ def fit_all_peaks_1d(
     fwhm_mult: float = 4.0,
     bg_method: str = "peak_aware",
     snip_iter: int = None,
-    region: list = None
+    region: list = None,
+    bg_regions: list = None
 ) -> dict:
     """
     Fits all candidate peaks in the visible display window [ch_min, ch_max] by distinguishing
     between pure continuum regions (where peak search 'P' confirmed no peaks exist) and photopeaks.
 
-    If an explicit fit region is specified via `region=[r_left, r_right]`, the baseline is strictly
-    computed as a straight line by averaging a 1-FWHM window on the left and right outside the region:
+    If background regions `bg_regions` are supplied, the baseline is computed strictly from those
+    background channels using weighted polynomial regression.
+
+    If an explicit fit region is specified via `region=[r_left, r_right]`, the baseline is either
+    fitted from `bg_regions` or computed as a straight line by averaging a 1-FWHM window on the
+    left and right outside the region:
       - Left Background: average over [r_left - FWHM, r_left - 1]
       - Right Background: average over [r_right + 1, r_right + FWHM]
       - Baseline: exact linear connecting line across the region and background wings.
@@ -2465,51 +2787,96 @@ def fit_all_peaks_1d(
     fwhm_clean = max(1.5, float(fwhm_est))
     region_info = None
 
+    valid_bg_chs = []
+    if bg_regions:
+        for b_int in bg_regions:
+            if isinstance(b_int, (list, tuple)) and len(b_int) >= 2:
+                bk0 = max(0, int(np.floor(min(float(b_int[0]), float(b_int[1])))))
+                bk1 = min(len(spectrum) - 1, int(np.ceil(max(float(b_int[0]), float(b_int[1])))))
+                if bk1 >= bk0:
+                    valid_bg_chs.extend(range(bk0, bk1 + 1))
+    valid_bg_chs = np.unique(valid_bg_chs) if valid_bg_chs else np.array([], dtype=np.int64)
+
     if region is not None and len(region) >= 2:
         r_left = min(float(region[0]), float(region[1]))
         r_right = max(float(region[0]), float(region[1]))
         w_bg = max(1, int(round(fwhm_clean)))
 
-        # Left background: 1 FWHM immediately left outside the region
-        c_L0 = max(0, int(np.floor(r_left)) - w_bg)
-        c_L1 = max(0, int(np.floor(r_left)) - 1)
-        if c_L1 < c_L0:
-            c_L1 = c_L0
-        y_L_avg = float(np.mean(spectrum[c_L0:c_L1 + 1]))
-        x_L_center = (c_L0 + c_L1) / 2.0 + 0.5
+        if len(valid_bg_chs) >= 2:
+            xB = valid_bg_chs.astype(np.float64) + 0.5
+            yB = np.asarray(spectrum[valid_bg_chs], dtype=np.float64)
+            w = 1.0 / np.maximum(1.0, yB)
+            order = 2 if (bg_regions and len(bg_regions) >= 3 and len(valid_bg_chs) >= 5) else 1
+            if order == 1:
+                X = np.column_stack([np.ones_like(xB), xB])
+                coeffs = np.linalg.lstsq(X * np.sqrt(w[:, None]), yB * np.sqrt(w), rcond=None)[0]
+                poly_coeffs = [float(c) for c in coeffs]
+            else:
+                X = np.column_stack([np.ones_like(xB), xB, xB ** 2])
+                coeffs = np.linalg.lstsq(X * np.sqrt(w[:, None]), yB * np.sqrt(w), rcond=None)[0]
+                poly_coeffs = [float(c) for c in coeffs]
 
-        # Right background: 1 FWHM immediately right outside the region
-        c_R0 = min(len(spectrum) - 1, int(np.ceil(r_right)) + 1)
-        c_R1 = min(len(spectrum) - 1, int(np.ceil(r_right)) + w_bg)
-        if c_R1 < c_R0:
-            c_R1 = c_R0
-        y_R_avg = float(np.mean(spectrum[c_R0:c_R1 + 1]))
-        x_R_center = (c_R0 + c_R1) / 2.0 + 0.5
+            ch_min = min(int(np.floor(r_left)), int(np.min(valid_bg_chs)))
+            ch_max = max(int(np.ceil(r_right)), int(np.max(valid_bg_chs)))
+            x_total = np.arange(ch_min, ch_max + 1, dtype=np.int64)
+            y_total = np.asarray(spectrum[ch_min:ch_max + 1], dtype=np.float64)
+            n_ch = len(x_total)
 
-        dx = max(1e-6, x_R_center - x_L_center)
-        slope = (y_R_avg - y_L_avg) / dx
-        intercept = y_L_avg - slope * x_L_center
+            x_ch_arr = np.arange(ch_min, ch_max + 1, dtype=np.float64) + 0.5
+            if len(poly_coeffs) == 2:
+                bg_baseline = poly_coeffs[0] + poly_coeffs[1] * x_ch_arr
+            else:
+                bg_baseline = poly_coeffs[0] + poly_coeffs[1] * x_ch_arr + poly_coeffs[2] * (x_ch_arr ** 2)
 
-        ch_min = c_L0
-        ch_max = c_R1
-        x_total = np.arange(ch_min, ch_max + 1, dtype=np.int64)
-        y_total = np.asarray(spectrum[ch_min:ch_max + 1], dtype=np.float64)
-        n_ch = len(x_total)
+            used_bg_method = f"user_bg_regions_poly{len(poly_coeffs)-1}"
+            region_info = {
+                "r_left": r_left,
+                "r_right": r_right,
+                "bg_regions": bg_regions,
+                "poly_order": len(poly_coeffs) - 1,
+                "poly_coeffs": poly_coeffs
+            }
+        else:
+            # Left background: 1 FWHM immediately left outside the region
+            c_L0 = max(0, int(np.floor(r_left)) - w_bg)
+            c_L1 = max(0, int(np.floor(r_left)) - 1)
+            if c_L1 < c_L0:
+                c_L1 = c_L0
+            y_L_avg = float(np.mean(spectrum[c_L0:c_L1 + 1]))
+            x_L_center = (c_L0 + c_L1) / 2.0 + 0.5
 
-        x_ch_arr = np.arange(ch_min, ch_max + 1, dtype=np.float64) + 0.5
-        bg_baseline = slope * x_ch_arr + intercept
-        used_bg_method = "linear_region_average"
-        region_info = {
-            "r_left": r_left,
-            "r_right": r_right,
-            "left_avg": round(y_L_avg, 2),
-            "right_avg": round(y_R_avg, 2),
-            "slope": round(slope, 4),
-            "c_L0": c_L0,
-            "c_L1": c_L1,
-            "c_R0": c_R0,
-            "c_R1": c_R1
-        }
+            # Right background: 1 FWHM immediately right outside the region
+            c_R0 = min(len(spectrum) - 1, int(np.ceil(r_right)) + 1)
+            c_R1 = min(len(spectrum) - 1, int(np.ceil(r_right)) + w_bg)
+            if c_R1 < c_R0:
+                c_R1 = c_R0
+            y_R_avg = float(np.mean(spectrum[c_R0:c_R1 + 1]))
+            x_R_center = (c_R0 + c_R1) / 2.0 + 0.5
+
+            dx = max(1e-6, x_R_center - x_L_center)
+            slope = (y_R_avg - y_L_avg) / dx
+            intercept = y_L_avg - slope * x_L_center
+
+            ch_min = c_L0
+            ch_max = c_R1
+            x_total = np.arange(ch_min, ch_max + 1, dtype=np.int64)
+            y_total = np.asarray(spectrum[ch_min:ch_max + 1], dtype=np.float64)
+            n_ch = len(x_total)
+
+            x_ch_arr = np.arange(ch_min, ch_max + 1, dtype=np.float64) + 0.5
+            bg_baseline = slope * x_ch_arr + intercept
+            used_bg_method = "linear_region_average"
+            region_info = {
+                "r_left": r_left,
+                "r_right": r_right,
+                "left_avg": round(y_L_avg, 2),
+                "right_avg": round(y_R_avg, 2),
+                "slope": round(slope, 4),
+                "c_L0": c_L0,
+                "c_L1": c_L1,
+                "c_R0": c_R0,
+                "c_R1": c_R1
+            }
 
         # Filter candidate peaks: only peaks within [r_left - 1.0, r_right + 1.0]
         reg_peaks = [float(c) for c in (peak_channels or []) if (r_left - 1.0) <= c <= (r_right + 1.0)]
@@ -2578,7 +2945,27 @@ def fit_all_peaks_1d(
 
     # 1. Compute baseline across the display range (if not already computed via region)
     if region_info is None:
-        if bg_method == "snip":
+        if len(valid_bg_chs) >= 2:
+            xB = valid_bg_chs.astype(np.float64) + 0.5
+            yB = np.asarray(spectrum[valid_bg_chs], dtype=np.float64)
+            w = 1.0 / np.maximum(1.0, yB)
+            order = 2 if (bg_regions and len(bg_regions) >= 3 and len(valid_bg_chs) >= 5) else 1
+            if order == 1:
+                X = np.column_stack([np.ones_like(xB), xB])
+                coeffs = np.linalg.lstsq(X * np.sqrt(w[:, None]), yB * np.sqrt(w), rcond=None)[0]
+                poly_coeffs = [float(c) for c in coeffs]
+            else:
+                X = np.column_stack([np.ones_like(xB), xB, xB ** 2])
+                coeffs = np.linalg.lstsq(X * np.sqrt(w[:, None]), yB * np.sqrt(w), rcond=None)[0]
+                poly_coeffs = [float(c) for c in coeffs]
+
+            x_ch_arr = np.arange(ch_min, ch_max + 1, dtype=np.float64) + 0.5
+            if len(poly_coeffs) == 2:
+                bg_baseline = poly_coeffs[0] + poly_coeffs[1] * x_ch_arr
+            else:
+                bg_baseline = poly_coeffs[0] + poly_coeffs[1] * x_ch_arr + poly_coeffs[2] * (x_ch_arr ** 2)
+            used_bg_method = f"user_bg_regions_poly{len(poly_coeffs)-1}"
+        elif bg_method == "snip":
             m_iter = max(3, int(round(1.4 * fwhm_clean))) if snip_iter is None else int(snip_iter)
             bg_baseline = compute_snip_background(spectrum, ch_min=ch_min, ch_max=ch_max, fwhm_est=fwhm_clean, iterations=m_iter)
             used_bg_method = "snip"
@@ -2943,7 +3330,13 @@ def print_multi_fit_terminal_report(res: dict, det_name: str, matrix_name: str, 
     print(f"[GASPware 1D Multi-Peak Fit] [{det_name}] - {matrix_name}", flush=True)
     print(f"Model: {model_name} | {bg_name} ({clusters} clusters) | Display Window: ch [{ch_min}..{ch_max}]", flush=True)
     if r_info:
-        print(f"Region: [ch {r_info['r_left']:.1f}..{r_info['r_right']:.1f}] | Background: Left Avg = {r_info['left_avg']:.1f} (ch {r_info['c_L0']}..{r_info['c_L1']}) | Right Avg = {r_info['right_avg']:.1f} (ch {r_info['c_R0']}..{r_info['c_R1']}) | Slope = {r_info['slope']:.4f}", flush=True)
+        if "bg_regions" in r_info and r_info["bg_regions"]:
+            poly_name = "Linear" if r_info.get("poly_order", 1) == 1 else ("Quadratic" if r_info.get("poly_order", 1) == 2 else "Constant")
+            print(f"Region: [ch {r_info['r_left']:.1f}..{r_info['r_right']:.1f}] | Background: {poly_name} model from {len(r_info['bg_regions'])} user BG region(s)", flush=True)
+        elif "left_avg" in r_info:
+            print(f"Region: [ch {r_info['r_left']:.1f}..{r_info['r_right']:.1f}] | Background: Left Avg = {r_info['left_avg']:.1f} (ch {r_info['c_L0']}..{r_info['c_L1']}) | Right Avg = {r_info['right_avg']:.1f} (ch {r_info['c_R0']}..{r_info['c_R1']}) | Slope = {r_info['slope']:.4f}", flush=True)
+        else:
+            print(f"Region: [ch {r_info['r_left']:.1f}..{r_info['r_right']:.1f}]", flush=True)
     print(subbar, flush=True)
     if count == 0:
         print("  No peaks fitted.", flush=True)
@@ -2992,12 +3385,16 @@ def parse_cmd_tokens(tokens: list) -> tuple:
                     break
                 vals.append(next_tok)
                 i += 1
-            if len(vals) == 0:
-                flags[flag_name] = True
-            elif len(vals) == 1:
-                flags[flag_name] = vals[0]
+            if flag_name in flags:
+                existing = flags[flag_name] if isinstance(flags[flag_name], list) else [flags[flag_name]]
+                flags[flag_name] = existing + vals
             else:
-                flags[flag_name] = vals
+                if len(vals) == 0:
+                    flags[flag_name] = True
+                elif len(vals) == 1:
+                    flags[flag_name] = vals[0]
+                else:
+                    flags[flag_name] = vals
         else:
             pos.append(tok)
             i += 1
@@ -3114,6 +3511,8 @@ class CMATSession:
         self.gates = {0: None, 1: None}
         self.fits_1d = {0: None, 1: None}
         self.search_peaks_1d = {0: [], 1: []}
+        self.bg_regions_1d = {0: [], 1: []}
+        self.integration_1d = {0: None, 1: None}
         self.fit_2d = None
 
     def add_matrix_file(self, path: Path, name: str = None, cal: dict = None) -> int:
@@ -3353,6 +3752,10 @@ class CMATCommandInterpreter:
             self.cmd_fit_multiplet(args)
         elif verb in ("fit_all", "fitall"):
             self.cmd_fit_all(args)
+        elif verb in ("integrate", "int_1d", "int"):
+            self.cmd_integrate(args)
+        elif verb in ("bg_1d", "bg1d", "set_bg"):
+            self.cmd_bg_1d(args)
         elif verb in ("clear_fits", "clearfit"):
             self.cmd_clear_fits(args)
         elif verb in ("fit_2d", "fit2d"):
@@ -3403,6 +3806,11 @@ class CMATCommandInterpreter:
         print("    fit_multiplet <axis> <p1> <p2> ...  Simultaneously fit coupled multiplet on straight baseline")
         print("    fit_all [axis] [--range min max]    Auto-fit all candidate peaks with continuum baseline")
         print("    clear_fits [1d|2d|all]              Clear stored fit results")
+        print()
+        print("  1D Peak Integration & Background:")
+        print("    integrate <axis> <r0> <r1> [--bg b0 b1 ...] [--poly 0|1|2]  Integrate peak region with BG subtraction")
+        print("    bg_1d <axis> <b0> <b1> [<b2> <b3> ...]                      Set active background regions")
+        print("    bg_1d clear [axis]                                          Clear active background regions")
         print()
         print("  2D Coincidence Fitting:")
         print("    fit_2d <x> <y> [--roi N] [--verbose] 2D coincidence fit (Gamba 4-component decomposition)")
@@ -3717,11 +4125,27 @@ class CMATCommandInterpreter:
                     r0, r1 = energy_to_ch(r0, axis_cal), energy_to_ch(r1, axis_cal)
                 region = [r0, r1]
 
+        bg_regions = []
+        if "bg" in flags:
+            bg_tokens = flags["bg"] if isinstance(flags["bg"], list) else [flags["bg"]]
+            for i in range(0, len(bg_tokens) - 1, 2):
+                try:
+                    b0_val = float(bg_tokens[i])
+                    b1_val = float(bg_tokens[i + 1])
+                    if flags.get("energy") or flags.get("e"):
+                        b0_val = energy_to_ch(b0_val, axis_cal)
+                        b1_val = energy_to_ch(b1_val, axis_cal)
+                    bg_regions.append([min(b0_val, b1_val), max(b0_val, b1_val)])
+                except (ValueError, IndexError):
+                    pass
+        elif self.session.bg_regions_1d.get(axis):
+            bg_regions = list(self.session.bg_regions_1d[axis])
+
         spec = self.session.get_spectrum(axis)
         ch_min = int(min(peak_channels) - fwhm_est * 4) if peak_channels else 0
         ch_max = int(max(peak_channels) + fwhm_est * 4) if peak_channels else len(spec) - 1
 
-        res = fit_all_peaks_1d(spec, ch_min, ch_max, peak_channels, fit_type=model, fwhm_est=fwhm_est, cal=axis_cal, fwhm_mult=fwhm_mult, region=region)
+        res = fit_all_peaks_1d(spec, ch_min, ch_max, peak_channels, fit_type=model, fwhm_est=fwhm_est, cal=axis_cal, fwhm_mult=fwhm_mult, region=region, bg_regions=bg_regions)
         if res.get("success"):
             self.session.fits_1d[axis] = res
             m = self.session.get_active_matrix()
@@ -3751,10 +4175,26 @@ class CMATCommandInterpreter:
                     r0, r1 = energy_to_ch(r0, axis_cal), energy_to_ch(r1, axis_cal)
                 ch_min, ch_max = int(min(r0, r1)), int(max(r0, r1))
 
+        bg_regions = []
+        if "bg" in flags:
+            bg_tokens = flags["bg"] if isinstance(flags["bg"], list) else [flags["bg"]]
+            for i in range(0, len(bg_tokens) - 1, 2):
+                try:
+                    b0_val = float(bg_tokens[i])
+                    b1_val = float(bg_tokens[i + 1])
+                    if flags.get("energy") or flags.get("e"):
+                        b0_val = energy_to_ch(b0_val, axis_cal)
+                        b1_val = energy_to_ch(b1_val, axis_cal)
+                    bg_regions.append([min(b0_val, b1_val), max(b0_val, b1_val)])
+                except (ValueError, IndexError):
+                    pass
+        elif self.session.bg_regions_1d.get(axis):
+            bg_regions = list(self.session.bg_regions_1d[axis])
+
         search_res = find_peaks_1d(spec, ch_min=ch_min, ch_max=ch_max, method="cwt", min_snr=snr, fwhm_est=fwhm_est, cal=axis_cal)
         peak_chs = [p.get("channel", p.get("centroid_ch", 0.0)) for p in search_res.get("peaks", [])]
 
-        res = fit_all_peaks_1d(spec, ch_min, ch_max, peak_chs, fit_type=model, fwhm_est=fwhm_est, cal=axis_cal)
+        res = fit_all_peaks_1d(spec, ch_min, ch_max, peak_chs, fit_type=model, fwhm_est=fwhm_est, cal=axis_cal, bg_regions=bg_regions)
         if res.get("success"):
             self.session.fits_1d[axis] = res
             m = self.session.get_active_matrix()
@@ -3763,10 +4203,131 @@ class CMATCommandInterpreter:
         else:
             print(f"[!] Auto-fit failed: {res.get('error', 'Unknown error')}", file=sys.stderr)
 
+    def cmd_integrate(self, args: list):
+        pos, flags = parse_cmd_tokens(args)
+        if len(pos) < 3:
+            print("[!] Usage: integrate <axis: 0|1> <r0> <r1> [--bg b0 b1 ...] [--poly 0|1|2] [--energy]", file=sys.stderr)
+            return
+
+        try:
+            axis = int(pos[0])
+            r0_raw = float(pos[1])
+            r1_raw = float(pos[2])
+        except ValueError:
+            print("[!] Invalid numeric arguments for integrate.", file=sys.stderr)
+            return
+
+        axis_cal = self.session.get_cal(axis)
+        is_cal = self.session.is_calibrated(axis)
+        use_energy = bool(flags.get("energy") or flags.get("e"))
+
+        if use_energy and is_cal:
+            r0 = energy_to_ch(r0_raw, axis_cal)
+            r1 = energy_to_ch(r1_raw, axis_cal)
+        else:
+            r0, r1 = r0_raw, r1_raw
+
+        bg_regions = []
+        if "bg" in flags:
+            bg_tokens = flags["bg"] if isinstance(flags["bg"], list) else [flags["bg"]]
+            for i in range(0, len(bg_tokens) - 1, 2):
+                try:
+                    b0_val = float(bg_tokens[i])
+                    b1_val = float(bg_tokens[i + 1])
+                    if use_energy and is_cal:
+                        b0_val = energy_to_ch(b0_val, axis_cal)
+                        b1_val = energy_to_ch(b1_val, axis_cal)
+                    bg_regions.append([min(b0_val, b1_val), max(b0_val, b1_val)])
+                except (ValueError, IndexError):
+                    pass
+        elif self.session.bg_regions_1d.get(axis):
+            bg_regions = list(self.session.bg_regions_1d[axis])
+
+        poly_order = None
+        if "poly" in flags:
+            try:
+                poly_order = int(flags["poly"])
+            except ValueError:
+                pass
+
+        spec = self.session.get_spectrum(axis)
+        res = integrate_peak_1d(spec, [r0, r1], bg_regions=bg_regions, poly_order=poly_order, cal=axis_cal)
+        if res.get("success"):
+            self.session.integration_1d[axis] = res
+            m = self.session.get_active_matrix()
+            det_name = f"Det {axis + 1} ({'X' if axis == 0 else 'Y'})"
+            print_integrate_terminal_report(res, det_name, m["name"] if m else "matrix", is_cal)
+        else:
+            print(f"[!] Peak integration failed: {res.get('error', 'Unknown error')}", file=sys.stderr)
+
+    def cmd_bg_1d(self, args: list):
+        pos, flags = parse_cmd_tokens(args)
+        if not pos:
+            for ax in (0, 1):
+                regs = self.session.bg_regions_1d.get(ax, [])
+                cal = self.session.get_cal(ax)
+                is_c = self.session.is_calibrated(ax)
+                name = f"Det {ax + 1} ({'X' if ax == 0 else 'Y'})"
+                if not regs:
+                    print(f"  {name}: None")
+                else:
+                    str_list = []
+                    for b0, b1 in regs:
+                        if is_c:
+                            e0 = cal[0] + cal[1]*b0 + cal[2]*(b0**2)
+                            e1 = cal[0] + cal[1]*b1 + cal[2]*(b1**2)
+                            str_list.append(f"[{b0:.1f}..{b1:.1f} ch / {e0:.1f}..{e1:.1f} keV]")
+                        else:
+                            str_list.append(f"[{b0:.1f}..{b1:.1f} ch]")
+                    print(f"  {name}: {', '.join(str_list)}")
+            return
+
+        if pos[0].lower() == "clear":
+            if len(pos) > 1:
+                try:
+                    ax = int(pos[1])
+                    self.session.bg_regions_1d[ax] = []
+                    print(f"Cleared 1D background regions for Det {ax + 1}.")
+                except ValueError:
+                    print("[!] Invalid axis number. Specify 0 or 1.", file=sys.stderr)
+            else:
+                self.session.bg_regions_1d = {0: [], 1: []}
+                print("Cleared all 1D background regions.")
+            return
+
+        try:
+            axis = int(pos[0])
+        except ValueError:
+            print("[!] Invalid axis. Usage: bg_1d <axis: 0|1> <b0> <b1> [...]", file=sys.stderr)
+            return
+
+        use_energy = bool(flags.get("energy") or flags.get("e"))
+        axis_cal = self.session.get_cal(axis)
+        is_cal = self.session.is_calibrated(axis)
+
+        pairs = []
+        for i in range(1, len(pos) - 1, 2):
+            try:
+                b0 = float(pos[i])
+                b1 = float(pos[i + 1])
+                if use_energy and is_cal:
+                    b0 = energy_to_ch(b0, axis_cal)
+                    b1 = energy_to_ch(b1, axis_cal)
+                pairs.append([min(b0, b1), max(b0, b1)])
+            except ValueError:
+                pass
+
+        if pairs:
+            self.session.bg_regions_1d[axis] = pairs
+            print(f"Set {len(pairs)} 1D background region(s) for Det {axis + 1}: {pairs}")
+        else:
+            print(f"[!] No valid intervals specified. Usage: bg_1d <axis> <b0> <b1> [<b2> <b3> ...]", file=sys.stderr)
+
     def cmd_clear_fits(self, args: list):
         target = args[0].lower() if args else "all"
         if target in ("1d", "all"):
             self.session.fits_1d = {0: None, 1: None}
+            self.session.integration_1d = {0: None, 1: None}
         if target in ("2d", "all"):
             self.session.fit_2d = None
         print(f"[*] Cleared {target} fit cache.")
@@ -4393,12 +4954,15 @@ class CMATWebHandler(BaseHTTPRequestHandler):
                 except Exception:
                     region_bounds = None
 
+            bg_regions_str = query.get("bg_regions", [""])[0]
+            bg_regions = parse_gate_ranges(bg_regions_str) if bg_regions_str.strip() else None
+
             t0 = time.time()
             try:
                 res = fit_all_peaks_1d(
                     spec, ch_min=ch_min, ch_max=ch_max, peak_channels=peak_channels,
                     fit_type=fit_type, fwhm_est=fwhm_est, cal=axis_cal, fwhm_mult=fwhm_mult,
-                    bg_method=bg_method, snip_iter=snip_iter, region=region_bounds
+                    bg_method=bg_method, snip_iter=snip_iter, region=region_bounds, bg_regions=bg_regions
                 )
                 res["axis"] = axis
                 res["elapsed_ms"] = round((time.time() - t0) * 1000.0, 1)
@@ -4407,6 +4971,65 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 res = {"success": False, "error": str(e), "axis": axis, "peaks": [], "elapsed_ms": round((time.time() - t0) * 1000.0, 1)}
                 print(f"[!] Multi-peak fit error: {e}", file=sys.stderr)
+
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(res).encode("utf-8"))
+
+        elif self.path.startswith("/api/integrate_1d"):
+            from urllib.parse import urlparse, parse_qs
+            query = parse_qs(urlparse(self.path).query)
+            axis = int(query.get("axis", [0])[0])
+            reg_str = query.get("region", [""])[0]
+            region = [float(v.strip()) for v in reg_str.split(",") if v.strip()] if reg_str.strip() else None
+
+            if not region or len(region) < 2:
+                res = {"success": False, "error": "Missing or invalid peak region [r0, r1]."}
+            else:
+                x0 = max(0, min(self.matrix.shape[1] - 1, int(float(query.get("x0", [0])[0]))))
+                x1 = max(x0 + 1, min(self.matrix.shape[1], int(float(query.get("x1", [self.matrix.shape[1]])[0]))))
+                y0 = max(0, min(self.matrix.shape[0] - 1, int(float(query.get("y0", [0])[0]))))
+                y1 = max(y0 + 1, min(self.matrix.shape[0], int(float(query.get("y1", [self.matrix.shape[0]])[0]))))
+
+                w_str = query.get("w_gates", [""])[0]
+                b_str = query.get("b_gates", [""])[0]
+                w_gates = parse_gate_ranges(w_str)
+                b_gates = parse_gate_ranges(b_str)
+
+                if w_gates:
+                    gate_axis = 1 - axis
+                    gate_res = compute_1d_gate(self.matrix, gate_axis, w_gates, b_gates)
+                    spec = np.array(gate_res["net_spec"], dtype=np.float64)
+                    det_name = f"Det {axis + 1} ({'X' if axis == 0 else 'Y'} Gated Coincidence)"
+                elif axis == 0:
+                    if y0 == 0 and y1 >= self.matrix.shape[0]:
+                        spec = self.proj
+                    else:
+                        spec = np.sum(self.matrix[y0:y1, :], axis=0, dtype=np.float64)
+                    det_name = "Det 1 (X Projection)"
+                else:
+                    if x0 == 0 and x1 >= self.matrix.shape[1]:
+                        spec = np.sum(self.matrix, axis=1, dtype=np.float64)
+                    else:
+                        spec = np.sum(self.matrix[:, x0:x1], axis=1, dtype=np.float64)
+                    det_name = "Det 2 (Y Projection)"
+
+                bg_str = query.get("bg_regions", [""])[0]
+                bg_regions = parse_gate_ranges(bg_str) if bg_str.strip() else None
+
+                poly_str = query.get("poly_order", [""])[0]
+                poly_order = int(poly_str) if (poly_str.isdigit() or (poly_str and poly_str[0] == '-' and poly_str[1:].isdigit())) else None
+
+                session = self.get_session()
+                axis_cal = session.get_cal(axis)
+                is_cal = session.is_calibrated(axis)
+
+                res = integrate_peak_1d(spec, region, bg_regions=bg_regions, poly_order=poly_order, cal=axis_cal)
+                res["axis"] = axis
+                if res.get("success"):
+                    session.integration_1d[axis] = res
+                    print_integrate_terminal_report(res, det_name, self.reader.filename.name, is_cal)
 
             self.send_response(200)
             self.send_header("Content-type", "application/json")
