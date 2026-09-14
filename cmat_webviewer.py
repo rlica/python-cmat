@@ -3525,7 +3525,8 @@ class CMATSession:
 
         reader = CMATReader(path)
         mat = reader.to_numpy()
-        proj = reader.get_projection()
+        proj_x = reader.get_projection(axis=0)
+        proj_y = reader.get_projection(axis=1)
         matrix_name = name or path.name
 
         matrix_cal = {0: list(self.cal[0]), 1: list(self.cal[1])}
@@ -3548,8 +3549,11 @@ class CMATSession:
             "path": str(path),
             "reader": reader,
             "matrix": mat,
-            "proj": proj,
-            "shape": list(mat.shape),
+            "proj": proj_x,
+            "proj_x": proj_x,
+            "proj_y": proj_y,
+            "shape": [mat.shape[1], mat.shape[0]],
+            "shape_yx": [mat.shape[0], mat.shape[1]],
             "total_counts": int(np.sum(mat)),
             "max_count": int(np.max(mat)),
             "nonzero_bins": int(np.count_nonzero(mat)),
@@ -3641,11 +3645,15 @@ class CMATSession:
             return np.array(gate["net_spec"], dtype=np.float64)
         mat = m["matrix"]
         if axis == 0:
-            if m["is_symmetric"] and m["proj"] is not None:
+            if m.get("proj_x") is not None:
+                return m["proj_x"]
+            if m["is_symmetric"] and m.get("proj") is not None:
                 return m["proj"]
             return np.sum(mat, axis=0, dtype=np.float64)
         else:
-            if m["is_symmetric"] and m["proj"] is not None:
+            if m.get("proj_y") is not None:
+                return m["proj_y"]
+            if m["is_symmetric"] and m.get("proj") is not None:
                 return m["proj"]
             return np.sum(mat, axis=1, dtype=np.float64)
 
@@ -4605,7 +4613,9 @@ class CMATWebHandler(BaseHTTPRequestHandler):
         if m:
             cls.reader = m["reader"]
             cls.matrix = m["matrix"]
-            cls.proj = m["proj"]
+            cls.proj = m.get("proj_x", m.get("proj"))
+            cls.proj_x = cls.proj
+            cls.proj_y = m.get("proj_y")
             cls.cal = session.get_cal(0)
             cls.cal_0 = session.get_cal(0)
             cls.cal_1 = session.get_cal(1)
@@ -4636,9 +4646,16 @@ class CMATWebHandler(BaseHTTPRequestHandler):
         info["is_calibrated_1"] = session.is_calibrated(1)
         info["config"] = self.config or DEFAULT_CONFIG
         info["config_file"] = self.config_path.name if self.config_path else CONFIG_FILENAME
-        info["max_count"] = int(np.max(self.matrix)) if self.matrix is not None else 0
-        info["total_counts"] = int(np.sum(self.matrix)) if self.matrix is not None else 0
-        info["nonzero_bins"] = int(np.count_nonzero(self.matrix)) if self.matrix is not None else 0
+        if self.matrix is not None:
+            info["shape"] = [self.matrix.shape[1], self.matrix.shape[0]]
+            info["shape_yx"] = [self.matrix.shape[0], self.matrix.shape[1]]
+            info["max_count"] = int(np.max(self.matrix))
+            info["total_counts"] = int(np.sum(self.matrix))
+            info["nonzero_bins"] = int(np.count_nonzero(self.matrix))
+        else:
+            info["max_count"] = 0
+            info["total_counts"] = 0
+            info["nonzero_bins"] = 0
         info["active_index"] = session.active_index
         info["matrices"] = [
             {
@@ -4763,13 +4780,13 @@ class CMATWebHandler(BaseHTTPRequestHandler):
                 det_name = f"Det {axis + 1} ({'X' if axis == 0 else 'Y'} Gated Coincidence)"
             elif axis == 0:
                 if y0 == 0 and y1 >= self.matrix.shape[0]:
-                    spec = self.proj
+                    spec = self.proj if self.proj is not None else np.sum(self.matrix, axis=0, dtype=np.float64)
                 else:
                     spec = np.sum(self.matrix[y0:y1, :], axis=0, dtype=np.float64)
                 det_name = "Det 1 (X Projection)"
             else:
                 if x0 == 0 and x1 >= self.matrix.shape[1]:
-                    spec = np.sum(self.matrix, axis=1, dtype=np.float64)
+                    spec = getattr(self, "proj_y", None) if getattr(self, "proj_y", None) is not None else np.sum(self.matrix, axis=1, dtype=np.float64)
                 else:
                     spec = np.sum(self.matrix[:, x0:x1], axis=1, dtype=np.float64)
                 det_name = "Det 2 (Y Projection)"
@@ -4834,13 +4851,13 @@ class CMATWebHandler(BaseHTTPRequestHandler):
                 det_name = f"Det {axis + 1} ({'X' if axis == 0 else 'Y'} Gated Coincidence)"
             elif axis == 0:
                 if y0 == 0 and y1 >= self.matrix.shape[0]:
-                    spec = self.proj
+                    spec = self.proj if self.proj is not None else np.sum(self.matrix, axis=0, dtype=np.float64)
                 else:
                     spec = np.sum(self.matrix[y0:y1, :], axis=0, dtype=np.float64)
                 det_name = "Det 1 (X Projection)"
             else:
                 if x0 == 0 and x1 >= self.matrix.shape[1]:
-                    spec = np.sum(self.matrix, axis=1, dtype=np.float64)
+                    spec = getattr(self, "proj_y", None) if getattr(self, "proj_y", None) is not None else np.sum(self.matrix, axis=1, dtype=np.float64)
                 else:
                     spec = np.sum(self.matrix[:, x0:x1], axis=1, dtype=np.float64)
                 det_name = "Det 2 (Y Projection)"
@@ -5046,13 +5063,13 @@ class CMATWebHandler(BaseHTTPRequestHandler):
 
             # X Projection (Det 1): Sum along Y axis between y0 and y1
             if y0 == 0 and y1 >= self.matrix.shape[0]:
-                spec_x = self.proj
+                spec_x = self.proj if self.proj is not None else np.sum(self.matrix, axis=0, dtype=np.int64)
             else:
                 spec_x = np.sum(self.matrix[y0:y1, :], axis=0, dtype=np.int64)
 
             # Y Projection (Det 2): Sum along X axis between x0 and x1
             if x0 == 0 and x1 >= self.matrix.shape[1]:
-                spec_y = np.sum(self.matrix, axis=1, dtype=np.int64)
+                spec_y = getattr(self, "proj_y", None) if getattr(self, "proj_y", None) is not None else np.sum(self.matrix, axis=1, dtype=np.int64)
             else:
                 spec_y = np.sum(self.matrix[:, x0:x1], axis=1, dtype=np.int64)
 

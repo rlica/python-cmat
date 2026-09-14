@@ -269,7 +269,15 @@ class CMATReader:
             self.step2 = self.cmt_hdr[7]
             self.ndiv2 = self.cmt_hdr[8]
 
-            self.segsize = self.cmt_hdr[123]
+            # Validate dimensions and block sizes against division counts
+            if self.step1 > 0 and self.ndiv1 > 0:
+                self.res1 = max(self.res1, self.step1 * self.ndiv1)
+            if self.step2 > 0 and self.ndiv2 > 0:
+                self.res2 = max(self.res2, self.step2 * self.ndiv2)
+
+            expected_segsize = self.step1 * self.step2
+            raw_segsize = self.cmt_hdr[123]
+            self.segsize = raw_segsize if (raw_segsize == expected_segsize and expected_segsize > 0) else expected_segsize
             self.nmatrix_segs = self.cmt_hdr[124]
             self.nextra = self.cmt_hdr[125]
             self.cmt_version = self.cmt_hdr[127]
@@ -287,6 +295,7 @@ class CMATReader:
             "filename": str(self.filename),
             "dimensions": self.ndim,
             "shape": (self.res1, self.res2),
+            "shape_yx": (self.res2, self.res1),
             "step": (self.step1, self.step2),
             "blocks": (self.ndiv1, self.ndiv2),
             "matrix_segments": self.nmatrix_segs,
@@ -309,31 +318,53 @@ class CMATReader:
         cmode, cminval = struct.unpack_from("<2i", raw, 0)
         return cmode, cminval, raw[8:]
 
-    def get_projection(self, axis: int = 1) -> np.ndarray:
+    def get_projection(self, axis: int = 0) -> np.ndarray:
         """
-        Get the stored 1D total projection spectrum.
-        For symmetric 2D matrices, segment 2 holds the stored projection.
+        Get the 1D total projection spectrum.
+        axis: 0 for Detector 1 / X projection (length res1);
+              1 for Detector 2 / Y projection (length res2).
         """
-        proj_seg_idx = 2  # PROJESEG + lato = 1 + 1 = 2
+        if axis not in (0, 1):
+            axis = 0
+
+        target_res = self.res1 if axis == 0 else self.res2
+        proj_seg_idx = 2 if (axis == 0 or self.is_symmetric) else 3
+
         with open(self.filename, "rb") as f:
             seg_data = self._read_raw_segment(f, proj_seg_idx)
-            if seg_data is None or seg_data[0] == 0:
-                # If no stored projection, compute from full matrix
-                mat = self.to_numpy()
-                return np.sum(mat, axis=1) + (np.diag(mat) if self.is_symmetric else 0)
-            cmode, cminval, pack = seg_data
-            return decompress_block(pack, self.res1, cmode, cminval)
+            if seg_data is not None and seg_data[0] != 0 and len(seg_data[2]) > 0:
+                cmode, cminval, pack = seg_data
+                decomp = decompress_block(pack, target_res, cmode, cminval)
+                if len(decomp) == target_res:
+                    return decomp
+                elif len(decomp) < target_res:
+                    return np.pad(decomp, (0, target_res - len(decomp)))
+                else:
+                    return decomp[:target_res]
+
+        # If no stored projection or segment empty, compute from full matrix
+        mat = self.to_numpy()
+        if axis == 0:
+            return np.sum(mat, axis=0) + (np.diag(mat) if self.is_symmetric else 0)
+        else:
+            return np.sum(mat, axis=1) + (np.diag(mat) if self.is_symmetric else 0)
 
     def to_numpy(self) -> np.ndarray:
         """
         Decompress and assemble the entire 2D matrix into a NumPy array.
         Returns:
-            np.ndarray of shape (res1, res2) with dtype int32.
+            np.ndarray of shape (res2, res1) with dtype int32.
+            Axis 0 (rows) corresponds to Detector 2 / Y (length res2).
+            Axis 1 (columns) corresponds to Detector 1 / X (length res1).
         """
-        mat = np.zeros((self.res1, self.res2), dtype=np.int32)
+        dim_y = max(self.res2, self.ndiv2 * self.step2)
+        dim_x = max(self.res1, self.ndiv1 * self.step1)
+        expected_segsize = self.step1 * self.step2
 
         with open(self.filename, "rb") as f:
             if self.matmode == 1:  # Symmetrized 2D
+                dim = max(dim_y, dim_x)
+                mat = np.zeros((dim, dim), dtype=np.int32)
                 for s2 in range(self.ndiv2):
                     for s1 in range(s2 + 1):
                         iseg = s1 + (s2 * (s2 + 1)) // 2
@@ -342,25 +373,39 @@ class CMATReader:
                         if cmode == 0 and len(pack) == 0:
                             continue
 
-                        block = decompress_block(pack, self.segsize, cmode, cminval)
-                        block_2d = block.reshape((self.step2, self.step1))
+                        block = decompress_block(pack, expected_segsize, cmode, cminval)
+                        if len(block) != expected_segsize:
+                            if len(block) < expected_segsize:
+                                block = np.pad(block, (0, expected_segsize - len(block)))
+                            else:
+                                block = block[:expected_segsize]
 
+                        block_2d = block.reshape((self.step2, self.step1))
                         x0 = s1 * self.step1
                         y0 = s2 * self.step2
 
                         if s1 == s2:
                             # Diagonal block: upper triangular (ki1 <= ki2)
-                            for ki2 in range(self.step2):
-                                for ki1 in range(ki2 + 1):
+                            limit_k2 = min(self.step2, dim - y0)
+                            limit_k1 = min(self.step1, dim - x0)
+                            for ki2 in range(limit_k2):
+                                for ki1 in range(min(ki2 + 1, limit_k1)):
                                     val = block_2d[ki2, ki1]
                                     mat[y0 + ki2, x0 + ki1] = val
                                     mat[x0 + ki1, y0 + ki2] = val
                         else:
                             # Off-diagonal block
-                            mat[y0:y0 + self.step2, x0:x0 + self.step1] = block_2d
-                            mat[x0:x0 + self.step1, y0:y0 + self.step2] = block_2d.T
+                            y1 = min(y0 + self.step2, dim)
+                            x1 = min(x0 + self.step1, dim)
+                            blk_slice = block_2d[:y1 - y0, :x1 - x0]
+                            mat[y0:y1, x0:x1] = blk_slice
+                            mat[x0:x1, y0:y1] = blk_slice.T
+
+                if self.res2 > 0 and self.res1 > 0 and (mat.shape[0] != self.res2 or mat.shape[1] != self.res1):
+                    mat = mat[:self.res2, :self.res1]
 
             elif self.matmode == 0:  # Normal (Non-symmetric) 2D
+                mat = np.zeros((dim_y, dim_x), dtype=np.int32)
                 for s2 in range(self.ndiv2):
                     for s1 in range(self.ndiv1):
                         iseg = s1 + self.ndiv1 * s2
@@ -369,12 +414,22 @@ class CMATReader:
                         if cmode == 0 and len(pack) == 0:
                             continue
 
-                        block = decompress_block(pack, self.segsize, cmode, cminval)
-                        block_2d = block.reshape((self.step2, self.step1))
+                        block = decompress_block(pack, expected_segsize, cmode, cminval)
+                        if len(block) != expected_segsize:
+                            if len(block) < expected_segsize:
+                                block = np.pad(block, (0, expected_segsize - len(block)))
+                            else:
+                                block = block[:expected_segsize]
 
+                        block_2d = block.reshape((self.step2, self.step1))
                         x0 = s1 * self.step1
                         y0 = s2 * self.step2
-                        mat[y0:y0 + self.step2, x0:x0 + self.step1] = block_2d
+                        y1 = min(y0 + self.step2, dim_y)
+                        x1 = min(x0 + self.step1, dim_x)
+                        mat[y0:y1, x0:x1] = block_2d[:y1 - y0, :x1 - x0]
+
+                if self.res2 > 0 and self.res1 > 0 and (mat.shape[0] != self.res2 or mat.shape[1] != self.res1):
+                    mat = mat[:self.res2, :self.res1]
 
             else:
                 raise NotImplementedError(f"Matrix mode {self.matmode} is not yet implemented.")
@@ -413,8 +468,9 @@ class CMATReader:
             Tuple of (net_spectrum, bg_spectrum, raw_spectrum)
         """
         mat = self.to_numpy()
+        max_ch = (self.res1 - 1) if axis == 0 else (self.res2 - 1)
         g_min = max(0, min(gate_min, gate_max))
-        g_max = min(self.res1 - 1, max(gate_min, gate_max))
+        g_max = min(max_ch, max(gate_min, gate_max))
 
         if axis == 0:
             raw_gate = np.sum(mat[:, g_min:g_max + 1], axis=1)
@@ -427,7 +483,7 @@ class CMATReader:
             raw_bg = np.zeros_like(raw_gate, dtype=np.float64)
             for b_min, b_max in bg_gates:
                 bm = max(0, min(b_min, b_max))
-                bx = min(self.res1 - 1, max(b_min, b_max))
+                bx = min(max_ch, max(b_min, b_max))
                 n_ch = bx - bm + 1
                 total_bg_ch += n_ch
                 if axis == 0:
