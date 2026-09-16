@@ -2084,26 +2084,57 @@
       ctx2d.moveTo(ptC.x, ptC.y - 8); ctx2d.lineTo(ptC.x, ptC.y + 8);
       ctx2d.stroke();
 
-      // D. Callout badge with Centroid & Volume (clamped inside canvas)
+      // D. 3-line unobtrusive text label with Centroid & Volume (75% font size, no surrounding rectangle)
       const isCalX = isAxisCalibrated(0);
       const isCalY = isAxisCalibrated(1);
-      const xStr = isCalX ? `${f2d.centroid_x_e} keV` : `ch ${f2d.centroid_x_ch}`;
-      const yStr = isCalY ? `${f2d.centroid_y_e} keV` : `ch ${f2d.centroid_y_ch}`;
-      const posStr = `(${xStr}, ${yStr})`;
-      const lbl = `${posStr} | Vol: ${f2d.volume.toLocaleString()} cts`;
-      ctx2d.font = 'bold 18px system-ui, -apple-system, sans-serif';
-      const tW = ctx2d.measureText(lbl).width;
-      const bH = 32;
-      const bX = Math.min(canvas2d.width - tW - 20, Math.max(10, ptC.x + 10));
-      const bY = Math.max(10, Math.min(canvas2d.height - bH - 10, (ptC.y - 40 < 10) ? (ptC.y + 16) : (ptC.y - 40)));
-      ctx2d.fillStyle = 'rgba(15, 18, 24, 0.94)';
-      ctx2d.fillRect(bX, bY, tW + 16, bH);
-      ctx2d.strokeStyle = '#ffd600';
-      ctx2d.lineWidth = 1.8;
-      ctx2d.strokeRect(bX, bY, tW + 16, bH);
-      ctx2d.fillStyle = '#ffd600';
+      const xStr = isCalX ? `${Number(f2d.centroid_x_e).toFixed(1)} keV` : `${Number(f2d.centroid_x_ch).toFixed(1)} ch`;
+      const yStr = isCalY ? `${Number(f2d.centroid_y_e).toFixed(1)} keV` : `${Number(f2d.centroid_y_ch).toFixed(1)} ch`;
+      const vNum = (typeof f2d.volume === 'number') ? f2d.volume : parseFloat(f2d.volume || 0);
+      const volStr = vNum.toLocaleString(undefined, { maximumFractionDigits: 1 });
+
+      const lineX = `X: ${xStr}`;
+      const lineY = `Y: ${yStr}`;
+      const lineVol = `Vol: ${volStr}`;
+
+      ctx2d.font = 'bold 13.5px system-ui, -apple-system, sans-serif';
+      const wX = ctx2d.measureText(lineX).width;
+      const wY = ctx2d.measureText(lineY).width;
+      const wVol = ctx2d.measureText(lineVol).width;
+      const maxW = Math.max(wX, wY, wVol);
+
+      const lineH = 16;
+      const totalH = lineH * 3;
+
+      let bX = ptC.x + 8;
+      if (bX + maxW > canvas2d.width - 8) {
+        bX = Math.max(8, ptC.x - maxW - 8);
+      }
+
+      let bY = ptC.y - 12;
+      if (bY < 18) {
+        bY = ptC.y + 18;
+      }
+      if (bY + lineH * 2 > canvas2d.height - 8) {
+        bY = Math.max(18, canvas2d.height - lineH * 2 - 8);
+      }
+
+      ctx2d.save();
       ctx2d.textAlign = 'left';
-      ctx2d.fillText(lbl, bX + 8, bY + 22);
+      ctx2d.textBaseline = 'alphabetic';
+
+      // Crisp dark outline for contrast across any colormap without drawing a rectangle
+      ctx2d.lineJoin = 'round';
+      ctx2d.lineWidth = 3;
+      ctx2d.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+      ctx2d.strokeText(lineX, bX, bY);
+      ctx2d.strokeText(lineY, bX, bY + lineH);
+      ctx2d.strokeText(lineVol, bX, bY + lineH * 2);
+
+      ctx2d.fillStyle = '#ffd600';
+      ctx2d.fillText(lineX, bX, bY);
+      ctx2d.fillText(lineY, bX, bY + lineH);
+      ctx2d.fillText(lineVol, bX, bY + lineH * 2);
+      ctx2d.restore();
     }
     updateMarkerStatus();
   }

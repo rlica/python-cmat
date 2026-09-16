@@ -1836,16 +1836,13 @@ def generate_pdf_2d(matrix, x0, x1, y0, y1, cmap_name="turbo", scale_mode="log",
         vol_str = f"Net Vol: {vol_val:,.0f} ± {vol_err:,.0f} cts" if vol_err else f"Net Vol: {vol_val:,.0f} cts"
         unit_x = "keV" if is_cal_x else "ch"
         unit_y = "keV" if is_cal_y else "ch"
-        if len(all_2d_fits) == 1:
-            ax.text(0.02, 0.98, f"2D Coincidence Peak\nCentroid: ({cx_plot:.2f} {unit_x}, {cy_plot:.2f} {unit_y})\n{vol_str}",
-                    transform=ax.transAxes, verticalalignment="top", fontsize=9,
-                    bbox=dict(boxstyle="round,pad=0.4", facecolor="#191c20", edgecolor="#ffd600", alpha=0.85),
-                    color="#ffffff", fontfamily="monospace")
-        else:
-            # Multi-peak callout near each centroid
-            ax.text(cx_plot + fx_plot * 0.55, cy_plot + fy_plot * 0.55, f"({cx_plot:.1f}, {cy_plot:.1f})\n{vol_str}",
-                    fontsize=7.5, bbox=dict(boxstyle="round,pad=0.25", facecolor="#191c20", edgecolor="#ffd600", alpha=0.88),
-                    color="#ffd600", fontfamily="sans-serif", weight="bold")
+        # 3-line label without surrounding rectangle
+        vol_str = f"{vol_val:,.1f}"
+        lbl_3lines = f"X: {cx_plot:.1f} {unit_x}\nY: {cy_plot:.1f} {unit_y}\nVol: {vol_str}"
+        import matplotlib.patheffects as pe
+        ax.text(cx_plot + fx_plot * 0.55, cy_plot + fy_plot * 0.55, lbl_3lines,
+                fontsize=7.0, color="#ffd600", fontfamily="sans-serif", weight="bold",
+                path_effects=[pe.withStroke(linewidth=2.0, foreground='#000000')])
 
     fig.tight_layout()
     buf = io.BytesIO()
