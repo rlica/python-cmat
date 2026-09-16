@@ -471,7 +471,207 @@
   .help-modal h2 { font-size: 1.1rem; color: #00e5ff; margin-bottom: 12px; }
   .help-modal table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
   .help-modal td { padding: 5px 8px; border-bottom: 1px solid #333; }
-  .help-modal td:first-child { font-family: monospace; color: #ffd600; font-weight: bold; width: 42%; }
+  /* Server File Browser Modal Styles */
+  .browser-modal {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: #131720;
+    border: 1px solid #2d3748;
+    border-radius: 8px;
+    padding: 16px 20px 14px;
+    max-width: 840px;
+    width: 92%;
+    max-height: 88vh;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.9), 0 0 0 1px rgba(0, 229, 255, 0.15);
+    display: none;
+    z-index: 120;
+    flex-direction: column;
+    box-sizing: border-box;
+  }
+  .browser-modal-backdrop {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(2px);
+    z-index: 115;
+    display: none;
+  }
+  .browser-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .browser-header h2 {
+    font-size: 1.12rem;
+    color: #00e5ff;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .browser-nav-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  .browser-btn {
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #cbd5e1;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 0.76rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.12s ease;
+  }
+  .browser-btn:hover {
+    background: #334155;
+    color: #fff;
+    border-color: #64748b;
+  }
+  .browser-btn:disabled {
+    opacity: 0.4;
+    cursor: default;
+    pointer-events: none;
+  }
+  .browser-breadcrumbs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    background: #0b0f17;
+    border: 1px solid #1e293b;
+    border-radius: 4px;
+    padding: 3px 8px;
+    flex: 1;
+    min-width: 240px;
+    overflow-x: auto;
+    white-space: nowrap;
+    font-family: monospace;
+    font-size: 0.78rem;
+    scrollbar-width: thin;
+  }
+  .breadcrumb-item {
+    color: #94a3b8;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 3px;
+    transition: background 0.1s;
+  }
+  .breadcrumb-item:hover {
+    background: #1e293b;
+    color: #00e5ff;
+  }
+  .breadcrumb-sep {
+    color: #475569;
+    user-select: none;
+    padding: 0 1px;
+  }
+  .browser-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .browser-filter-input {
+    flex: 1;
+    background: #0b0f17;
+    border: 1px solid #334155;
+    color: #f1f5f9;
+    border-radius: 4px;
+    padding: 5px 10px;
+    font-size: 0.8rem;
+    outline: none;
+  }
+  .browser-filter-input:focus {
+    border-color: #00e5ff;
+    box-shadow: 0 0 6px rgba(0, 229, 255, 0.25);
+  }
+  .browser-table-wrap {
+    flex: 1;
+    min-height: 280px;
+    max-height: 48vh;
+    overflow-y: auto;
+    border: 1px solid #1e293b;
+    border-radius: 4px;
+    background: #0b0f17;
+    scrollbar-width: thin;
+  }
+  .browser-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.78rem;
+    font-family: system-ui, -apple-system, sans-serif;
+  }
+  .browser-table th {
+    position: sticky;
+    top: 0;
+    background: #161e2e;
+    color: #94a3b8;
+    text-align: left;
+    padding: 6px 10px;
+    font-weight: 600;
+    border-bottom: 1px solid #334155;
+    z-index: 2;
+    font-size: 0.73rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .browser-table tr.browser-row {
+    border-bottom: 1px solid #141b27;
+    cursor: pointer;
+    transition: background 0.1s;
+    user-select: none;
+  }
+  .browser-table tr.browser-row:hover {
+    background: #1a2333;
+  }
+  .browser-table tr.browser-row.selected {
+    background: #0e374e !important;
+    outline: 1px solid #00e5ff;
+  }
+  .browser-table tr.browser-row.disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  .browser-table td {
+    padding: 5px 10px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .browser-table td.cell-name {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .browser-footer {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-top: 10px;
+    gap: 10px;
+    border-top: 1px solid #1e293b;
+    padding-top: 10px;
+  }
+  .browser-selected-info {
+    font-size: 0.78rem;
+    color: #94a3b8;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+  }
 </style>
 </head>
 <body>
@@ -489,7 +689,7 @@
       <select id="matrixSelect" class="matrix-select" title="Active Matrix ([ and ] keys to cycle)"></select>
     </div>
     <button id="btnNextMatrix" class="matrix-nav-btn" title="Next Matrix [ ] ]">▶</button>
-    <input type="file" id="matrixFileInput" accept=".cmat" style="display:none;">
+    <button id="btnHeaderOpenBrowser" class="matrix-nav-btn" title="Browse Server Matrices [Ctrl+O]" style="padding: 2px 7px; margin-left: 3px; font-size: 0.8rem; background: #1e293b; border-color: #334155;">📂</button>
   </div>
 
   <div class="hud" id="hudCoords">Det 1 (X): - | Det 2 (Y): - | Counts: -</div>
@@ -516,8 +716,7 @@
         <button id="btnSidebarPrevMat" class="secondary" title="Previous Matrix [ [ ]" style="padding: 4px 6px; font-size: 0.75rem;">◀ Prev [</button>
         <button id="btnSidebarNextMat" class="secondary" title="Next Matrix [ ] ]" style="padding: 4px 6px; font-size: 0.75rem;">Next ] ▶</button>
       </div>
-      <button id="btnSidebarOpenLocal" class="primary" style="margin-bottom: 4px; background: linear-gradient(135deg, #1565c0, #0d47a1); font-size: 0.76rem; padding: 5px 8px;">📂 Open Local .cmat...</button>
-      <button id="btnSidebarOpenServer" class="secondary" style="background: #2e3a4e; font-size: 0.76rem; padding: 5px 8px;">💻 Load Server Path...</button>
+      <button id="btnOpenServerBrowser" class="primary" style="margin-bottom: 4px; background: linear-gradient(135deg, #00897b, #004d40); border: 1px solid #00bfa5; font-size: 0.78rem; padding: 6px 10px; font-weight: 600; width: 100%; display: flex; align-items: center; justify-content: center; gap: 6px;" title="Browse Server Filesystem to Open Matrix [Ctrl+O]">📂 Browse Server Matrices...</button>
       <small style="color: #888; font-size: 0.65rem; display: block; margin-top: 5px; line-height: 1.2;">
         💡 Zoom, coincidence gates, and peak fits are locked and automatically re-evaluated across matrices for 1:1 differential analysis.
       </small>
@@ -849,20 +1048,70 @@
     <tr><td>M / m</td><td>Toggle left menu panel (collapse / expand)</td></tr>
     <tr><td>Drag Divider</td><td>Adjust width of 2D matrix vs 1D projections (double-click to reset)</td></tr>
     <tr><td>[ / ] (Brackets)</td><td>Switch between loaded matrices (prev / next) preserving analysis state</td></tr>
-    <tr><td>Ctrl + O</td><td>Open local .cmat matrix file dialog</td></tr>
+    <tr><td>Ctrl + O</td><td>Browse server filesystem to select and open .cmat matrix</td></tr>
     <tr><td>Q / q</td><td>Quit viewer (close browser tab and stop terminal server)</td></tr>
     <tr><td>Esc / ?</td><td>Close Help / Cancel pending gate / Cancel pending BG region</td></tr>
   </table>
   <button onclick="document.getElementById('helpModal').style.display='none'" style="margin-top: 15px;">Close</button>
 </div>
 
-<div class="help-modal" id="serverPathModal" style="display:none; max-width: 480px;">
-  <h2 style="color: #00e5ff; margin-bottom: 8px;">Load Matrix from Server Path</h2>
-  <p style="font-size: 0.8rem; color: #aaa; margin-bottom: 12px;">Enter absolute or relative path to a <code style="color:#ffd600;">.cmat</code> file on the server:</p>
-  <input type="text" id="serverPathInput" placeholder="e.g. ./GeE-symm.cmat or /path/to/matrix.cmat" style="width: 100%; padding: 8px 10px; background: #222; border: 1px solid #444; color: #fff; border-radius: 4px; font-family: monospace; font-size: 0.85rem; margin-bottom: 12px; box-sizing: border-box;">
-  <div style="display: flex; justify-content: flex-end; gap: 8px;">
-    <button id="btnServerPathCancel" class="secondary" style="width: auto; padding: 6px 14px; margin: 0;">Cancel</button>
-    <button id="btnServerPathSubmit" class="primary" style="width: auto; padding: 6px 16px; background: #00c853; margin: 0;">Load Matrix</button>
+<div class="browser-modal-backdrop" id="browserBackdrop"></div>
+<div class="browser-modal" id="serverBrowserModal">
+  <div class="browser-header">
+    <h2>
+      <span>📁 Server Matrix Browser</span>
+      <span id="browserItemCount" class="badge" style="background:#1e293b; color:#00e5ff; font-size:0.7rem; font-weight:normal;">-</span>
+    </h2>
+    <button id="btnBrowserClose" class="fit-btn-close" style="font-size: 1rem; padding: 2px 8px;" title="Close [Esc]">✕</button>
+  </div>
+
+  <div class="browser-nav-bar">
+    <button id="btnBrowserUp" class="browser-btn" title="Go to Parent Directory [Backspace / Alt+↑]">⬆ Up</button>
+    <button id="btnBrowserHome" class="browser-btn" title="Go to Server Home Directory">🏠 Home</button>
+    <button id="btnBrowserCwd" class="browser-btn" title="Go to Server Working Directory">📍 CWD</button>
+    <button id="btnBrowserRefresh" class="browser-btn" title="Refresh Directory">🔄</button>
+    <div class="browser-breadcrumbs" id="browserBreadcrumbs" title="Click path segment to navigate"></div>
+    <button id="btnBrowserTogglePathInput" class="browser-btn" title="Edit path manually">✏️</button>
+  </div>
+
+  <div id="browserPathInputWrap" style="display: none; margin-bottom: 8px;">
+    <div style="display: flex; gap: 6px;">
+      <input type="text" id="browserPathInput" placeholder="/path/to/directory" style="flex: 1; background: #0b0f17; border: 1px solid #00e5ff; color: #fff; padding: 5px 10px; border-radius: 4px; font-family: monospace; font-size: 0.8rem;">
+      <button id="btnBrowserPathGo" class="browser-btn" style="background: #0284c7; color: #fff; border-color: #38bdf8;">Go</button>
+    </div>
+  </div>
+
+  <div class="browser-filter-bar">
+    <input type="text" id="browserFilterInput" class="browser-filter-input" placeholder="🔍 Filter matrices by name (e.g. GeE, run, cmat)...">
+    <label style="display: flex; align-items: center; gap: 5px; font-size: 0.76rem; color: #cbd5e1; cursor: pointer; user-select: none; white-space: nowrap;">
+      <input type="checkbox" id="chkBrowserCmatOnly" checked style="accent-color: #00e5ff; cursor: pointer;">
+      <span>.cmat only</span>
+    </label>
+  </div>
+
+  <div class="browser-table-wrap" id="browserTableWrap">
+    <table class="browser-table">
+      <thead>
+        <tr>
+          <th style="width: 58%;">Name</th>
+          <th style="width: 18%; text-align: right;">Size</th>
+          <th style="width: 24%; text-align: right;">Modified</th>
+        </tr>
+      </thead>
+      <tbody id="browserTableBody">
+        <tr><td colspan="3" style="text-align: center; color: #64748b; padding: 24px;">Loading server filesystem...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="browser-footer">
+    <div class="browser-selected-info" id="browserSelectedInfo">
+      Selected: <span id="browserSelectedLabel" style="color: #ffd600; font-family: monospace; font-weight: bold;">None</span>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <button id="btnBrowserCancel" class="secondary" style="width: auto; padding: 6px 14px; margin: 0;">Cancel</button>
+      <button id="btnBrowserOpenSubmit" class="primary" disabled style="width: auto; padding: 6px 18px; background: #00c853; border-color: #00e676; margin: 0; font-weight: bold;">Open Matrix</button>
+    </div>
   </div>
 </div>
 <div id="matrixToast" class="matrix-toast" style="display: none;"></div>
@@ -1439,43 +1688,293 @@
     switchMatrix(newIdx);
   }
 
-  async function uploadMatrixFile(file) {
-    if (!file) return;
-    showMatrixToast(`Uploading ${file.name}...`);
+  // Server-Side File Browser State
+  let browserState = {
+    currentPath: '',
+    parentPath: null,
+    isRoot: false,
+    homePath: '',
+    cwdPath: '',
+    entries: [],
+    selectedEntry: null,
+    filterText: '',
+    cmatOnly: true
+  };
+  let lastBrowsedServerPath = '';
+  try { lastBrowsedServerPath = sessionStorage.getItem('cmat_last_browser_path') || ''; } catch (e) {}
+
+  async function openServerBrowser(initialPath = null) {
+    const modal = document.getElementById('serverBrowserModal');
+    const backdrop = document.getElementById('browserBackdrop');
+    if (!modal || !backdrop) return;
+
+    modal.style.display = 'flex';
+    backdrop.style.display = 'block';
+
+    let pathTarget = initialPath || lastBrowsedServerPath;
+    if (!pathTarget && metadata && metadata.filepath) {
+      // Use parent folder of currently active matrix
+      const lastSlash = Math.max(metadata.filepath.lastIndexOf('/'), metadata.filepath.lastIndexOf('\\'));
+      if (lastSlash > 0) pathTarget = metadata.filepath.substring(0, lastSlash);
+    }
+
+    await fetchBrowsePath(pathTarget || '');
+
+    const filterInp = document.getElementById('browserFilterInput');
+    if (filterInp) {
+      filterInp.value = '';
+      browserState.filterText = '';
+      filterInp.focus();
+    }
+  }
+
+  function closeServerBrowser() {
+    const modal = document.getElementById('serverBrowserModal');
+    const backdrop = document.getElementById('browserBackdrop');
+    if (modal) modal.style.display = 'none';
+    if (backdrop) backdrop.style.display = 'none';
+    const pathWrap = document.getElementById('browserPathInputWrap');
+    if (pathWrap) pathWrap.style.display = 'none';
+  }
+
+  async function fetchBrowsePath(pathStr) {
+    const tbody = document.getElementById('browserTableBody');
+    if (tbody) {
+      tbody.innerHTML = `<tr><td colspan="3" style="text-align: center; color: #64748b; padding: 24px;">Scanning server directory...</td></tr>`;
+    }
     try {
-      const res = await fetch(`/api/upload_matrix?filename=${encodeURIComponent(file.name)}`, {
-        method: 'POST',
-        body: file
-      });
+      const url = '/api/browse_fs' + (pathStr ? `?path=${encodeURIComponent(pathStr)}` : '');
+      const res = await fetch(url);
       const data = await res.json();
-      if (data.error) {
-        showMatrixToast(`Upload error: ${data.error}`, true);
+      if (!data.success) {
+        showMatrixToast(data.error || "Failed to browse directory", true);
+        if (tbody) {
+          tbody.innerHTML = `<tr><td colspan="3" style="text-align: center; color: #ef4444; padding: 24px;">Error: ${data.error || 'Permission denied'}</td></tr>`;
+        }
         return;
       }
-      metadata = data;
-      updateMatrixUI();
+      browserState.currentPath = data.current_path;
+      browserState.parentPath = data.parent_path;
+      browserState.isRoot = data.is_root;
+      browserState.homePath = data.home_path;
+      browserState.cwdPath = data.cwd_path;
+      browserState.entries = data.entries || [];
+      browserState.selectedEntry = null;
+      lastBrowsedServerPath = data.current_path;
+      try { sessionStorage.setItem('cmat_last_browser_path', lastBrowsedServerPath); } catch (e) {}
 
-      // Preserve Viewport, Colormap, Gates, Fits
-      view.x0 = Math.max(0, Math.min(metadata.shape[0] - 1, view.x0));
-      view.x1 = Math.max(view.x0 + 1, Math.min(metadata.shape[0], view.x1));
-      view.y0 = Math.max(0, Math.min(metadata.shape[1] - 1, view.y0));
-      view.y1 = Math.max(view.y0 + 1, Math.min(metadata.shape[1], view.y1));
-
-      await fetchTileAndRender();
-      await fetch1DProjection();
-
-      if (gate1DState.axis !== null && gate1DState.w_gates && gate1DState.w_gates.length > 0) {
-        await reapplyGates();
-      }
-      await reapplyAllPersistentFits();
-      render2D();
-      renderBoth1DSpectra();
-
-      showMatrixToast(`Successfully loaded ${file.name} (Conditions preserved)`);
+      updateBrowserBreadcrumbs(data.breadcrumbs || []);
+      renderBrowserEntries();
+      updateBrowserNavButtons();
+      updateBrowserSelectedStatus();
     } catch (err) {
-      console.error("Upload error:", err);
-      showMatrixToast(`Failed to upload: ${err.message}`, true);
+      console.error("Browse error:", err);
+      showMatrixToast(`Browser error: ${err.message}`, true);
+      if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="3" style="text-align: center; color: #ef4444; padding: 24px;">Failed to connect to server filesystem</td></tr>`;
+      }
     }
+  }
+
+  function updateBrowserNavButtons() {
+    const btnUp = document.getElementById('btnBrowserUp');
+    if (btnUp) btnUp.disabled = Boolean(browserState.isRoot || !browserState.parentPath);
+  }
+
+  function updateBrowserBreadcrumbs(crumbs) {
+    const bc = document.getElementById('browserBreadcrumbs');
+    if (!bc) return;
+    bc.innerHTML = '';
+    if (!crumbs || crumbs.length === 0) {
+      bc.innerText = browserState.currentPath;
+      return;
+    }
+    crumbs.forEach((c, idx) => {
+      if (idx > 0) {
+        const sep = document.createElement('span');
+        sep.className = 'breadcrumb-sep';
+        sep.innerText = '/';
+        bc.appendChild(sep);
+      }
+      const item = document.createElement('span');
+      item.className = 'breadcrumb-item';
+      item.innerText = c.name;
+      item.title = c.path;
+      item.addEventListener('click', () => fetchBrowsePath(c.path));
+      bc.appendChild(item);
+    });
+    bc.scrollLeft = bc.scrollWidth;
+  }
+
+  function getFilteredEntries() {
+    const q = browserState.filterText.toLowerCase().trim();
+    return browserState.entries.filter(e => {
+      if (browserState.cmatOnly && !e.is_dir && !e.is_cmat) return false;
+      if (q && !e.name.toLowerCase().includes(q)) return false;
+      return true;
+    });
+  }
+
+  function renderBrowserEntries() {
+    const tbody = document.getElementById('browserTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+
+    const countBadge = document.getElementById('browserItemCount');
+    const filtered = getFilteredEntries();
+
+    let cmatCount = 0;
+    filtered.forEach(e => { if (e.is_cmat) cmatCount++; });
+    if (countBadge) {
+      countBadge.innerText = `${cmatCount} .cmat (${filtered.length} total)`;
+    }
+
+    if (!browserState.isRoot && browserState.parentPath) {
+      const trUp = document.createElement('tr');
+      trUp.className = 'browser-row';
+      trUp.innerHTML = `
+        <td class="cell-name"><span style="color:#ffd600; font-size:1.05rem;">📁</span> <strong style="color:#ffd600;">..</strong> <span style="color:#64748b; font-size:0.72rem;">(Parent directory)</span></td>
+        <td style="text-align: right; color: #64748b;">-</td>
+        <td style="text-align: right; color: #64748b;">-</td>
+      `;
+      trUp.addEventListener('dblclick', () => fetchBrowsePath(browserState.parentPath));
+      trUp.addEventListener('click', () => {
+        selectBrowserEntry({ is_dir: true, path: browserState.parentPath, name: '..' }, trUp);
+      });
+      tbody.appendChild(trUp);
+    }
+
+    if (filtered.length === 0) {
+      const trEmpty = document.createElement('tr');
+      trEmpty.innerHTML = `<td colspan="3" style="text-align: center; color: #64748b; padding: 28px;">No ${browserState.cmatOnly ? '.cmat matrix' : ''} files found in this directory</td>`;
+      tbody.appendChild(trEmpty);
+      return;
+    }
+
+    filtered.forEach((entry, idx) => {
+      const tr = document.createElement('tr');
+      tr.className = 'browser-row' + (entry.is_cmat ? ' cmat-row' : '') + (!entry.is_dir && !entry.is_cmat ? ' disabled' : '');
+      tr.dataset.index = idx;
+
+      let icon = entry.is_dir ? '📁' : (entry.is_cmat ? '⚛️' : '📄');
+      let nameStyle = entry.is_dir ? 'font-weight: 600; color: #f8fafc;' : (entry.is_cmat ? 'font-weight: 600; color: #00e5ff;' : 'color: #94a3b8;');
+      let badge = entry.is_cmat ? '<span class="badge" style="background: rgba(0, 229, 255, 0.18); color: #00e5ff; border: 1px solid rgba(0, 229, 255, 0.4); font-size: 0.65rem; padding: 1px 5px; margin-left: 6px;">CMAT</span>' : '';
+
+      tr.innerHTML = `
+        <td class="cell-name">
+          <span style="font-size: 1.05rem;">${icon}</span>
+          <span style="${nameStyle}">${entry.name}</span>
+          ${badge}
+        </td>
+        <td style="text-align: right; color: ${entry.is_cmat ? '#e2e8f0' : '#64748b'}; font-family: monospace;">${entry.size_str || '-'}</td>
+        <td style="text-align: right; color: #64748b; font-size: 0.73rem;">${entry.mtime_str || '-'}</td>
+      `;
+
+      tr.addEventListener('click', () => {
+        selectBrowserEntry(entry, tr);
+      });
+
+      tr.addEventListener('dblclick', () => {
+        if (entry.is_dir) {
+          fetchBrowsePath(entry.path);
+        } else if (entry.is_cmat) {
+          submitOpenMatrix(entry.path);
+        }
+      });
+
+      tbody.appendChild(tr);
+    });
+  }
+
+  function selectBrowserEntry(entry, trElement) {
+    browserState.selectedEntry = entry;
+    document.querySelectorAll('#browserTableBody tr.browser-row').forEach(r => r.classList.remove('selected'));
+    if (trElement) trElement.classList.add('selected');
+    updateBrowserSelectedStatus();
+  }
+
+  function updateBrowserSelectedStatus() {
+    const lbl = document.getElementById('browserSelectedLabel');
+    const btnSubmit = document.getElementById('btnBrowserOpenSubmit');
+    const ent = browserState.selectedEntry;
+    if (!ent) {
+      if (lbl) lbl.innerText = 'None';
+      if (btnSubmit) {
+        btnSubmit.disabled = true;
+        btnSubmit.innerText = 'Open Matrix';
+      }
+      return;
+    }
+    if (ent.is_dir) {
+      if (lbl) lbl.innerText = `[Folder] ${ent.name}`;
+      if (btnSubmit) {
+        btnSubmit.disabled = false;
+        btnSubmit.innerText = 'Open Folder';
+      }
+    } else if (ent.is_cmat) {
+      if (lbl) lbl.innerText = `${ent.name} (${ent.size_str})`;
+      if (btnSubmit) {
+        btnSubmit.disabled = false;
+        btnSubmit.innerText = 'Open Matrix';
+      }
+    } else {
+      if (lbl) lbl.innerText = `${ent.name} (Not a .cmat matrix)`;
+      if (btnSubmit) {
+        btnSubmit.disabled = true;
+        btnSubmit.innerText = 'Open Matrix';
+      }
+    }
+  }
+
+  async function submitOpenMatrix(pathStr) {
+    const target = pathStr || (browserState.selectedEntry ? browserState.selectedEntry.path : null);
+    if (!target) return;
+    if (browserState.selectedEntry && browserState.selectedEntry.is_dir) {
+      await fetchBrowsePath(target);
+      return;
+    }
+    closeServerBrowser();
+    await loadServerMatrixPath(target);
+  }
+
+  function handleBrowserKeyDown(e) {
+    const modal = document.getElementById('serverBrowserModal');
+    if (!modal || modal.style.display !== 'flex') return false;
+
+    const rows = Array.from(document.querySelectorAll('#browserTableBody tr.browser-row:not(.disabled)'));
+    if (rows.length === 0) return false;
+
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      let currIdx = rows.findIndex(r => r.classList.contains('selected'));
+      let nextIdx = 0;
+      if (e.key === 'ArrowDown') {
+        nextIdx = (currIdx < rows.length - 1) ? currIdx + 1 : 0;
+      } else {
+        nextIdx = (currIdx > 0) ? currIdx - 1 : rows.length - 1;
+      }
+      rows[nextIdx].click();
+      rows[nextIdx].scrollIntoView({ block: 'nearest' });
+      return true;
+    } else if (e.key === 'Enter') {
+      if (document.activeElement && document.activeElement.id === 'browserPathInput') return false;
+      e.preventDefault();
+      if (browserState.selectedEntry) {
+        if (browserState.selectedEntry.is_dir) {
+          fetchBrowsePath(browserState.selectedEntry.path);
+        } else if (browserState.selectedEntry.is_cmat) {
+          submitOpenMatrix(browserState.selectedEntry.path);
+        }
+      }
+      return true;
+    } else if (e.key === 'Backspace' && document.activeElement && document.activeElement.tagName !== 'INPUT') {
+      e.preventDefault();
+      if (!browserState.isRoot && browserState.parentPath) {
+        fetchBrowsePath(browserState.parentPath);
+      }
+      return true;
+    }
+    return false;
   }
 
   async function loadServerMatrixPath(pathStr) {
@@ -4962,56 +5461,110 @@
     const btnSideNext = document.getElementById('btnSidebarNextMat');
     if (btnSideNext) btnSideNext.addEventListener('click', () => cycleMatrix(1));
 
-    const fileInp = document.getElementById('matrixFileInput');
-    if (fileInp) {
-      fileInp.addEventListener('change', (e) => {
-        if (e.target.files && e.target.files.length > 0) {
-          uploadMatrixFile(e.target.files[0]);
-          e.target.value = '';
+    const btnOpenBrowser = document.getElementById('btnOpenServerBrowser');
+    if (btnOpenBrowser) btnOpenBrowser.addEventListener('click', () => openServerBrowser());
+
+    const btnHeaderOpen = document.getElementById('btnHeaderOpenBrowser');
+    if (btnHeaderOpen) btnHeaderOpen.addEventListener('click', () => openServerBrowser());
+
+    const btnCloseBrowser = document.getElementById('btnBrowserClose');
+    if (btnCloseBrowser) btnCloseBrowser.addEventListener('click', closeServerBrowser);
+
+    const btnCancelBrowser = document.getElementById('btnBrowserCancel');
+    if (btnCancelBrowser) btnCancelBrowser.addEventListener('click', closeServerBrowser);
+
+    const backdropBrowser = document.getElementById('browserBackdrop');
+    if (backdropBrowser) backdropBrowser.addEventListener('click', closeServerBrowser);
+
+    const btnUp = document.getElementById('btnBrowserUp');
+    if (btnUp) btnUp.addEventListener('click', () => {
+      if (!browserState.isRoot && browserState.parentPath) fetchBrowsePath(browserState.parentPath);
+    });
+
+    const btnHome = document.getElementById('btnBrowserHome');
+    if (btnHome) btnHome.addEventListener('click', () => {
+      if (browserState.homePath) fetchBrowsePath(browserState.homePath);
+    });
+
+    const btnCwd = document.getElementById('btnBrowserCwd');
+    if (btnCwd) btnCwd.addEventListener('click', () => {
+      if (browserState.cwdPath) fetchBrowsePath(browserState.cwdPath);
+    });
+
+    const btnRefresh = document.getElementById('btnBrowserRefresh');
+    if (btnRefresh) btnRefresh.addEventListener('click', () => {
+      fetchBrowsePath(browserState.currentPath);
+    });
+
+    const btnTogglePath = document.getElementById('btnBrowserTogglePathInput');
+    const pathWrap = document.getElementById('browserPathInputWrap');
+    const pathInp = document.getElementById('browserPathInput');
+    if (btnTogglePath && pathWrap && pathInp) {
+      btnTogglePath.addEventListener('click', () => {
+        const isHidden = (pathWrap.style.display === 'none' || !pathWrap.style.display);
+        pathWrap.style.display = isHidden ? 'block' : 'none';
+        if (isHidden) {
+          pathInp.value = browserState.currentPath;
+          pathInp.focus();
+          pathInp.select();
         }
       });
     }
 
-    const btnOpen = document.getElementById('btnOpenMatrix');
-    if (btnOpen && fileInp) btnOpen.addEventListener('click', () => fileInp.click());
-
-    const btnSideOpen = document.getElementById('btnSidebarOpenLocal');
-    if (btnSideOpen && fileInp) btnSideOpen.addEventListener('click', () => fileInp.click());
-
-    const modalServer = document.getElementById('serverPathModal');
-    const inputServer = document.getElementById('serverPathInput');
-    const btnSideServer = document.getElementById('btnSidebarOpenServer');
-    if (btnSideServer && modalServer) {
-      btnSideServer.addEventListener('click', () => {
-        modalServer.style.display = 'block';
-        if (inputServer) inputServer.focus();
+    const btnPathGo = document.getElementById('btnBrowserPathGo');
+    if (btnPathGo && pathInp) {
+      btnPathGo.addEventListener('click', () => {
+        const v = pathInp.value.trim();
+        if (v) fetchBrowsePath(v);
       });
     }
-    const btnCancelServer = document.getElementById('btnServerPathCancel');
-    if (btnCancelServer && modalServer) {
-      btnCancelServer.addEventListener('click', () => {
-        modalServer.style.display = 'none';
-      });
-    }
-    const btnSubmitServer = document.getElementById('btnServerPathSubmit');
-    if (btnSubmitServer && modalServer && inputServer) {
-      btnSubmitServer.addEventListener('click', () => {
-        const val = inputServer.value.trim();
-        modalServer.style.display = 'none';
-        if (val) loadServerMatrixPath(val);
-      });
-    }
-    if (inputServer) {
-      inputServer.addEventListener('keydown', (e) => {
+    if (pathInp) {
+      pathInp.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
           e.preventDefault();
-          const val = inputServer.value.trim();
-          modalServer.style.display = 'none';
-          if (val) loadServerMatrixPath(val);
+          const v = pathInp.value.trim();
+          if (v) fetchBrowsePath(v);
         } else if (e.key === 'Escape') {
-          modalServer.style.display = 'none';
+          if (pathWrap) pathWrap.style.display = 'none';
         }
       });
+    }
+
+    const filterInp = document.getElementById('browserFilterInput');
+    if (filterInp) {
+      filterInp.addEventListener('input', (e) => {
+        browserState.filterText = e.target.value;
+        renderBrowserEntries();
+      });
+      filterInp.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          const firstRow = document.querySelector('#browserTableBody tr.browser-row:not(.disabled)');
+          if (firstRow) firstRow.click();
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          const filtered = getFilteredEntries();
+          const firstCmat = filtered.find(x => x.is_cmat);
+          if (firstCmat) {
+            submitOpenMatrix(firstCmat.path);
+          } else if (filtered.length > 0 && filtered[0].is_dir) {
+            fetchBrowsePath(filtered[0].path);
+          }
+        }
+      });
+    }
+
+    const chkCmat = document.getElementById('chkBrowserCmatOnly');
+    if (chkCmat) {
+      chkCmat.addEventListener('change', (e) => {
+        browserState.cmatOnly = e.target.checked;
+        renderBrowserEntries();
+      });
+    }
+
+    const btnSubmitBrowser = document.getElementById('btnBrowserOpenSubmit');
+    if (btnSubmitBrowser) {
+      btnSubmitBrowser.addEventListener('click', () => submitOpenMatrix());
     }
 
     document.getElementById('cmapSelect').addEventListener('change', () => { updateColorLUT(); render2D(); });
@@ -5252,11 +5805,12 @@
       // Don't trigger viewer hotkeys when typing in text inputs or selects
       if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA')) {
         if (e.key === 'Escape') {
-          const sm = document.getElementById('serverPathModal');
-          if (sm) sm.style.display = 'none';
+          closeServerBrowser();
         }
         return;
       }
+
+      if (handleBrowserKeyDown(e)) return;
 
       const k = e.key.toLowerCase();
       const isShortcut = ['arrowleft', 'arrowright', 'arrowdown', 'arrowup', 'e', 'f', 'q', '=', '+', 'v', 'g', 'c', '1', '2', '4', 'l', '?', 'h', 'escape', 'm', 'w', 'x', 'b', 'i', 'z', 'p', 'r', '[', ']'].includes(k);
@@ -5382,16 +5936,15 @@
         cycleMatrix(1);
       } else if ((e.ctrlKey || e.metaKey) && (e.key === 'o' || e.key === 'O')) {
         e.preventDefault();
-        const fi = document.getElementById('matrixFileInput');
-        if (fi) fi.click();
+        openServerBrowser();
       } else if (e.key === 'Escape') {
+        const bm = document.getElementById('serverBrowserModal');
         const hm = document.getElementById('helpModal');
-        const sm = document.getElementById('serverPathModal');
         const ic = document.getElementById('integrateCard1D');
-        if (hm && hm.style.display === 'block') {
+        if (bm && bm.style.display === 'flex') {
+          closeServerBrowser();
+        } else if (hm && hm.style.display === 'block') {
           hm.style.display = 'none';
-        } else if (sm && sm.style.display === 'block') {
-          sm.style.display = 'none';
         } else if (ic && ic.style.display === 'block') {
           clearIntegration1D();
         } else if (pendingBgRegion1D[0] !== null || pendingBgRegion1D[1] !== null) {

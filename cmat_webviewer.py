@@ -4595,6 +4595,119 @@ class CMATCommandInterpreter:
                 print(f"[!] Error: {e}", file=sys.stderr)
 
 
+def format_file_size(size_bytes: int) -> str:
+    """Return human-readable formatted file size."""
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    elif size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024.0:.1f} KB"
+    elif size_bytes < 1024 * 1024 * 1024:
+        return f"{size_bytes / (1024.0 * 1024.0):.1f} MB"
+    else:
+        return f"{size_bytes / (1024.0 * 1024.0 * 1024.0):.2f} GB"
+
+
+def browse_filesystem(req_path: str = "") -> dict:
+    """Scan and list server filesystem directory for interactive file browser."""
+    from datetime import datetime
+    try:
+        if not req_path or not req_path.strip():
+            target_path = Path.cwd()
+        else:
+            target_path = Path(req_path.strip()).expanduser()
+            if not target_path.is_absolute():
+                target_path = (Path.cwd() / target_path).resolve()
+            else:
+                target_path = target_path.resolve()
+
+        if not target_path.exists():
+            return {
+                "success": False,
+                "error": f"Path not found: {target_path}",
+                "current_path": str(Path.cwd().resolve()),
+            }
+
+        if not target_path.is_dir():
+            target_path = target_path.parent
+
+        target_path = target_path.resolve()
+
+        # Breadcrumb hierarchy
+        parents = list(reversed(target_path.parents))
+        breadcrumbs = []
+        for p in parents:
+            name = p.name if p.name else str(p)
+            breadcrumbs.append({"name": name, "path": str(p)})
+        if not breadcrumbs or breadcrumbs[-1]["path"] != str(target_path):
+            name = target_path.name if target_path.name else str(target_path)
+            breadcrumbs.append({"name": name, "path": str(target_path)})
+
+        is_root = (target_path.parent == target_path)
+        parent_path = None if is_root else str(target_path.parent)
+
+        entries = []
+        try:
+            with os.scandir(target_path) as it:
+                for entry in it:
+                    try:
+                        if entry.name.startswith("."):
+                            continue
+                        is_dir = entry.is_dir(follow_symlinks=True)
+                        is_cmat = (not is_dir) and entry.name.lower().endswith(".cmat")
+                        size = 0
+                        mtime = 0
+                        try:
+                            st = entry.stat(follow_symlinks=True)
+                            size = st.st_size if not is_dir else 0
+                            mtime = getattr(st, "st_mtime", 0)
+                        except (PermissionError, OSError):
+                            pass
+
+                        mtime_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M") if mtime else ""
+                        entries.append({
+                            "name": entry.name,
+                            "path": str(Path(entry.path).resolve()),
+                            "is_dir": is_dir,
+                            "is_cmat": is_cmat,
+                            "size": size,
+                            "size_str": format_file_size(size) if not is_dir else "",
+                            "mtime": mtime,
+                            "mtime_str": mtime_str,
+                        })
+                    except (PermissionError, OSError):
+                        continue
+        except PermissionError:
+            return {
+                "success": False,
+                "error": f"Permission denied: {target_path}",
+                "current_path": str(target_path),
+                "parent_path": parent_path,
+                "is_root": is_root,
+                "breadcrumbs": breadcrumbs,
+                "entries": [],
+            }
+
+        # Sort: directories first (alphabetical), then files (alphabetical)
+        entries.sort(key=lambda x: (not x["is_dir"], x["name"].lower()))
+
+        return {
+            "success": True,
+            "current_path": str(target_path),
+            "parent_path": parent_path,
+            "is_root": is_root,
+            "home_path": str(Path.home().resolve()),
+            "cwd_path": str(Path.cwd().resolve()),
+            "breadcrumbs": breadcrumbs,
+            "entries": entries,
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "current_path": str(Path.cwd().resolve()),
+        }
+
+
 class CMATWebHandler(BaseHTTPRequestHandler):
     session: "CMATSession" = None
     matrices: list = []
@@ -4619,6 +4732,7 @@ class CMATWebHandler(BaseHTTPRequestHandler):
     def add_matrix_file(cls, path: Path, name: str = None, cal=None) -> int:
         session = cls.get_session()
         idx = session.add_matrix_file(path, name=name, cal=cal)
+        session.select_matrix(idx)
         cls.matrices = session.matrices
         cls.active_index = session.active_index
         cls.sync_class_attrs()
@@ -4724,6 +4838,16 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             self.end_headers()
             info = self.get_metadata_dict()
             self.wfile.write(json.dumps(info).encode("utf-8"))
+
+        elif self.path.startswith("/api/browse_fs"):
+            from urllib.parse import urlparse, parse_qs
+            query = parse_qs(urlparse(self.path).query)
+            req_path = query.get("path", [""])[0]
+            res_data = browse_filesystem(req_path)
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(res_data).encode("utf-8"))
 
         elif self.path.startswith("/api/select_matrix"):
             from urllib.parse import urlparse, parse_qs
@@ -5685,34 +5809,26 @@ def main():
 
     local_ip = get_local_ip()
     if host in ("0.0.0.0", "", "::"):
-        network_url = f"http://{local_ip}:{port}"
-        local_url = f"http://localhost:{port}"
+        target_url = f"http://{local_ip}:{port}"
     elif host in ("127.0.0.1", "localhost"):
-        network_url = None
-        local_url = f"http://127.0.0.1:{port}"
+        target_url = f"http://127.0.0.1:{port}"
     else:
-        network_url = f"http://{host}:{port}"
-        local_url = f"http://localhost:{port}"
+        target_url = f"http://{host}:{port}"
 
     print(f"\n[+] Interactive 2D CMAT Web Viewer is ready!")
-    if network_url and network_url != local_url:
-        print(f"[+] Network URL (Remote / LAN): {network_url}")
-        print(f"[+] Localhost URL:             {local_url}")
-    else:
-        print(f"[+] Access the viewer at:      {local_url}")
+    print(f"[+] Access URL:                {target_url}  (Ctrl+Click to open)")
     print(f"[+] Classic Binned 1D Histogram with real-time mouse inspector.")
 
     if in_ssh:
         print(f"\n[*] SSH session detected:")
         if ssh_browser_skipped:
-            print(f"    - Remote X11 browser auto-launch skipped to keep your SSH session fast.")
-        print(f"    - Open the Network URL above ({network_url or local_url}) in your local client browser.")
+            print(f"    - Remote browser auto-launch skipped to keep your SSH session fast.")
+        print(f"    - Ctrl+Click (or Cmd+Click on macOS) on the URL above to open in your local browser.")
         print(f"    - (Or use SSH port forwarding: ssh -L {port}:localhost:{port} user@server)")
 
     print(f"\n[+] Press Ctrl+C in terminal to stop server.\n")
 
     if open_browser:
-        target_url = local_url if host in ("127.0.0.1", "localhost") else (network_url or local_url)
         threading.Timer(0.6, lambda: launch_browser(target_url, browser_choice)).start()
 
     try:

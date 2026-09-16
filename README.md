@@ -123,7 +123,7 @@ python cmat_webviewer.py /path/to/matrix.cmat
 | **Toggle Sidebar Menu** | `M` or `m` (or `Menu`) | Collapse/expand the left control panel to maximize viewing area |
 | **Adjust 2D/1D Panels** | `Drag Divider` | Adjust relative width of 2D matrix vs 1D projections (double-click to reset) |
 | **Cycle Active Matrix** | `[` / `]` (Square Brackets) | Switch to previous / next loaded matrix while preserving zoom, gates, and fits |
-| **Open Local Matrix** | `Ctrl + O` or `📂 Open...` | Open local file dialog to load another `.cmat` matrix into the viewer |
+| **Browse Server Matrices** | `Ctrl + O` or `📂` | Open interactive server filesystem browser to navigate directories and select `.cmat` matrices |
 | **Save Config** | `Save Config` (Sidebar) | Save active viewer parameters to `python-cmat-config.txt` in working directory |
 | **Quit Viewer** | `Q` or `q` | Close browser tab and terminate terminal server process |
 | **Print 2D PDF** | `Print PDF` (2D footer) | Export publication-quality vector PDF of current 2D matrix (Times New Roman, Energy keV axes, colorbar, active 2D fit ellipses, ROI boxes, and unobtrusive 3-line fit labels) |
@@ -148,7 +148,7 @@ python cmat_webviewer.py ./data/*.cmat
   - 1D single-peak and multiplet fits (automatically refitted with updated areas and FWHMs on the new matrix)
   - 2D coincidence peak fits (refitted at identical coincidence coordinates)
   - Colormaps, linear/log scales, and contrast ($V_{max}$, $V_{min}$) thresholds
-- **In-Browser Loading**: Click `📂 Open...` to upload any local `.cmat` file directly into your session, or click `💻 Load Server Path...` in the sidebar to load any matrix located on the server filesystem.
+- **Server-Side File Browser**: Click `📂 Browse Server Matrices...` (or press `Ctrl + O`) to open the interactive filesystem browser modal. Navigate server directories, inspect file sizes and timestamps, filter by filename, and load `.cmat` matrices directly without manual path entry.
 
 ---
 
@@ -235,14 +235,14 @@ browser = default
 
 ### Remote Server & SSH Usage
 When launching `cmat_webviewer.py` on a remote Linux server via SSH:
-- **Direct Network Access**: The viewer detects and prints your server's actual Network IP (e.g. `http://192.168.1.50:8080`). You can open or Ctrl+Click this link directly in your local machine's native web browser.
-- **X11 Browser Suppression**: When running inside an SSH session, `cmat_webviewer.py` automatically skips launching the remote server's slow X11 browser unless explicitly requested (e.g. `--browser firefox`).
-- **SSH Port Forwarding** (recommended for firewalled servers):
+- **One-Click Local Launch (Ctrl+Click)**: The viewer automatically prints the server's network address (e.g. `http://192.168.1.50:8080`). In modern terminals (Windows Terminal, VS Code, iTerm, GNOME Terminal), simply **`Ctrl+Click` (or `Cmd+Click` on macOS)** on the URL to open the viewer in your local machine's web browser immediately.
+- **Remote Browser Suppression**: When running inside an SSH session, `cmat_webviewer.py` automatically suppresses launching the remote server's headless/X11 browser, keeping your SSH connection fast and lightweight.
+- **SSH Port Forwarding** (for firewalled servers without direct network port access):
   ```bash
   ssh -L 8080:localhost:8080 user@remote-server
-  python3 cmat_webviewer.py matrix.cmat --no-browser
+  python3 cmat_webviewer.py matrix.cmat
   ```
-  Then open `http://localhost:8080` in your local browser.
+  Then `Ctrl+Click` or open `http://localhost:8080` on your client machine.
 
 ### Saving Configuration from Web Viewer
 You can adjust sliders, colormaps, peak fit models, or contrast in the Web Viewer and click **`Save Config to File`** in the **Configuration** panel to immediately save your current state to `python-cmat-config.txt`.
