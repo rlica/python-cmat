@@ -829,11 +829,11 @@
     <tr><td>R / r</td><td>Set 1D Fit / Integration Region limits (Limit 1, Limit 2)</td></tr>
     <tr><td>B / b</td><td>Set 1D Background Window limits for fitting ('V') and integration ('I')</td></tr>
     <tr><td>I / i</td><td>Integrate peak over Region ('R') subtracting background ('B' or boundary slope)</td></tr>
-    <tr><td>V / v</td><td>Fit peak or multiplet at cursor (constrained by 'B' background windows if set)</td></tr>
+    <tr><td>V / v</td><td>Fit peak (1D or 2D) at cursor; keeps multiple fits on display and labels centroids</td></tr>
     <tr><td>H / h</td><td>Fit all visible peaks on focused 1D display (Peak-Aware Background)</td></tr>
     <tr><td>P / p</td><td>Automatic 1D Peak Search on focused spectrum (CWT method)</td></tr>
     <tr><td>G / g</td><td>Add / remove manual peak marker at cursor (on Det 1 or Det 2)</td></tr>
-    <tr><td>= (Equals) / +</td><td>Clear active peak fits (1D and 2D), integration results, and peak markers</td></tr>
+    <tr><td>= (Equals) / +</td><td>Clear all active peak fits (1D &amp; 2D), peak labels, and integrations</td></tr>
     <tr><td>Arrows in 1D (←, →)</td><td>Pan 1D spectrum channels left / right (Shift + Arrow for 2× fast pan)</td></tr>
     <tr><td>Arrows in 1D (↑, ↓)</td><td>Pan / zoom 1D vertical counts scale (↑ taller peaks, ↓ shorter peaks)</td></tr>
     <tr><td>Arrows in 2D (←, →, ↓, ↑)</td><td>Set Left / Right (Xmin/Xmax) &amp; Down / Up (Ymin/Ymax) limits at cursor</td></tr>
@@ -1339,6 +1339,46 @@
     }
   }
 
+  async function reapplyAllPersistentFits() {
+    // 1. Re-apply 2D Coincidence Peak Fits
+    if (activeFits2D && activeFits2D.length > 0) {
+      const prev2D = [...activeFits2D];
+      activeFits2D = [];
+      for (const f of prev2D) {
+        const x = f.centroid_x_ch !== undefined ? f.centroid_x_ch : f.x;
+        const y = f.centroid_y_ch !== undefined ? f.centroid_y_ch : f.y;
+        if (x !== undefined && y !== undefined) {
+          await requestPeakFit2D(x, y);
+        }
+      }
+    } else if (lastFit2DParams) {
+      await requestPeakFit2D(lastFit2DParams.x, lastFit2DParams.y);
+    }
+
+    // 2. Re-apply 1D Single Peak Fits
+    for (const ax of [0, 1]) {
+      if (activeFits1D && activeFits1D[ax] && activeFits1D[ax].length > 0) {
+        const prev1D = [...activeFits1D[ax]];
+        activeFits1D[ax] = [];
+        for (const f of prev1D) {
+          const ch = f.centroid_ch !== undefined ? f.centroid_ch : f.ch;
+          if (ch !== undefined) {
+            await requestPeakFit(ax, ch);
+          }
+        }
+      } else if (lastFit1DParams[ax]) {
+        await requestPeakFit(ax, lastFit1DParams[ax].ch);
+      }
+    }
+
+    // 3. Re-apply 1D Multiplet Fits
+    for (const ax of [0, 1]) {
+      if (lastMultiFitParams && lastMultiFitParams[ax]) {
+        await reapplyMultiFit(ax);
+      }
+    }
+  }
+
   async function switchMatrix(newIndex) {
     if (isSwitchingMatrix) return;
     if (newIndex === undefined || newIndex === null || isNaN(newIndex)) return;
@@ -1376,24 +1416,8 @@
         await reapplyGates();
       }
 
-      // Re-apply 2D Coincidence Peak Fit if active
-      if (lastFit2DParams) {
-        await requestPeakFit2D(lastFit2DParams.x, lastFit2DParams.y);
-      }
-
-      // Re-apply 1D Single Peak Fits if active
-      for (const ax of [0, 1]) {
-        if (lastFit1DParams[ax]) {
-          await requestPeakFit(ax, lastFit1DParams[ax].ch);
-        }
-      }
-
-      // Re-apply 1D Multiplet Fits if active
-      for (const ax of [0, 1]) {
-        if (lastMultiFitParams[ax]) {
-          await reapplyMultiFit(ax);
-        }
-      }
+      // Re-apply all persistent 1D and 2D fits under new matrix conditions
+      await reapplyAllPersistentFits();
 
       render2D();
       renderBoth1DSpectra();
@@ -1443,14 +1467,7 @@
       if (gate1DState.axis !== null && gate1DState.w_gates && gate1DState.w_gates.length > 0) {
         await reapplyGates();
       }
-      if (lastFit2DParams) {
-        await requestPeakFit2D(lastFit2DParams.x, lastFit2DParams.y);
-      }
-      for (const ax of [0, 1]) {
-        if (lastFit1DParams[ax]) {
-          await requestPeakFit(ax, lastFit1DParams[ax].ch);
-        }
-      }
+      await reapplyAllPersistentFits();
       render2D();
       renderBoth1DSpectra();
 
@@ -1490,14 +1507,7 @@
       if (gate1DState.axis !== null && gate1DState.w_gates && gate1DState.w_gates.length > 0) {
         await reapplyGates();
       }
-      if (lastFit2DParams) {
-        await requestPeakFit2D(lastFit2DParams.x, lastFit2DParams.y);
-      }
-      for (const ax of [0, 1]) {
-        if (lastFit1DParams[ax]) {
-          await requestPeakFit(ax, lastFit1DParams[ax].ch);
-        }
-      }
+      await reapplyAllPersistentFits();
       render2D();
       renderBoth1DSpectra();
 
@@ -1827,6 +1837,7 @@
       }
     }
     renderBoth1DSpectra();
+    await updateActive1DFits();
   }
 
   function render2D() {
@@ -2036,9 +2047,10 @@
       ctx2d.restore();
     }
 
-    // 5. Draw 2D Coincidence Peak Fit Indicator & FWHM Ellipse
-    if (activeFit2D && activeFit2D.success) {
-      const f2d = activeFit2D;
+    // 5. Draw 2D Coincidence Peak Fit Indicators & FWHM Ellipses (Persistent Multi-Fits)
+    const fits2DList = (activeFits2D && activeFits2D.length > 0) ? activeFits2D : (activeFit2D && activeFit2D.success ? [activeFit2D] : []);
+    for (const f2d of fits2DList) {
+      if (!f2d || !f2d.success) continue;
       const ptC = chToPx2D(f2d.centroid_x_ch, f2d.centroid_y_ch);
       const ptL = chToPx2D(f2d.roi_x_min, f2d.roi_y_max + 1);
       const ptR = chToPx2D(f2d.roi_x_max + 1, f2d.roi_y_min);
@@ -2072,7 +2084,7 @@
       ctx2d.moveTo(ptC.x, ptC.y - 8); ctx2d.lineTo(ptC.x, ptC.y + 8);
       ctx2d.stroke();
 
-      // D. Callout badge with Centroid & Volume (Twice the size: 18px bold)
+      // D. Callout badge with Centroid & Volume (clamped inside canvas)
       const isCalX = isAxisCalibrated(0);
       const isCalY = isAxisCalibrated(1);
       const xStr = isCalX ? `${f2d.centroid_x_e} keV` : `ch ${f2d.centroid_x_ch}`;
@@ -2082,22 +2094,26 @@
       ctx2d.font = 'bold 18px system-ui, -apple-system, sans-serif';
       const tW = ctx2d.measureText(lbl).width;
       const bH = 32;
-      const bY = ptC.y - 40;
+      const bX = Math.min(canvas2d.width - tW - 20, Math.max(10, ptC.x + 10));
+      const bY = Math.max(10, Math.min(canvas2d.height - bH - 10, (ptC.y - 40 < 10) ? (ptC.y + 16) : (ptC.y - 40)));
       ctx2d.fillStyle = 'rgba(15, 18, 24, 0.94)';
-      ctx2d.fillRect(ptC.x + 10, bY, tW + 16, bH);
+      ctx2d.fillRect(bX, bY, tW + 16, bH);
       ctx2d.strokeStyle = '#ffd600';
       ctx2d.lineWidth = 1.8;
-      ctx2d.strokeRect(ptC.x + 10, bY, tW + 16, bH);
+      ctx2d.strokeRect(bX, bY, tW + 16, bH);
       ctx2d.fillStyle = '#ffd600';
       ctx2d.textAlign = 'left';
-      ctx2d.fillText(lbl, ptC.x + 18, bY + 22);
+      ctx2d.fillText(lbl, bX + 8, bY + 22);
     }
     updateMarkerStatus();
   }
 
   let activeFit1D = { 0: null, 1: null };
+  let activeFits1D = { 0: [], 1: [] };
   let activeFit2D = null;
+  let activeFits2D = [];
   let activeMultiFit1D = { 0: null, 1: null };
+  let activeMultiFits1D = { 0: [], 1: [] };
   let fitRegion1D = { 0: null, 1: null };
   let pendingRegion1D = { 0: null, 1: null };
   let fitBgRegions1D = { 0: [], 1: [] };
@@ -2141,8 +2157,48 @@
     const res = await fetch(`/api/fit_peak_2d?x=${x}&y=${y}&fit_type=${fitType}&roi_half_width=${roiHW}&verbosity=${verbosity}`);
     const data = await res.json();
     if (data.success) {
+      if (!activeFits2D) activeFits2D = [];
+      const thresh2D = Math.max(3.0, (data.fwhm_x_ch || 4.0) * 0.8);
+      const existing2DIdx = activeFits2D.findIndex(f => 
+        Math.hypot(f.centroid_x_ch - data.centroid_x_ch, f.centroid_y_ch - data.centroid_y_ch) < thresh2D
+      );
+      if (existing2DIdx >= 0) {
+        activeFits2D[existing2DIdx] = data;
+      } else {
+        activeFits2D.push(data);
+      }
+
       activeFit2D = data;
       lastFit2DParams = { x: (data.centroid_x_ch !== undefined ? data.centroid_x_ch : x), y: (data.centroid_y_ch !== undefined ? data.centroid_y_ch : y) };
+
+      // Add fitted 2D peak projection centroids as labels in 1D spectra (Det 1 for X, Det 2 for Y)
+      const newMarkerX = {
+        channel: data.centroid_x_ch,
+        energy: data.centroid_x_e,
+        counts: data.amplitude_x || data.amplitude || 0,
+        fwhm: data.fwhm_x_ch,
+        area: data.volume,
+        fitted: true,
+        fitted2D: true
+      };
+      const outsideX = (foundPeaks1D[0] || []).filter(p => Math.abs(p.channel - data.centroid_x_ch) >= 1.5);
+      foundPeaks1D[0] = [...outsideX, newMarkerX].sort((a, b) => a.channel - b.channel);
+      updateFoundPeaksUI(0);
+
+      const newMarkerY = {
+        channel: data.centroid_y_ch,
+        energy: data.centroid_y_e,
+        counts: data.amplitude_y || data.amplitude || 0,
+        fwhm: data.fwhm_y_ch,
+        area: data.volume,
+        fitted: true,
+        fitted2D: true
+      };
+      const outsideY = (foundPeaks1D[1] || []).filter(p => Math.abs(p.channel - data.centroid_y_ch) >= 1.5);
+      foundPeaks1D[1] = [...outsideY, newMarkerY].sort((a, b) => a.channel - b.channel);
+      updateFoundPeaksUI(1);
+
+      renderBoth1DSpectra();
 
       const isCalX = isAxisCalibrated(0);
       const isCalY = isAxisCalibrated(1);
@@ -2230,7 +2286,7 @@
       updateFitCardsVerbosity();
       document.getElementById('fitCard2D').style.display = 'block';
 
-      document.getElementById('hudCoords').innerText = `2D Fit: Centroid = ${posTag} | Net Volume = ${data.volume} ± ${data.volume_err} | Gamba Net = ${data.gamba_net} (Π=${data.pi_ratio_percent}%) | FWHMs = (${isCal ? data.fwhm_x_e + ', ' + data.fwhm_y_e + ' keV' : data.fwhm_x_ch + ', ' + data.fwhm_y_ch + ' ch'})`;
+      document.getElementById('hudCoords').innerText = `2D Fit: Centroid = ${posTag} | Net Vol = ${data.volume} ± ${data.volume_err} | Gamba Net = ${data.gamba_net} (Π=${data.pi_ratio_percent}%) | FWHMs = (${isCal ? data.fwhm_x_e + ', ' + data.fwhm_y_e + ' keV' : data.fwhm_x_ch + ', ' + data.fwhm_y_ch + ' ch'}) (Active 2D Fits: ${activeFits2D.length} | Clear with '=')`;
     } else {
       console.warn("2D Peak fit failed:", data.error);
     }
@@ -2319,7 +2375,9 @@
     if (sideClear) {
       const tot = (foundPeaks1D[0] || []).length + (foundPeaks1D[1] || []).length;
       const hasMulti = (activeMultiFit1D[0] !== null || activeMultiFit1D[1] !== null);
-      sideClear.style.display = (tot > 0 || hasMulti) ? 'block' : 'none';
+      const hasFits1D = Boolean(activeFits1D && ((activeFits1D[0] && activeFits1D[0].length > 0) || (activeFits1D[1] && activeFits1D[1].length > 0)));
+      const hasFits2D = Boolean(activeFits2D && activeFits2D.length > 0);
+      sideClear.style.display = (tot > 0 || hasMulti || hasFits1D || hasFits2D) ? 'block' : 'none';
       if (tot > 0) sideClear.innerText = `Clear ${tot} Found Peaks & Fits [=]`;
     }
   }
@@ -2702,6 +2760,221 @@
     document.getElementById('hudCoords').innerText = `Added peak marker at ${pLbl} on ${detName} (Total: ${foundPeaks1D[axis].length} peaks | Press 'V' to fit)`;
   }
 
+  function updateFitCard1DDisplay(data, axis) {
+    if (!data) return;
+    const detLabel = (axis === 0) ? 'Det 1 (X)' : 'Det 2 (Y)';
+    const isCal = isAxisCalibrated(axis);
+    const modelTag = (data.fit_type === 'hypermet') ? '1D Hypermet Fit (Convolved Tail + Step)' : ((data.fit_type === 'gaussian_tail') ? '1D Peak Fit (Left-Tail RadWare)' : '1D Gaussian Fit');
+    const titleEl = document.getElementById('fitTitle1D');
+    if (titleEl) titleEl.innerText = `${modelTag} [${detLabel}]: ${isCal ? data.centroid_e + ' keV' : 'ch ' + data.centroid_ch}`;
+
+    // Compact line in format: centroid(err)   area(err)   fwhm(err)
+    const dec1D = isCal ? 2 : 3;
+    const unit1D = isCal ? 'keV' : 'ch';
+    const c1DVal = (typeof (isCal ? data.centroid_e : data.centroid_ch) === 'number' ? (isCal ? data.centroid_e : data.centroid_ch) : parseFloat(isCal ? data.centroid_e : data.centroid_ch)).toFixed(dec1D);
+    const c1DErr = (typeof (isCal ? data.centroid_e_err : data.centroid_ch_err) === 'number' ? (isCal ? data.centroid_e_err : data.centroid_ch_err) : parseFloat(isCal ? data.centroid_e_err : data.centroid_ch_err)).toFixed(dec1D);
+    const f1DVal = (typeof (isCal ? data.fwhm_e : data.fwhm_ch) === 'number' ? (isCal ? data.fwhm_e : data.fwhm_ch) : parseFloat(isCal ? data.fwhm_e : data.fwhm_ch)).toFixed(dec1D);
+    const f1DErr = (typeof (isCal ? data.fwhm_e_err : data.fwhm_ch_err) === 'number' ? (isCal ? data.fwhm_e_err : data.fwhm_ch_err) : parseFloat(isCal ? data.fwhm_e_err : data.fwhm_ch_err)).toFixed(dec1D);
+    const areaVal = (typeof data.area === 'number' ? data.area : parseFloat(data.area)).toFixed(1);
+    const areaErr = (typeof data.area_err === 'number' ? data.area_err : parseFloat(data.area_err)).toFixed(1);
+    const compact1D = `Centroid: ${c1DVal}(${c1DErr}) ${unit1D}\tArea: ${areaVal}(${areaErr}) counts\tFWHM: ${f1DVal}(${f1DErr}) ${unit1D}`;
+    const compLine = document.getElementById('fitCompactLine1D');
+    if (compLine) compLine.innerHTML = compact1D;
+
+    // Detailed parameters grid
+    const fCent = document.getElementById('fitCentroid1D');
+    if (fCent) fCent.innerText = isCal
+      ? `${data.centroid_e} ± ${data.centroid_e_err} keV (${data.centroid_ch} ± ${data.centroid_ch_err} ch)`
+      : `${data.centroid_ch} ± ${data.centroid_ch_err} ch`;
+    const fArea = document.getElementById('fitArea1D');
+    if (fArea) fArea.innerText = `${data.area.toLocaleString()} ± ${data.area_err.toLocaleString()} counts`;
+    const fFWHM = document.getElementById('fitFWHM1D');
+    if (fFWHM) fFWHM.innerText = isCal
+      ? `${data.fwhm_e} ± ${data.fwhm_e_err} keV (${data.fwhm_ch} ± ${data.fwhm_ch_err} ch)`
+      : `${data.fwhm_ch} ± ${data.fwhm_ch_err} ch`;
+    const fAmp = document.getElementById('fitAmp1D');
+    if (fAmp) fAmp.innerText = `${data.amplitude.toLocaleString()} ± ${data.amplitude_err.toLocaleString()} cts`;
+
+    const tailItem = document.getElementById('fitTailItem1D');
+    if (tailItem) {
+      if (data.fit_type === 'gaussian_tail' && data.alpha !== null) {
+        tailItem.style.display = 'flex';
+        document.getElementById('fitTail1D').innerText = `${data.alpha} ± ${data.alpha_err}`;
+      } else {
+        tailItem.style.display = 'none';
+      }
+    }
+
+    const hypItem = document.getElementById('fitHypermetItem1D');
+    if (hypItem) {
+      if (data.fit_type === 'hypermet' && data.tail_area !== undefined && data.tail_area !== null) {
+        hypItem.style.display = 'flex';
+        document.getElementById('fitHypermet1D').innerText = `fT=${data.tail_area} ± ${data.tail_area_err} (β=${data.tail_slope}, As=${data.step_height})`;
+      } else {
+        hypItem.style.display = 'none';
+      }
+    }
+
+    const grossBg = document.getElementById('fitGrossBg1D');
+    if (grossBg) grossBg.innerText = `${data.gross_counts.toLocaleString()} / ${data.bg_counts.toLocaleString()}`;
+    const chi2El = document.getElementById('fitChi21D');
+    if (chi2El) chi2El.innerText = `${data.red_chi2} (NDF=${data.ndf})`;
+
+    updateFitCardsVerbosity();
+    const card1D = document.getElementById('fitCard1D');
+    if (card1D) card1D.style.display = 'block';
+
+    const activeCount = (activeFits1D && activeFits1D[axis]) ? activeFits1D[axis].length : 1;
+    const hudEnergy = isCal ? ` (${data.centroid_e} keV)` : '';
+    const hudEl = document.getElementById('hudCoords');
+    if (hudEl) hudEl.innerText = `1D Fit [${detLabel}]: Centroid = ${data.centroid_ch}${hudEnergy} | Area = ${data.area} ± ${data.area_err} | FWHM = ${isCal ? data.fwhm_e + ' keV' : data.fwhm_ch + ' ch'} (Active Fits: ${activeCount} | Clear with '=')`;
+  }
+
+  async function reapplyIntegration1D(axis) {
+    const dataPrev = activeIntegration1D[axis];
+    if (!dataPrev || !dataPrev.success || !fitRegion1D[axis]) return;
+    const reg = fitRegion1D[axis];
+    const x0 = Math.floor(Math.max(0, view.x0));
+    const x1 = Math.ceil(Math.min(metadata.shape[0], view.x1));
+    const y0 = Math.floor(Math.max(0, view.y0));
+    const y1 = Math.ceil(Math.min(metadata.shape[1], view.y1));
+
+    let url = `/api/integrate_1d?axis=${axis}&region=${reg[0]},${reg[1]}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}`;
+    const bgList = fitBgRegions1D[axis] || [];
+    if (bgList.length > 0) {
+      url += `&bg_regions=${encodeURIComponent(JSON.stringify(bgList))}`;
+    }
+    if (gate1DState.axis !== null && gate1DState.axis === (1 - axis) && gate1DState.w_gates.length > 0) {
+      url += `&w_gates=${encodeURIComponent(JSON.stringify(gate1DState.w_gates))}&b_gates=${encodeURIComponent(JSON.stringify(gate1DState.b_gates))}`;
+    }
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.success) {
+        activeIntegration1D[axis] = data;
+        const card = document.getElementById('integrateCard1D');
+        if (card && card.style.display !== 'none') {
+          showIntegrationCard(data, axis);
+        }
+      }
+    } catch (e) {
+      console.warn("Re-integrate 1D failed:", e);
+    }
+  }
+
+  let update1DFitsCounter = 0;
+
+  async function updateActive1DFits() {
+    const hasSingle0 = Boolean(activeFits1D && activeFits1D[0] && activeFits1D[0].length > 0);
+    const hasSingle1 = Boolean(activeFits1D && activeFits1D[1] && activeFits1D[1].length > 0);
+    const hasMulti0 = Boolean((activeMultiFits1D && activeMultiFits1D[0] && activeMultiFits1D[0].length > 0) || (lastMultiFitParams && lastMultiFitParams[0]));
+    const hasMulti1 = Boolean((activeMultiFits1D && activeMultiFits1D[1] && activeMultiFits1D[1].length > 0) || (lastMultiFitParams && lastMultiFitParams[1]));
+    const hasInt0 = Boolean(activeIntegration1D && activeIntegration1D[0] && activeIntegration1D[0].success);
+    const hasInt1 = Boolean(activeIntegration1D && activeIntegration1D[1] && activeIntegration1D[1].success);
+
+    if (!hasSingle0 && !hasSingle1 && !hasMulti0 && !hasMulti1 && !hasInt0 && !hasInt1) {
+      return;
+    }
+
+    const mySeq = ++update1DFitsCounter;
+
+    const x0 = Math.floor(Math.max(0, view.x0));
+    const x1 = Math.ceil(Math.min(metadata.shape[0], view.x1));
+    const y0 = Math.floor(Math.max(0, view.y0));
+    const y1 = Math.ceil(Math.min(metadata.shape[1], view.y1));
+    const fitType = getActiveFitType();
+    const fwhmMult = document.getElementById('fwhmMultSlider1D') ? document.getElementById('fwhmMultSlider1D').value : '4.0';
+    const verbosity = document.getElementById('fitVerbositySelect') ? document.getElementById('fitVerbositySelect').value : 'compact';
+
+    let didUpdateAny = false;
+
+    for (const ax of [0, 1]) {
+      if (mySeq !== update1DFitsCounter) return;
+
+      // A. Update Single Fits concurrently
+      if (activeFits1D && activeFits1D[ax] && activeFits1D[ax].length > 0) {
+        const currentList = [...activeFits1D[ax]];
+        const promises = currentList.map(async (oldFit, idx) => {
+          const fitCh = (oldFit.centroid_ch !== undefined) ? oldFit.centroid_ch : oldFit.ch;
+          if (fitCh === undefined || fitCh === null || isNaN(fitCh)) return null;
+
+          let url = `/api/fit_peak?axis=${ax}&channel=${fitCh}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}&fit_type=${fitType}&fwhm_mult=${fwhmMult}&verbosity=${verbosity}`;
+          if (gate1DState.axis !== null && gate1DState.axis === (1 - ax) && gate1DState.w_gates.length > 0) {
+            url += `&w_gates=${encodeURIComponent(JSON.stringify(gate1DState.w_gates))}&b_gates=${encodeURIComponent(JSON.stringify(gate1DState.b_gates))}`;
+          }
+
+          try {
+            const res = await fetch(url);
+            const data = await res.json();
+            return { idx, oldFit, fitCh, data };
+          } catch (e) {
+            return null;
+          }
+        });
+
+        const results = await Promise.all(promises);
+        if (mySeq !== update1DFitsCounter) return;
+
+        for (const item of results) {
+          if (!item || !item.data || !item.data.success) continue;
+          const { idx, oldFit, fitCh, data } = item;
+          didUpdateAny = true;
+
+          if (activeFits1D[ax] && idx < activeFits1D[ax].length) {
+            activeFits1D[ax][idx] = data;
+          }
+
+          if (activeFit1D[ax] && (Math.abs(activeFit1D[ax].centroid_ch - fitCh) < 2.5 || activeFit1D[ax] === oldFit)) {
+            activeFit1D[ax] = data;
+          }
+
+          // Update peak marker in foundPeaks1D
+          const marker = {
+            channel: data.centroid_ch,
+            energy: data.centroid_e,
+            counts: data.amplitude,
+            fwhm: data.fwhm_ch,
+            area: data.area,
+            area_err: data.area_err,
+            fitted: true
+          };
+          const pIdx = (foundPeaks1D[ax] || []).findIndex(p => p.fitted && !p.fitted2D && Math.abs(p.channel - fitCh) < 2.5);
+          if (pIdx >= 0) {
+            foundPeaks1D[ax][pIdx] = marker;
+          } else {
+            const outside = (foundPeaks1D[ax] || []).filter(p => Math.abs(p.channel - fitCh) >= 2.0 && Math.abs(p.channel - data.centroid_ch) >= 2.0);
+            foundPeaks1D[ax] = [...outside, marker].sort((a, b) => a.channel - b.channel);
+          }
+          updateFoundPeaksUI(ax);
+
+          // Update fit card if this was the last or currently inspected fit
+          const card1D = document.getElementById('fitCard1D');
+          if (card1D && card1D.style.display !== 'none' && (activeFit1D[ax] === data || idx === currentList.length - 1)) {
+            updateFitCard1DDisplay(data, ax);
+          }
+        }
+      }
+
+      // B. Update Multiplet Fits
+      if (lastMultiFitParams && lastMultiFitParams[ax]) {
+        if (mySeq !== update1DFitsCounter) return;
+        await reapplyMultiFit(ax);
+        didUpdateAny = true;
+      }
+
+      // C. Update Peak Integrations
+      if (activeIntegration1D && activeIntegration1D[ax] && activeIntegration1D[ax].success) {
+        if (mySeq !== update1DFitsCounter) return;
+        await reapplyIntegration1D(ax);
+        didUpdateAny = true;
+      }
+    }
+
+    if (didUpdateAny && mySeq === update1DFitsCounter) {
+      renderBoth1DSpectra();
+    }
+  }
+
   async function requestPeakFit(axis, ch) {
     if (ch === null || ch === undefined || isNaN(ch)) return;
 
@@ -2735,10 +3008,8 @@
           const res = await fetch(url);
           const data = await res.json();
           if (data.success) {
-            activeFit1D[axis] = null;
-            const fitCard1D = document.getElementById('fitCard1D');
-            if (fitCard1D) fitCard1D.style.display = 'none';
-
+            if (!activeMultiFits1D[axis]) activeMultiFits1D[axis] = [];
+            activeMultiFits1D[axis].push(data);
             activeMultiFit1D[axis] = data;
 
             if (data.peaks && data.peaks.length > 0) {
@@ -2822,10 +3093,8 @@
         const res = await fetch(url);
         const data = await res.json();
         if (data.success) {
-          activeFit1D[axis] = null;
-          const fitCard1D = document.getElementById('fitCard1D');
-          if (fitCard1D) fitCard1D.style.display = 'none';
-
+          if (!activeMultiFits1D[axis]) activeMultiFits1D[axis] = [];
+          activeMultiFits1D[axis].push(data);
           activeMultiFit1D[axis] = data;
 
           if (data.peaks && data.peaks.length > 0) {
@@ -2873,66 +3142,35 @@
     const res = await fetch(url);
     const data = await res.json();
     if (data.success) {
-      activeMultiFit1D[axis] = null;
-      const fitCardMulti = document.getElementById('fitCardMulti1D');
-      if (fitCardMulti) fitCardMulti.style.display = 'none';
+      if (!activeFits1D[axis]) activeFits1D[axis] = [];
+      const thresh1D = Math.max(2.0, (data.fwhm_ch || 4.0) * 0.8);
+      const existing1DIdx = activeFits1D[axis].findIndex(f =>
+        Math.abs(f.centroid_ch - data.centroid_ch) < thresh1D
+      );
+      if (existing1DIdx >= 0) {
+        activeFits1D[axis][existing1DIdx] = data;
+      } else {
+        activeFits1D[axis].push(data);
+      }
 
       activeFit1D[axis] = data;
       lastFit1DParams[axis] = { axis, ch: (data.centroid_ch !== undefined ? data.centroid_ch : fitCh) };
-      const isCal = isAxisCalibrated(axis);
-      const modelTag = (data.fit_type === 'hypermet') ? '1D Hypermet Fit (Convolved Tail + Step)' : ((data.fit_type === 'gaussian_tail') ? '1D Peak Fit (Left-Tail RadWare)' : '1D Gaussian Fit');
-      document.getElementById('fitTitle1D').innerText = `${modelTag} [${detLabel}]: ${isCal ? data.centroid_e + ' keV' : 'ch ' + data.centroid_ch}`;
 
-      // Compact line in format: centroid(err)   area(err)   fwhm(err)
-      const dec1D = isCal ? 2 : 3;
-      const unit1D = isCal ? 'keV' : 'ch';
-      const c1DVal = (typeof (isCal ? data.centroid_e : data.centroid_ch) === 'number' ? (isCal ? data.centroid_e : data.centroid_ch) : parseFloat(isCal ? data.centroid_e : data.centroid_ch)).toFixed(dec1D);
-      const c1DErr = (typeof (isCal ? data.centroid_e_err : data.centroid_ch_err) === 'number' ? (isCal ? data.centroid_e_err : data.centroid_ch_err) : parseFloat(isCal ? data.centroid_e_err : data.centroid_ch_err)).toFixed(dec1D);
-      const f1DVal = (typeof (isCal ? data.fwhm_e : data.fwhm_ch) === 'number' ? (isCal ? data.fwhm_e : data.fwhm_ch) : parseFloat(isCal ? data.fwhm_e : data.fwhm_ch)).toFixed(dec1D);
-      const f1DErr = (typeof (isCal ? data.fwhm_e_err : data.fwhm_ch_err) === 'number' ? (isCal ? data.fwhm_e_err : data.fwhm_ch_err) : parseFloat(isCal ? data.fwhm_e_err : data.fwhm_ch_err)).toFixed(dec1D);
-      const areaVal = (typeof data.area === 'number' ? data.area : parseFloat(data.area)).toFixed(1);
-      const areaErr = (typeof data.area_err === 'number' ? data.area_err : parseFloat(data.area_err)).toFixed(1);
-      const compact1D = `Centroid: ${c1DVal}(${c1DErr}) ${unit1D}\tArea: ${areaVal}(${areaErr}) counts\tFWHM: ${f1DVal}(${f1DErr}) ${unit1D}`;
-      document.getElementById('fitCompactLine1D').innerHTML = compact1D;
+      // Add fitted centroid as a peak label in foundPeaks1D[axis] (similar to automatic peak search 'P')
+      const newMarker = {
+        channel: data.centroid_ch,
+        energy: data.centroid_e,
+        counts: data.amplitude,
+        fwhm: data.fwhm_ch,
+        area: data.area,
+        area_err: data.area_err,
+        fitted: true
+      };
+      const outside = (foundPeaks1D[axis] || []).filter(p => Math.abs(p.channel - data.centroid_ch) >= 1.5);
+      foundPeaks1D[axis] = [...outside, newMarker].sort((a, b) => a.channel - b.channel);
+      updateFoundPeaksUI(axis);
 
-      // Detailed parameters grid
-      document.getElementById('fitCentroid1D').innerText = isCal
-        ? `${data.centroid_e} ± ${data.centroid_e_err} keV (${data.centroid_ch} ± ${data.centroid_ch_err} ch)`
-        : `${data.centroid_ch} ± ${data.centroid_ch_err} ch`;
-      document.getElementById('fitArea1D').innerText = `${data.area.toLocaleString()} ± ${data.area_err.toLocaleString()} counts`;
-      document.getElementById('fitFWHM1D').innerText = isCal
-        ? `${data.fwhm_e} ± ${data.fwhm_e_err} keV (${data.fwhm_ch} ± ${data.fwhm_ch_err} ch)`
-        : `${data.fwhm_ch} ± ${data.fwhm_ch_err} ch`;
-      document.getElementById('fitAmp1D').innerText = `${data.amplitude.toLocaleString()} ± ${data.amplitude_err.toLocaleString()} cts`;
-
-      const tailItem = document.getElementById('fitTailItem1D');
-      if (tailItem) {
-        if (data.fit_type === 'gaussian_tail' && data.alpha !== null) {
-          tailItem.style.display = 'flex';
-          document.getElementById('fitTail1D').innerText = `${data.alpha} ± ${data.alpha_err}`;
-        } else {
-          tailItem.style.display = 'none';
-        }
-      }
-
-      const hypItem = document.getElementById('fitHypermetItem1D');
-      if (hypItem) {
-        if (data.fit_type === 'hypermet' && data.tail_area !== undefined && data.tail_area !== null) {
-          hypItem.style.display = 'flex';
-          document.getElementById('fitHypermet1D').innerText = `fT=${data.tail_area} ± ${data.tail_area_err} (β=${data.tail_slope}, As=${data.step_height})`;
-        } else {
-          hypItem.style.display = 'none';
-        }
-      }
-
-      document.getElementById('fitGrossBg1D').innerText = `${data.gross_counts.toLocaleString()} / ${data.bg_counts.toLocaleString()}`;
-      document.getElementById('fitChi21D').innerText = `${data.red_chi2} (NDF=${data.ndf})`;
-
-      updateFitCardsVerbosity();
-      document.getElementById('fitCard1D').style.display = 'block';
-
-      const hudEnergy = isCal ? ` (${data.centroid_e} keV)` : '';
-      document.getElementById('hudCoords').innerText = `1D Fit [${detLabel}]: Centroid = ${data.centroid_ch}${hudEnergy} | Area = ${data.area} ± ${data.area_err} | FWHM = ${isCal ? data.fwhm_e + ' keV' : data.fwhm_ch + ' ch'}`;
+      updateFitCard1DDisplay(data, axis);
     } else {
       console.warn("Peak fit failed:", data.error);
     }
@@ -3078,15 +3316,18 @@
 
   function clearMultiFit1D(axis) {
     if (axis === null || axis === undefined) {
+      activeMultiFits1D[0] = [];
+      activeMultiFits1D[1] = [];
       activeMultiFit1D[0] = null;
       activeMultiFit1D[1] = null;
       lastMultiFitParams[0] = null;
       lastMultiFitParams[1] = null;
     } else {
+      activeMultiFits1D[axis] = [];
       activeMultiFit1D[axis] = null;
       lastMultiFitParams[axis] = null;
     }
-    const hasAny = (activeMultiFit1D[0] !== null || activeMultiFit1D[1] !== null);
+    const hasAny = (activeMultiFit1D[0] !== null || activeMultiFit1D[1] !== null || (activeMultiFits1D[0] && activeMultiFits1D[0].length > 0) || (activeMultiFits1D[1] && activeMultiFits1D[1].length > 0));
     const card = document.getElementById('fitCardMulti1D');
     if (card && !hasAny) {
       card.style.display = 'none';
@@ -3343,105 +3584,113 @@
     ctx.lineWidth = 1.2;
     ctx.stroke();
 
-    // B. Fitted Peak & Baseline Background Curves
-    const fit = activeFit1D[axis];
-    if (fit && fit.curve_x && fit.curve_x.length > 0) {
-      if (fit.roi_ch_max >= chStart && fit.roi_ch_min <= chEnd) {
-        // ROI Shading
-        const xRoiL = pr.x + ((fit.roi_ch_min - chStart) / span) * pr.w;
-        const xRoiR = pr.x + ((fit.roi_ch_max + 1 - chStart) / span) * pr.w;
-        ctx.fillStyle = (axis === 0) ? 'rgba(0, 229, 255, 0.08)' : 'rgba(255, 152, 0, 0.08)';
-        ctx.fillRect(Math.max(pr.x, xRoiL), pr.y, Math.min(pr.w, xRoiR - Math.max(pr.x, xRoiL)), pr.h);
+    // B. Fitted Peak & Baseline Background Curves (Persistent Multi-Fits)
+    const fitsList = (activeFits1D && activeFits1D[axis] && activeFits1D[axis].length > 0)
+      ? activeFits1D[axis]
+      : (activeFit1D[axis] ? [activeFit1D[axis]] : []);
 
-        // Baseline Background Curve (Dashed Magenta)
-        if (fit.curve_bg && fit.curve_bg.length > 0) {
-          ctx.beginPath();
-          ctx.strokeStyle = '#ff4081';
-          ctx.lineWidth = 1.5;
-          ctx.setLineDash([4, 4]);
-          for (let k = 0; k < fit.curve_x.length; k++) {
-            const cx = pr.x + ((fit.curve_x[k] - chStart) / span) * pr.w;
-            const cy = valToPx(fit.curve_bg[k]);
-            if (k === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
-          }
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
+    for (const fit of fitsList) {
+      if (!fit || !fit.curve_x || fit.curve_x.length === 0) continue;
+      if (fit.roi_ch_max < chStart || fit.roi_ch_min > chEnd) continue;
 
-        // Gaussian Total Fit Curve (Bright Gold)
+      // ROI Shading
+      const xRoiL = pr.x + ((fit.roi_ch_min - chStart) / span) * pr.w;
+      const xRoiR = pr.x + ((fit.roi_ch_max + 1 - chStart) / span) * pr.w;
+      ctx.fillStyle = (axis === 0) ? 'rgba(0, 229, 255, 0.08)' : 'rgba(255, 152, 0, 0.08)';
+      ctx.fillRect(Math.max(pr.x, xRoiL), pr.y, Math.min(pr.w, xRoiR - Math.max(pr.x, xRoiL)), pr.h);
+
+      // Baseline Background Curve (Dashed Magenta)
+      if (fit.curve_bg && fit.curve_bg.length > 0) {
         ctx.beginPath();
-        ctx.strokeStyle = '#ffd600';
-        ctx.lineWidth = 2.2;
+        ctx.strokeStyle = '#ff4081';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
         for (let k = 0; k < fit.curve_x.length; k++) {
           const cx = pr.x + ((fit.curve_x[k] - chStart) / span) * pr.w;
-          const cy = valToPx(fit.curve_fit[k]);
+          const cy = valToPx(fit.curve_bg[k]);
           if (k === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
         }
         ctx.stroke();
+        ctx.setLineDash([]);
+      }
 
-        // Centroid Vertical Line
-        const cX = pr.x + ((fit.centroid_ch - chStart) / span) * pr.w;
-        if (cX >= pr.x && cX <= pr.x + pr.w) {
-          ctx.strokeStyle = '#ffd600';
-          ctx.lineWidth = 1.2;
-          ctx.setLineDash([2, 2]);
-          ctx.beginPath();
-          ctx.moveTo(cX, pr.y);
-          ctx.lineTo(cX, pr.y + pr.h);
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
+      // Gaussian Total Fit Curve (Bright Gold)
+      ctx.beginPath();
+      ctx.strokeStyle = '#ffd600';
+      ctx.lineWidth = 2.2;
+      for (let k = 0; k < fit.curve_x.length; k++) {
+        const cx = pr.x + ((fit.curve_x[k] - chStart) / span) * pr.w;
+        const cy = valToPx(fit.curve_fit[k]);
+        if (k === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
+      }
+      ctx.stroke();
+
+      // Centroid Vertical Line
+      const cX = pr.x + ((fit.centroid_ch - chStart) / span) * pr.w;
+      if (cX >= pr.x && cX <= pr.x + pr.w) {
+        ctx.strokeStyle = '#ffd600';
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.moveTo(cX, pr.y);
+        ctx.lineTo(cX, pr.y + pr.h);
+        ctx.stroke();
+        ctx.setLineDash([]);
       }
     }
 
     // B2. Multi-Peak Fit Curves (Local Linear Baselines + Multi-Peak Fitted Model)
-    const mFit = activeMultiFit1D[axis];
-    if (mFit && mFit.curve_x && mFit.curve_x.length > 0) {
-      if (mFit.ch_max >= chStart && mFit.ch_min <= chEnd) {
-        // Local Linear Baseline Background Curve (Dashed Amber #ffa726)
-        if (mFit.curve_bg && mFit.curve_bg.length > 0) {
-          ctx.beginPath();
-          ctx.strokeStyle = '#ffa726';
-          ctx.lineWidth = 1.8;
-          ctx.setLineDash([5, 4]);
-          for (let k = 0; k < mFit.curve_x.length; k++) {
-            const cx = pr.x + ((mFit.curve_x[k] - chStart) / span) * pr.w;
-            const cy = valToPx(mFit.curve_bg[k]);
-            if (k === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
-          }
-          ctx.stroke();
-          ctx.setLineDash([]);
-        }
+    const mFitsList = (activeMultiFits1D && activeMultiFits1D[axis] && activeMultiFits1D[axis].length > 0)
+      ? activeMultiFits1D[axis]
+      : (activeMultiFit1D[axis] ? [activeMultiFit1D[axis]] : []);
 
-        // Multi-Peak Fitted Composite Model Curve (Vibrant Neon Green #00e676)
-        if (mFit.curve_fit && mFit.curve_fit.length > 0) {
-          ctx.beginPath();
-          ctx.strokeStyle = '#00e676';
-          ctx.lineWidth = 2.2;
-          for (let k = 0; k < mFit.curve_x.length; k++) {
-            const cx = pr.x + ((mFit.curve_x[k] - chStart) / span) * pr.w;
-            const cy = valToPx(mFit.curve_fit[k]);
-            if (k === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
-          }
-          ctx.stroke();
-        }
+    for (const mFit of mFitsList) {
+      if (!mFit || !mFit.curve_x || mFit.curve_x.length === 0) continue;
+      if (mFit.ch_max < chStart || mFit.ch_min > chEnd) continue;
 
-        // Dotted Centroid Lines for Multi-Fitted Peaks
-        if (mFit.peaks && mFit.peaks.length > 0) {
-          ctx.strokeStyle = 'rgba(0, 230, 118, 0.6)';
-          ctx.lineWidth = 1.0;
-          ctx.setLineDash([2, 2]);
-          for (const pk of mFit.peaks) {
-            const cX = pr.x + ((pk.centroid_ch - chStart) / span) * pr.w;
-            if (cX >= pr.x && cX <= pr.x + pr.w) {
-              ctx.beginPath();
-              ctx.moveTo(cX, pr.y);
-              ctx.lineTo(cX, pr.y + pr.h);
-              ctx.stroke();
-            }
-          }
-          ctx.setLineDash([]);
+      // Local Linear Baseline Background Curve (Dashed Amber #ffa726)
+      if (mFit.curve_bg && mFit.curve_bg.length > 0) {
+        ctx.beginPath();
+        ctx.strokeStyle = '#ffa726';
+        ctx.lineWidth = 1.8;
+        ctx.setLineDash([5, 4]);
+        for (let k = 0; k < mFit.curve_x.length; k++) {
+          const cx = pr.x + ((mFit.curve_x[k] - chStart) / span) * pr.w;
+          const cy = valToPx(mFit.curve_bg[k]);
+          if (k === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
         }
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Multi-Peak Fitted Composite Model Curve (Vibrant Neon Green #00e676)
+      if (mFit.curve_fit && mFit.curve_fit.length > 0) {
+        ctx.beginPath();
+        ctx.strokeStyle = '#00e676';
+        ctx.lineWidth = 2.2;
+        for (let k = 0; k < mFit.curve_x.length; k++) {
+          const cx = pr.x + ((mFit.curve_x[k] - chStart) / span) * pr.w;
+          const cy = valToPx(mFit.curve_fit[k]);
+          if (k === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
+        }
+        ctx.stroke();
+      }
+
+      // Dotted Centroid Lines for Multi-Fitted Peaks
+      if (mFit.peaks && mFit.peaks.length > 0) {
+        ctx.strokeStyle = 'rgba(0, 230, 118, 0.6)';
+        ctx.lineWidth = 1.0;
+        ctx.setLineDash([2, 2]);
+        for (const pk of mFit.peaks) {
+          const cX = pr.x + ((pk.centroid_ch - chStart) / span) * pr.w;
+          if (cX >= pr.x && cX <= pr.x + pr.w) {
+            ctx.beginPath();
+            ctx.moveTo(cX, pr.y);
+            ctx.lineTo(cX, pr.y + pr.h);
+            ctx.stroke();
+          }
+        }
+        ctx.setLineDash([]);
       }
     }
 
@@ -4431,6 +4680,20 @@
         url += `&peaks=${encodeURIComponent(JSON.stringify(visiblePeaks))}`;
       }
 
+      // Multi-single fit channels for PDF vector rendering
+      const fitsList = (activeFits1D && activeFits1D[axis] && activeFits1D[axis].length > 0)
+        ? activeFits1D[axis]
+        : (fit && fit.centroid_ch !== undefined ? [fit] : []);
+
+      const fitChs = fitsList
+        .filter(f => f && f.centroid_ch !== undefined && f.centroid_ch >= chStart && f.centroid_ch <= chEnd)
+        .map(f => Number(f.centroid_ch).toFixed(2))
+        .join(',');
+
+      if (fitChs) {
+        url += `&fit_channels=${encodeURIComponent(fitChs)}&fit_type=${fitType}&fwhm_mult=${fwhmMult}`;
+      }
+
       const mFit = activeMultiFit1D[axis];
       if (mFit && mFit.peaks && mFit.peaks.length > 0) {
         const pchs = mFit.peaks.map(p => Number(p.centroid_ch).toFixed(2)).join(',');
@@ -4438,7 +4701,7 @@
         if (fitRegion1D[axis]) {
           url += `&region=${encodeURIComponent(fitRegion1D[axis].join(','))}`;
         }
-      } else if (fit && fit.centroid_ch !== undefined) {
+      } else if (!fitChs && fit && fit.centroid_ch !== undefined) {
         url += `&has_fit=1&fit_ch=${fit.centroid_ch}&fit_type=${fitType}&fwhm_mult=${fwhmMult}`;
       }
 
@@ -4470,8 +4733,16 @@
       const f2d = activeFit2D;
       const fitType = getActiveFitType();
 
-      let url = `/api/export_pdf_2d?x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}&cmap=${cmap}&scale=${scale}&vmin=${vmin}&vmax=${vmax}`;
-      if (f2d && f2d.centroid_x_ch !== undefined) {
+      const fits2DList = (activeFits2D && activeFits2D.length > 0) ? activeFits2D : (f2d ? [f2d] : []);
+      const visibleFits2D = fits2DList.filter(f =>
+        f && f.centroid_x_ch !== undefined &&
+        f.centroid_x_ch >= x0 && f.centroid_x_ch <= x1 &&
+        f.centroid_y_ch >= y0 && f.centroid_y_ch <= y1
+      );
+
+      if (visibleFits2D.length > 0) {
+        url += `&fits_2d=${encodeURIComponent(JSON.stringify(visibleFits2D))}`;
+      } else if (f2d && f2d.centroid_x_ch !== undefined) {
         url += `&has_fit=1&fit_x=${f2d.centroid_x_ch}&fit_y=${f2d.centroid_y_ch}&fit_type=${fitType}`;
       }
       const w = window.open(url, '_blank');
@@ -4502,20 +4773,55 @@
     window.close();
   }
 
-  function clearFit1D() {
-    activeFit1D[0] = null;
-    activeFit1D[1] = null;
-    lastFit1DParams[0] = null;
-    lastFit1DParams[1] = null;
-    document.getElementById('fitCard1D').style.display = 'none';
+  function clearFit1D(axis = null) {
+    if (axis === 0 || axis === 1) {
+      activeFit1D[axis] = null;
+      lastFit1DParams[axis] = null;
+      if (activeFits1D && activeFits1D[axis]) activeFits1D[axis] = [];
+      if (activeMultiFits1D && activeMultiFits1D[axis]) activeMultiFits1D[axis] = [];
+      if (foundPeaks1D && foundPeaks1D[axis]) {
+        foundPeaks1D[axis] = foundPeaks1D[axis].filter(p => !p.fitted || p.fitted2D);
+        updateFoundPeaksUI(axis);
+      }
+    } else {
+      activeFit1D[0] = null;
+      activeFit1D[1] = null;
+      lastFit1DParams[0] = null;
+      lastFit1DParams[1] = null;
+      if (activeFits1D) {
+        activeFits1D[0] = [];
+        activeFits1D[1] = [];
+      }
+      if (activeMultiFits1D) {
+        activeMultiFits1D[0] = [];
+        activeMultiFits1D[1] = [];
+      }
+      if (foundPeaks1D) {
+        foundPeaks1D[0] = foundPeaks1D[0].filter(p => !p.fitted || p.fitted2D);
+        foundPeaks1D[1] = foundPeaks1D[1].filter(p => !p.fitted || p.fitted2D);
+        updateFoundPeaksUI(0);
+        updateFoundPeaksUI(1);
+      }
+    }
+    const fc = document.getElementById('fitCard1D');
+    if (fc) fc.style.display = 'none';
     renderBoth1DSpectra();
   }
 
   function clearFit2D() {
     activeFit2D = null;
     lastFit2DParams = null;
-    document.getElementById('fitCard2D').style.display = 'none';
+    activeFits2D = [];
+    if (foundPeaks1D) {
+      foundPeaks1D[0] = foundPeaks1D[0].filter(p => !p.fitted2D);
+      foundPeaks1D[1] = foundPeaks1D[1].filter(p => !p.fitted2D);
+      updateFoundPeaksUI(0);
+      updateFoundPeaksUI(1);
+    }
+    const fc = document.getElementById('fitCard2D');
+    if (fc) fc.style.display = 'none';
     render2D();
+    renderBoth1DSpectra();
   }
 
   function clearAllFits() {
@@ -4527,6 +4833,8 @@
     clearFoundPeaks(1);
     clearFitRegion(null);
     clearFitBgRegions(null);
+    const hud = document.getElementById('hudCoords');
+    if (hud) hud.innerText = "All 1D and 2D fits and peak labels cleared ('=').";
   }
 
   function updateFitCardsVerbosity() {
@@ -4810,7 +5118,7 @@
     const btnSideFnd2 = document.getElementById('btnSidebarFindPeaksDet2');
     if (btnSideFnd2) btnSideFnd2.addEventListener('click', () => searchPeaks1D(1));
     const btnSideClrPk = document.getElementById('btnSidebarClearPeaks');
-    if (btnSideClrPk) btnSideClrPk.addEventListener('click', () => clearFoundPeaks(null));
+    if (btnSideClrPk) btnSideClrPk.addEventListener('click', () => clearAllFits());
 
     const btnFitAllX = document.getElementById('btnFitAllPeaksX');
     if (btnFitAllX) btnFitAllX.addEventListener('click', () => fitAllPeaks1D(0));

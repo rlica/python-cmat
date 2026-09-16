@@ -1405,12 +1405,12 @@ def print_fit_2d_terminal_report(res, filename, is_cal, verbosity="compact"):
     print(f"{bar}\n", flush=True)
 
 
-def generate_pdf_1d(spec, ch_start, ch_end, is_log=False, zoom_y=1.0, fit_res=None, cal=None, axis_label=None, title=None, grid_mode="both", peaks=None):
+def generate_pdf_1d(spec, ch_start, ch_end, is_log=False, zoom_y=1.0, fit_res=None, cal=None, axis_label=None, title=None, grid_mode="both", peaks=None, fits_list=None):
     """
     Generates a publication-quality 1D spectrum vector PDF with white background,
     Times New Roman font, inward ticks, stepped staircase histogram, optional calibration,
     major and minor gridlines, full peak fit curves (single & multi-peak with baseline),
-    and annotated peak labels with carets and non-colliding text.
+    and annotated peak labels with carets and non-colliding text. Supports multiple persistent fits.
     """
     import io
     import matplotlib
@@ -1463,9 +1463,19 @@ def generate_pdf_1d(spec, ch_start, ch_end, is_log=False, zoom_y=1.0, fit_res=No
         x_axis_name = axis_label or "Channel"
 
     # Stepped histogram centered on bins
-    ax.step(plot_x, sub_y, where="mid", color="#111111", linewidth=1.0, label="Data", zorder=3)
+    step_x = []
+    step_y = []
+    for k in range(len(sub_x)):
+        c = sub_x[k]
+        val = sub_y[k]
+        x_left = ch_to_energy(c - 0.5, cal) if is_cal else (c - 0.5)
+        x_right = ch_to_energy(c + 0.5, cal) if is_cal else (c + 0.5)
+        step_x.extend([x_left, x_right])
+        step_y.extend([val, val])
 
-    # 2. Consolidate peak candidates and fitted peaks
+    ax.plot(step_x, step_y, color="#1a1a1a", linewidth=0.9, zorder=2)
+
+    # 2. Collect and parse peaks
     all_peaks = []
     if peaks:
         for p in peaks:
@@ -1476,12 +1486,36 @@ def generate_pdf_1d(spec, ch_start, ch_end, is_log=False, zoom_y=1.0, fit_res=No
                 if ch_val is not None:
                     all_peaks.append(dict(p))
 
-    # Incorporate peaks from fit_res
-    if fit_res and fit_res.get("success"):
-        if "peaks" in fit_res and len(fit_res["peaks"]) > 0:
-            for fp in fit_res["peaks"]:
-                fch = fp.get("centroid_ch")
-                fe = fp.get("centroid_e")
+    all_fits = list(fits_list) if fits_list else ([fit_res] if fit_res else [])
+
+    # Incorporate peaks from all fits
+    for f_item in all_fits:
+        if f_item and f_item.get("success"):
+            if "peaks" in f_item and len(f_item["peaks"]) > 0:
+                for fp in f_item["peaks"]:
+                    fch = fp.get("centroid_ch")
+                    fe = fp.get("centroid_e")
+                    matched = False
+                    for ap in all_peaks:
+                        ap_ch = ap.get("channel", ap.get("centroid_ch", ap.get("ch")))
+                        if ap_ch is not None and abs(float(ap_ch) - float(fch)) < 2.0:
+                            ap["channel"] = fch
+                            if fe is not None:
+                                ap["energy"] = fe
+                            ap["fitted"] = True
+                            ap["area"] = fp.get("area")
+                            matched = True
+                            break
+                    if not matched:
+                        all_peaks.append({
+                            "channel": fch,
+                            "energy": fe,
+                            "fitted": True,
+                            "area": fp.get("area")
+                        })
+            elif "centroid_ch" in f_item and f_item["centroid_ch"] is not None:
+                fch = f_item["centroid_ch"]
+                fe = f_item.get("centroid_e")
                 matched = False
                 for ap in all_peaks:
                     ap_ch = ap.get("channel", ap.get("centroid_ch", ap.get("ch")))
@@ -1490,7 +1524,6 @@ def generate_pdf_1d(spec, ch_start, ch_end, is_log=False, zoom_y=1.0, fit_res=No
                         if fe is not None:
                             ap["energy"] = fe
                         ap["fitted"] = True
-                        ap["area"] = fp.get("area")
                         matched = True
                         break
                 if not matched:
@@ -1498,28 +1531,8 @@ def generate_pdf_1d(spec, ch_start, ch_end, is_log=False, zoom_y=1.0, fit_res=No
                         "channel": fch,
                         "energy": fe,
                         "fitted": True,
-                        "area": fp.get("area")
+                        "area": f_item.get("area")
                     })
-        elif "centroid_ch" in fit_res and fit_res["centroid_ch"] is not None:
-            fch = fit_res["centroid_ch"]
-            fe = fit_res.get("centroid_e")
-            matched = False
-            for ap in all_peaks:
-                ap_ch = ap.get("channel", ap.get("centroid_ch", ap.get("ch")))
-                if ap_ch is not None and abs(float(ap_ch) - float(fch)) < 2.0:
-                    ap["channel"] = fch
-                    if fe is not None:
-                        ap["energy"] = fe
-                    ap["fitted"] = True
-                    matched = True
-                    break
-            if not matched:
-                all_peaks.append({
-                    "channel": fch,
-                    "energy": fe,
-                    "fitted": True,
-                    "area": fit_res.get("area")
-                })
 
     visible_peaks = []
     for p in all_peaks:
@@ -1553,66 +1566,70 @@ def generate_pdf_1d(spec, ch_start, ch_end, is_log=False, zoom_y=1.0, fit_res=No
     if title:
         ax.set_title(title, fontsize=12, pad=8)
 
-    # 3. Plot fitted peak curve and baseline if available
-    if fit_res and fit_res.get("success"):
-        curve_x = np.array(fit_res.get("curve_x", []), dtype=np.float64)
-        curve_fit = np.array(fit_res.get("curve_fit", []), dtype=np.float64)
-        curve_bg = np.array(fit_res.get("curve_bg", []), dtype=np.float64)
+    # 3. Plot fitted peak curves and baselines if available
+    for idx_fit, f_res in enumerate(all_fits):
+        if not f_res or not f_res.get("success"):
+            continue
+        curve_x = np.array(f_res.get("curve_x", []), dtype=np.float64)
+        curve_fit = np.array(f_res.get("curve_fit", []), dtype=np.float64)
+        curve_bg = np.array(f_res.get("curve_bg", []), dtype=np.float64)
 
         if len(curve_x) > 0 and len(curve_fit) > 0:
             curve_x_plot = np.array([ch_to_energy(c, cal) for c in curve_x]) if is_cal else curve_x
             if len(curve_bg) > 0:
-                ax.plot(curve_x_plot, curve_bg, color="#cc0066", linestyle="--", linewidth=1.2, label="Background", zorder=3)
-            ax.plot(curve_x_plot, curve_fit, color="#d95f02", linestyle="-", linewidth=1.8, label="Fit", zorder=4)
+                ax.plot(curve_x_plot, curve_bg, color="#cc0066", linestyle="--", linewidth=1.2, label="Background" if idx_fit == 0 else None, zorder=3)
+            ax.plot(curve_x_plot, curve_fit, color="#d95f02", linestyle="-", linewidth=1.8, label="Fit" if idx_fit == 0 else None, zorder=4)
 
-            if "peaks" in fit_res and len(fit_res["peaks"]) > 0:
-                p_list = fit_res["peaks"]
+            if "peaks" in f_res and len(f_res["peaks"]) > 0:
+                p_list = f_res["peaks"]
                 for p in p_list:
                     p_mu = ch_to_energy(p["centroid_ch"], cal) if is_cal else p["centroid_ch"]
                     ax.axvline(p_mu, color="#d95f02", linestyle=":", linewidth=0.7, alpha=0.65, zorder=2)
-                tot_a = sum(p.get("area", 0.0) for p in p_list)
-                red_chi2 = fit_res.get("red_chi2", 0.0)
-                info_txt = f"Multi-Peak Fit: {len(p_list)} peaks\nTotal Net Area: {tot_a:,.1f} counts\n$\\chi^2_\\nu$: {red_chi2:.2f}"
-                box_x = 0.04
-                box_ha = "left"
-                tallest_p = max(p_list, key=lambda p: p.get("amplitude", p.get("counts", p.get("area", 0.0))))
-                tallest_mu = ch_to_energy(tallest_p["centroid_ch"], cal) if is_cal else tallest_p["centroid_ch"]
-                if (tallest_mu - min(x_lim_0, x_lim_1)) / max(1e-6, abs(x_lim_1 - x_lim_0)) <= 0.5:
-                    box_x = 0.96
-                    box_ha = "right"
-                ax.text(box_x, 0.94, info_txt, transform=ax.transAxes, verticalalignment="top", horizontalalignment=box_ha,
-                        fontsize=9, fontfamily="serif", bbox=dict(boxstyle="round,pad=0.4", facecolor="white", edgecolor="#999999", alpha=0.92), zorder=7)
+                if len(all_fits) == 1:
+                    tot_a = sum(p.get("area", 0.0) for p in p_list)
+                    red_chi2 = f_res.get("red_chi2", 0.0)
+                    info_txt = f"Multi-Peak Fit: {len(p_list)} peaks\nTotal Net Area: {tot_a:,.1f} counts\n$\\chi^2_\\nu$: {red_chi2:.2f}"
+                    box_x = 0.04
+                    box_ha = "left"
+                    tallest_p = max(p_list, key=lambda p: p.get("amplitude", p.get("counts", p.get("area", 0.0))))
+                    tallest_mu = ch_to_energy(tallest_p["centroid_ch"], cal) if is_cal else tallest_p["centroid_ch"]
+                    if (tallest_mu - min(x_lim_0, x_lim_1)) / max(1e-6, abs(x_lim_1 - x_lim_0)) <= 0.5:
+                        box_x = 0.96
+                        box_ha = "right"
+                    ax.text(box_x, 0.94, info_txt, transform=ax.transAxes, verticalalignment="top", horizontalalignment=box_ha,
+                            fontsize=9, fontfamily="serif", bbox=dict(boxstyle="round,pad=0.4", facecolor="white", edgecolor="#999999", alpha=0.92), zorder=7)
             else:
-                mu = fit_res.get("centroid_ch")
+                mu = f_res.get("centroid_ch")
                 if mu is not None:
                     mu_plot = ch_to_energy(mu, cal) if is_cal else mu
                     ax.axvline(mu_plot, color="#d95f02", linestyle=":", linewidth=1.0, zorder=2)
 
-                area_str = f"{fit_res.get('area', 0):.1f} ± {fit_res.get('area_err', 0):.1f}"
-                if is_cal:
-                    centroid_val = fit_res.get('centroid_e', ch_to_energy(fit_res.get('centroid_ch', 0), cal))
-                    centroid_err = fit_res.get('centroid_e_err', fit_res.get('centroid_ch_err', 0) * de_dch(fit_res.get('centroid_ch', 0), cal))
-                    fwhm_val = fit_res.get('fwhm_e', fit_res.get('fwhm_ch', 0) * de_dch(fit_res.get('centroid_ch', 0), cal))
-                    fwhm_err = fit_res.get('fwhm_e_err', fit_res.get('fwhm_ch_err', 0) * de_dch(fit_res.get('centroid_ch', 0), cal))
-                    unit_str = "keV"
-                else:
-                    centroid_val = fit_res.get('centroid_ch', 0)
-                    centroid_err = fit_res.get('centroid_ch_err', 0)
-                    fwhm_val = fit_res.get('fwhm_ch', 0)
-                    fwhm_err = fit_res.get('fwhm_ch_err', 0)
-                    unit_str = "ch"
+                if len(all_fits) == 1:
+                    area_str = f"{f_res.get('area', 0):.1f} ± {f_res.get('area_err', 0):.1f}"
+                    if is_cal:
+                        centroid_val = f_res.get('centroid_e', ch_to_energy(f_res.get('centroid_ch', 0), cal))
+                        centroid_err = f_res.get('centroid_e_err', f_res.get('centroid_ch_err', 0) * de_dch(f_res.get('centroid_ch', 0), cal))
+                        fwhm_val = f_res.get('fwhm_e', f_res.get('fwhm_ch', 0) * de_dch(f_res.get('centroid_ch', 0), cal))
+                        fwhm_err = f_res.get('fwhm_e_err', f_res.get('fwhm_ch_err', 0) * de_dch(f_res.get('centroid_ch', 0), cal))
+                        unit_str = "keV"
+                    else:
+                        centroid_val = f_res.get('centroid_ch', 0)
+                        centroid_err = f_res.get('centroid_ch_err', 0)
+                        fwhm_val = f_res.get('fwhm_ch', 0)
+                        fwhm_err = f_res.get('fwhm_ch_err', 0)
+                        unit_str = "ch"
 
-                centroid_str = f"{centroid_val:.2f} ± {centroid_err:.2f}"
-                fwhm_str = f"{fwhm_val:.2f} ± {fwhm_err:.2f}"
-                info_txt = f"Centroid: {centroid_str} {unit_str}\nArea: {area_str} counts\nFWHM: {fwhm_str} {unit_str}\n$\\chi^2_\\nu$: {fit_res.get('red_chi2', 0):.2f}"
-                box_x = 0.04
-                box_ha = "left"
-                if mu is not None:
-                    if (mu_plot - min(x_lim_0, x_lim_1)) / max(1e-6, abs(x_lim_1 - x_lim_0)) <= 0.5:
-                        box_x = 0.96
-                        box_ha = "right"
-                ax.text(box_x, 0.94, info_txt, transform=ax.transAxes, verticalalignment="top", horizontalalignment=box_ha,
-                        fontsize=9, fontfamily="serif", bbox=dict(boxstyle="round,pad=0.4", facecolor="white", edgecolor="#999999", alpha=0.92), zorder=7)
+                    centroid_str = f"{centroid_val:.2f} ± {centroid_err:.2f}"
+                    fwhm_str = f"{fwhm_val:.2f} ± {fwhm_err:.2f}"
+                    info_txt = f"Centroid: {centroid_str} {unit_str}\nArea: {area_str} counts\nFWHM: {fwhm_str} {unit_str}\n$\\chi^2_\\nu$: {f_res.get('red_chi2', 0):.2f}"
+                    box_x = 0.04
+                    box_ha = "left"
+                    if mu is not None:
+                        if (mu_plot - min(x_lim_0, x_lim_1)) / max(1e-6, abs(x_lim_1 - x_lim_0)) <= 0.5:
+                            box_x = 0.96
+                            box_ha = "right"
+                    ax.text(box_x, 0.94, info_txt, transform=ax.transAxes, verticalalignment="top", horizontalalignment=box_ha,
+                            fontsize=9, fontfamily="serif", bbox=dict(boxstyle="round,pad=0.4", facecolor="white", edgecolor="#999999", alpha=0.92), zorder=7)
 
     # 4. Plot Peak Labels with Carets and Collision Detection
     if visible_peaks:
@@ -1704,10 +1721,11 @@ def generate_pdf_1d(spec, ch_start, ch_end, is_log=False, zoom_y=1.0, fit_res=No
     return buf.getvalue()
 
 
-def generate_pdf_2d(matrix, x0, x1, y0, y1, cmap_name="turbo", scale_mode="log", vmin=0, vmax=100, fit_2d_res=None, cal_x=None, cal_y=None, x_label=None, y_label=None, title=None):
+def generate_pdf_2d(matrix, x0, x1, y0, y1, cmap_name="turbo", scale_mode="log", vmin=0, vmax=100, fit_2d_res=None, cal_x=None, cal_y=None, x_label=None, y_label=None, title=None, fits_2d_list=None):
     """
     Generates a publication-quality 2D coincidence matrix vector PDF with white background,
     Times New Roman font, per-axis calibration axes labels, colorbar, and optional fit overlays.
+    Supports multiple persistent 2D coincidence fits.
     """
     import io
     import matplotlib
@@ -1772,29 +1790,33 @@ def generate_pdf_2d(matrix, x0, x1, y0, y1, cmap_name="turbo", scale_mode="log",
     cbar.set_label("Counts", fontsize=11, labelpad=6)
     cbar.ax.tick_params(labelsize=9)
 
-    # Draw 2D fit crosshair, ellipse and ROI box if active
-    if fit_2d_res and fit_2d_res.get("success"):
-        cx = fit_2d_res.get("centroid_x_ch", 0)
-        cy = fit_2d_res.get("centroid_y_ch", 0)
-        fwhm_x = fit_2d_res.get("fwhm_x_ch", 4.0)
-        fwhm_y = fit_2d_res.get("fwhm_y_ch", 4.0)
+    # Draw 2D fit crosshairs, ellipses and ROI boxes if active
+    import matplotlib.patches as patches
+    all_2d_fits = list(fits_2d_list) if fits_2d_list else ([fit_2d_res] if fit_2d_res else [])
+
+    for idx_f2d, f_2d in enumerate(all_2d_fits):
+        if not f_2d or not f_2d.get("success"):
+            continue
+        cx = f_2d.get("centroid_x_ch", 0)
+        cy = f_2d.get("centroid_y_ch", 0)
+        fwhm_x = f_2d.get("fwhm_x_ch", 4.0)
+        fwhm_y = f_2d.get("fwhm_y_ch", 4.0)
 
         cx_plot = ch_to_energy(cx, cal_x) if is_cal_x else cx
         cy_plot = ch_to_energy(cy, cal_y) if is_cal_y else cy
         fx_plot = fwhm_x * de_dch(cx, cal_x) if is_cal_x else fwhm_x
         fy_plot = fwhm_y * de_dch(cy, cal_y) if is_cal_y else fwhm_y
 
-        rx0 = fit_2d_res.get("roi_x_min", cx - 8)
-        rx1 = fit_2d_res.get("roi_x_max", cx + 8) + 1
-        ry0 = fit_2d_res.get("roi_y_min", cy - 8)
-        ry1 = fit_2d_res.get("roi_y_max", cy + 8) + 1
+        rx0 = f_2d.get("roi_x_min", cx - 8)
+        rx1 = f_2d.get("roi_x_max", cx + 8) + 1
+        ry0 = f_2d.get("roi_y_min", cy - 8)
+        ry1 = f_2d.get("roi_y_max", cy + 8) + 1
 
         rx0_plot = ch_to_energy(rx0, cal_x) if is_cal_x else rx0
         rx1_plot = ch_to_energy(rx1, cal_x) if is_cal_x else rx1
         ry0_plot = ch_to_energy(ry0, cal_y) if is_cal_y else ry0
         ry1_plot = ch_to_energy(ry1, cal_y) if is_cal_y else ry1
 
-        import matplotlib.patches as patches
         rect = patches.Rectangle((rx0_plot, ry0_plot), rx1_plot - rx0_plot, ry1_plot - ry0_plot, linewidth=1.0, edgecolor="#ffd600", facecolor="none", linestyle="--", alpha=0.7)
         ax.add_patch(rect)
 
@@ -1808,16 +1830,22 @@ def generate_pdf_2d(matrix, x0, x1, y0, y1, cmap_name="turbo", scale_mode="log",
         ell = Ellipse((cx_plot, cy_plot), width=fx_plot, height=fy_plot, angle=0, edgecolor="#ffd600", facecolor="none", linewidth=1.6)
         ax.add_patch(ell)
 
-        # Text annotation with Net Volume and Centroid
-        vol_val = fit_2d_res.get("volume", 0)
-        vol_err = fit_2d_res.get("volume_err", 0)
+        # Badge
+        vol_val = f_2d.get("volume", 0)
+        vol_err = f_2d.get("volume_err", 0)
         vol_str = f"Net Vol: {vol_val:,.0f} ± {vol_err:,.0f} cts" if vol_err else f"Net Vol: {vol_val:,.0f} cts"
         unit_x = "keV" if is_cal_x else "ch"
         unit_y = "keV" if is_cal_y else "ch"
-        ax.text(0.02, 0.98, f"2D Coincidence Peak\nCentroid: ({cx_plot:.2f} {unit_x}, {cy_plot:.2f} {unit_y})\n{vol_str}",
-                transform=ax.transAxes, verticalalignment="top", fontsize=9,
-                bbox=dict(boxstyle="round,pad=0.4", facecolor="#191c20", edgecolor="#ffd600", alpha=0.85),
-                color="#ffffff", fontfamily="monospace")
+        if len(all_2d_fits) == 1:
+            ax.text(0.02, 0.98, f"2D Coincidence Peak\nCentroid: ({cx_plot:.2f} {unit_x}, {cy_plot:.2f} {unit_y})\n{vol_str}",
+                    transform=ax.transAxes, verticalalignment="top", fontsize=9,
+                    bbox=dict(boxstyle="round,pad=0.4", facecolor="#191c20", edgecolor="#ffd600", alpha=0.85),
+                    color="#ffffff", fontfamily="monospace")
+        else:
+            # Multi-peak callout near each centroid
+            ax.text(cx_plot + fx_plot * 0.55, cy_plot + fy_plot * 0.55, f"({cx_plot:.1f}, {cy_plot:.1f})\n{vol_str}",
+                    fontsize=7.5, bbox=dict(boxstyle="round,pad=0.25", facecolor="#191c20", edgecolor="#ffd600", alpha=0.88),
+                    color="#ffd600", fontfamily="sans-serif", weight="bold")
 
     fig.tight_layout()
     buf = io.BytesIO()
@@ -5209,11 +5237,22 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             session = self.get_session()
             axis_cal = session.get_cal(axis)
 
-            fit_res = None
+            fit_channels_str = query.get("fit_channels", [""])[0]
+            fits_list = []
+            if fit_channels_str:
+                try:
+                    fchs = [float(c.strip()) for c in fit_channels_str.split(",") if c.strip()]
+                    for ch in fchs:
+                        fr = fit_gaussian_peak(np.arange(len(spec)) + 0.5, spec, ch, fit_type=fit_type, fwhm_mult=fwhm_mult, cal=axis_cal)
+                        if fr and fr.get("success"):
+                            fits_list.append(fr)
+                except Exception as e:
+                    print(f"[!] PDF multi single-fit error: {e}", file=sys.stderr)
+
             if has_multi_fit and multi_peaks:
                 try:
                     p_chs = [float(c.strip()) for c in multi_peaks.split(",") if c.strip()]
-                    fit_res = fit_all_peaks_1d(
+                    m_res = fit_all_peaks_1d(
                         spec, ch_start, ch_end, p_chs,
                         fit_type=multi_fit_type,
                         fwhm_est=fwhm_est,
@@ -5221,17 +5260,21 @@ class CMATWebHandler(BaseHTTPRequestHandler):
                         fwhm_mult=fwhm_mult,
                         region=region
                     )
+                    if m_res and m_res.get("success"):
+                        fits_list.append(m_res)
                 except Exception as e:
                     print(f"[!] PDF multi-fit error: {e}", file=sys.stderr)
-                    fit_res = None
-            elif has_fit and fit_ch is not None:
+            elif not fits_list and has_fit and fit_ch is not None:
                 try:
-                    fit_res = fit_gaussian_peak(np.arange(len(spec)) + 0.5, spec, fit_ch, fit_type=fit_type, fwhm_mult=fwhm_mult, cal=axis_cal)
+                    fr = fit_gaussian_peak(np.arange(len(spec)) + 0.5, spec, fit_ch, fit_type=fit_type, fwhm_mult=fwhm_mult, cal=axis_cal)
+                    if fr and fr.get("success"):
+                        fits_list.append(fr)
                 except Exception as e:
                     print(f"[!] PDF single fit error: {e}", file=sys.stderr)
-                    fit_res = None
-            elif axis in session.fits_1d and session.fits_1d[axis]:
-                fit_res = session.fits_1d[axis]
+            elif not fits_list and axis in session.fits_1d and session.fits_1d[axis]:
+                fits_list.append(session.fits_1d[axis])
+
+            fit_res = fits_list[0] if len(fits_list) == 1 else None
 
             try:
                 pdf_bytes = generate_pdf_1d(
@@ -5239,6 +5282,7 @@ class CMATWebHandler(BaseHTTPRequestHandler):
                     is_log=is_log,
                     zoom_y=zoom_y,
                     fit_res=fit_res,
+                    fits_list=fits_list,
                     cal=axis_cal,
                     grid_mode=grid_mode,
                     peaks=peaks
@@ -5278,19 +5322,35 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             cal_x = session.get_cal(0)
             cal_y = session.get_cal(1)
 
+            fits_2d_json = query.get("fits_2d", [""])[0]
+            fits_2d_list = []
+            if fits_2d_json:
+                try:
+                    fits_2d_list = json.loads(fits_2d_json)
+                except Exception as e:
+                    print(f"[!] PDF 2D multi-fit parse error: {e}", file=sys.stderr)
+                    fits_2d_list = []
+
             fit_2d_res = None
-            if has_fit and fit_x is not None and fit_y is not None:
+            if not fits_2d_list and has_fit and fit_x is not None and fit_y is not None:
                 try:
                     proj_y = self.proj if (self.reader and self.reader.is_symmetric) else np.sum(self.matrix, axis=1, dtype=np.float64)
                     fit_2d_res = fit_2d_gaussian_peak(
                         self.matrix, fit_x, fit_y, fit_type=fit_type, cal_x=cal_x, cal_y=cal_y, roi_half_width=16,
                         proj_x=self.proj, proj_y=proj_y, total_counts=float(np.sum(self.proj))
                     )
+                    if fit_2d_res and fit_2d_res.get("success"):
+                        fits_2d_list.append(fit_2d_res)
                 except Exception:
                     fit_2d_res = None
 
             try:
-                pdf_bytes = generate_pdf_2d(self.matrix, x0, x1, y0, y1, cmap_name=cmap, scale_mode=scale, vmin=vmin, vmax=vmax, fit_2d_res=fit_2d_res, cal_x=cal_x, cal_y=cal_y)
+                pdf_bytes = generate_pdf_2d(
+                    self.matrix, x0, x1, y0, y1,
+                    cmap_name=cmap, scale_mode=scale, vmin=vmin, vmax=vmax,
+                    fit_2d_res=fit_2d_res, fits_2d_list=fits_2d_list,
+                    cal_x=cal_x, cal_y=cal_y
+                )
                 self.send_response(200)
                 self.send_header("Content-type", "application/pdf")
                 self.send_header("Content-Disposition", f'attachment; filename="{self.reader.filename.stem}_2D_Matrix_{x0}_{x1}_{y0}_{y1}.pdf"')
