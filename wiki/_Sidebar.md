@@ -1,5 +1,5 @@
 ### **[python-cmat](Home)**
-*Interactive 2D Coincidence Spectroscopy*
+*Interactive 2D Matrix Analysis & Spectroscopy*
 
 ---
 

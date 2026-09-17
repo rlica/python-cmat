@@ -1,6 +1,8 @@
 # Interactive Web Viewer
 
-The `cmat_webviewer.py` server and companion `cmat_webviewer.html` client provide an ultra-responsive, browser-based GUI for exploring 2D $\gamma$-$\gamma$ coincidence matrices and conducting nuclear structure analysis.
+The `cmat_webviewer.py` server and companion `cmat_webviewer.html` client provide an ultra-responsive, browser-based GUI for exploring 2D matrices in the `.cmat` format and conducting nuclear physics data analysis.
+
+While the viewer functions as a high-performance visualizer for arbitrary 2D `.cmat` datasets, it features dedicated subroutines tailored for $\gamma$-$\gamma$ coincidence matrices (including multi-gate coincidence slicing with normalized background subtraction, simultaneous dual 1D projections, and 2D coincidence peak fitting). Future releases will extend support to 3D matrices and time-difference spectra.
 
 <p align="center">
   <img width="900" alt="cmat_webviewer interface" src="https://github.com/user-attachments/assets/460ab83c-cbfa-4ee8-9194-f57c58e5215e" />

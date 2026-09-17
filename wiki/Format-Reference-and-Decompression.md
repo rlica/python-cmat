@@ -1,6 +1,8 @@
 # Format Reference & Decompression
 
-[GASPware](https://github.com/csteke/GASPware) and `gsort` `.cmat` 2D coincidence matrices are stored in an IVF (Indexed Variable Format) file container consisting of 512-byte binary records. `python-cmat` implements a pure Python + NumPy reverse-engineered reader that parses and decompresses all IVF records without external compiled dependencies.
+[GASPware](https://github.com/csteke/GASPware) and `gsort` 2D matrices in the `.cmat` format are stored in an IVF (Indexed Variable Format) file container consisting of 512-byte binary records. `python-cmat` implements a pure Python + NumPy reverse-engineered reader that parses and decompresses all IVF records without external compiled dependencies.
+
+While the format is widely known in nuclear structure experiments for storing 2D $\gamma$-$\gamma$ coincidence matrices, the container and compression routines are general to any 2D matrix (symmetric, asymmetric, or arbitrary block steps). Future releases will also incorporate handling of 3D matrices and time-difference spectra.
 
 ---
 
