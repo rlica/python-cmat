@@ -38,6 +38,36 @@ Explore the full documentation topics below or navigate using the sidebar:
 
 ---
 
+## Quick Installation & Setup
+
+### Prerequisites (Ubuntu / Debian Linux)
+```bash
+sudo apt update && sudo apt install python3 python3-pip python3-venv
+```
+
+### Clone & Install
+```bash
+git clone https://github.com/rlica/python-cmat.git
+cd python-cmat
+```
+
+On modern Linux environments enforcing PEP 668 (`externally-managed-environment`):
+- **Virtual Environment (Recommended)**:
+  ```bash
+  python3 -m venv .venv && source .venv/bin/activate
+  pip install -r requirements.txt
+  ```
+- **System APT Packages (Zero venv setup)**:
+  ```bash
+  sudo apt install python3-numpy python3-scipy
+  ```
+- **Direct Pip Flag**:
+  ```bash
+  pip install -r requirements.txt --break-system-packages
+  ```
+
+---
+
 ## Key Capabilities at a Glance
 
 - **Pure Python + NumPy Decompression**: Fully reverse-engineers all proprietary IVF block compression algorithms (Modes 0–32 bit-packing, Mode 33 16-bit sparse lists, Mode 34 32-bit sparse lists, Mode 37 tagged token bit-streams, and Mode 41 unary run-length shift maps) without requiring legacy 32-bit Fortran binaries or external C libraries.

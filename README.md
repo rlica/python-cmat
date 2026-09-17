@@ -35,12 +35,37 @@ While built as a general reader, converter, and visualizer for any 2D `.cmat` ma
 
 ### 1. Installation
 
+#### Prerequisites (Linux / Ubuntu / Debian)
+If Python 3 and pip are not yet installed on your system:
+```bash
+sudo apt update && sudo apt install python3 python3-pip python3-venv
+```
+*(Requires Python 3.8+, NumPy, and SciPy).*
+
+#### Clone & Install Dependencies
 ```bash
 git clone https://github.com/rlica/python-cmat.git
 cd python-cmat
-pip install -r requirements.txt
 ```
-*(Requires Python 3.8+, NumPy, and SciPy).*
+
+On modern Linux distributions (e.g. Ubuntu 23.04+, Debian 12+), `pip` prevents installing packages directly into the system environment (`error: externally-managed-environment`). You can install dependencies using any of the following methods:
+
+- **Option A: Virtual Environment (Recommended)**
+  ```bash
+  python3 -m venv .venv
+  source .venv/bin/activate
+  pip install -r requirements.txt
+  ```
+
+- **Option B: System APT Packages (No virtual environment needed)**
+  ```bash
+  sudo apt install python3-numpy python3-scipy
+  ```
+
+- **Option C: Direct Pip Flag**
+  ```bash
+  pip install -r requirements.txt --break-system-packages
+  ```
 
 ### 2. Launch Interactive Web Viewer
 
