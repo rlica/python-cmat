@@ -59,7 +59,7 @@ On modern Linux environments enforcing PEP 668 (`externally-managed-environment`
   ```
 - **System APT Packages (Zero venv setup)**:
   ```bash
-  sudo apt install python3-numpy python3-scipy
+  sudo apt install python3-numpy python3-scipy python3-matplotlib
   ```
 - **Direct Pip Flag**:
   ```bash

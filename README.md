@@ -40,7 +40,7 @@ If Python 3 and pip are not yet installed on your system:
 ```bash
 sudo apt update && sudo apt install python3 python3-pip python3-venv
 ```
-*(Requires Python 3.8+, NumPy, and SciPy).*
+*(Requires Python 3.8+, NumPy, SciPy, and Matplotlib).*
 
 #### Clone & Install Dependencies
 ```bash
@@ -59,7 +59,7 @@ On modern Linux distributions (e.g. Ubuntu 23.04+, Debian 12+), `pip` prevents i
 
 - **Option B: System APT Packages (No virtual environment needed)**
   ```bash
-  sudo apt install python3-numpy python3-scipy
+  sudo apt install python3-numpy python3-scipy python3-matplotlib
   ```
 
 - **Option C: Direct Pip Flag**
