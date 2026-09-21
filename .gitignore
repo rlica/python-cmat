@@ -7,9 +7,11 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Large generated exports (generate with python3 cmat2amat.py)
+# Large generated exports & data files (keep sample 2D matrix GeE-symm.cmat)
 *.amat
 *.dat
+*.cmat
+!GeE-symm.cmat
 
 # Virtual environments
 .env
@@ -22,11 +24,16 @@ venv/
 
 # Local configuration files
 python-cmat-config.txt
+python-cmat3d-config.txt
+
+# 3D matrix cache
+.cmat3d_cache/
 
 # In-browser matrix upload cache
 .cmat_uploads/
 
 # Local IDE / Agent metadata
 .agents/
+
 
 

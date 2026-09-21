@@ -1,11 +1,12 @@
 ### **[python-cmat](Home)**
-*Interactive 2D Matrix Analysis & Spectroscopy*
+*Interactive 2D & 3D Matrix Analysis & Spectroscopy*
 
 ---
 
 ### **Navigation**
 - **[Home](Home)**
 - **[Interactive Web Viewer](Interactive-Web-Viewer)**
+- **[3D Matrix Analysis & Web Viewer](3D-Matrix-Analysis-and-Web-Viewer)**
 - **[Keyboard Shortcuts & Controls](Keyboard-Shortcuts-and-Navigation)**
 
 ---

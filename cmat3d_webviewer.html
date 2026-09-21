@@ -1,0 +1,4559 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>GASPware 3D Matrix Web Viewer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: #121212;
+    color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    font-size: 13px;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    user-select: none;
+  }
+
+  header {
+    background: #1a1a1a;
+    border-bottom: 1px solid #2e2e2e;
+    padding: 6px 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-shrink: 0;
+    height: 44px;
+  }
+  .title {
+    font-weight: 700;
+    font-size: 0.95rem;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+  }
+  .badge {
+    font-size: 0.70rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+    text-transform: uppercase;
+  }
+  .badge-3d { background: #00e5ff; color: #000; }
+  .badge-plane { background: #7c4dff; color: #fff; }
+
+  .plane-selector-bar {
+    display: flex;
+    align-items: center;
+    background: #242424;
+    border: 1px solid #3d3d3d;
+    border-radius: 5px;
+    padding: 2px 4px;
+    gap: 3px;
+  }
+  .plane-btn {
+    background: transparent;
+    border: none;
+    color: #9e9e9e;
+    padding: 3px 8px;
+    font-size: 0.74rem;
+    font-weight: 600;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .plane-btn:hover {
+    color: #fff;
+    background: #333;
+  }
+  .plane-btn.active {
+    background: #00e5ff;
+    color: #000;
+    font-weight: 700;
+  }
+
+  .third-axis-badge {
+    background: #242424;
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 0.72rem;
+    color: #aaa;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+  .third-axis-badge.is-gated {
+    border-color: #ffd600;
+    color: #ffd600;
+    background: #2a2610;
+  }
+
+  .banana-badge {
+    background: #242424;
+    border: 1px solid #3a3a3a;
+    border-radius: 4px;
+    padding: 3px 8px;
+    font-size: 0.72rem;
+    color: #ffd600;
+    display: none;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+  }
+
+  .matrix-select-wrap {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin-left: 4px;
+  }
+  .matrix-select {
+    background: #242424;
+    border: 1px solid #3a3a3a;
+    color: #ffd600;
+    font-family: monospace;
+    font-size: 0.78rem;
+    padding: 3px 8px;
+    border-radius: 4px;
+    outline: none;
+    max-width: 200px;
+    cursor: pointer;
+  }
+  .matrix-open-btn {
+    background: linear-gradient(135deg, #00897b, #004d40);
+    color: #e0f2f1;
+    border: 1px solid #00bfa5;
+    border-radius: 4px;
+    padding: 2px 9px;
+    font-size: 0.74rem;
+    font-weight: 600;
+    cursor: pointer;
+    line-height: 1.3;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .matrix-open-btn:hover {
+    background: linear-gradient(135deg, #00bfa5, #00695c);
+  }
+
+  .hud {
+    margin-left: auto;
+    font-family: monospace;
+    font-size: 0.76rem;
+    color: #81c784;
+    background: #111;
+    padding: 3px 10px;
+    border-radius: 4px;
+    border: 1px solid #2d2d2d;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 500px;
+  }
+
+  .main-container {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+  }
+
+  aside {
+    width: 290px;
+    background: #181818;
+    border-right: 1px solid #2d2d2d;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+    flex-shrink: 0;
+  }
+  aside.collapsed {
+    display: none;
+  }
+  .btn-sidebar-toggle {
+    background: #212121;
+    color: #00e5ff;
+    border: 1px solid #3d3d3d;
+    border-radius: 4px;
+    padding: 2px 7px;
+    font-size: 0.82rem;
+    cursor: pointer;
+    line-height: 1.2;
+    transition: all 0.15s;
+    font-weight: 600;
+  }
+  .btn-sidebar-toggle:hover {
+    background: #2f2f2f;
+    border-color: #00e5ff;
+  }
+
+  .control-group {
+    background: #212121;
+    border: 1px solid #333;
+    border-radius: 6px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .control-group h3 {
+    font-size: 0.82rem;
+    color: #90caf9;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid #333;
+    padding-bottom: 4px;
+    margin-bottom: 2px;
+  }
+  label {
+    font-size: 0.76rem;
+    color: #aaa;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .range-val { color: #ffd600; font-family: monospace; font-weight: bold; }
+  input[type=range] { width: 100%; accent-color: #00e5ff; cursor: pointer; }
+  select, input[type=text], input[type=number] {
+    background: #2b2b2b;
+    border: 1px solid #444;
+    color: #fff;
+    padding: 4px 6px;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    outline: none;
+    width: 100%;
+  }
+  select:focus, input:focus { border-color: #00e5ff; }
+  button {
+    background: #263238;
+    color: #80cbc4;
+    border: 1px solid #37474f;
+    padding: 5px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.76rem;
+    font-weight: 600;
+    transition: all 0.15s;
+    outline: none;
+  }
+  button:hover { background: #37474f; color: #fff; border-color: #00e5ff; }
+  button.secondary { background: #1c252a; color: #90a4ae; }
+  button.secondary:hover { background: #263238; color: #eceff1; }
+  .btn-pdf {
+    background: linear-gradient(135deg, #c62828, #8e0000);
+    color: #ffebee;
+    border-color: #e53935;
+  }
+  .btn-pdf:hover {
+    background: linear-gradient(135deg, #d32f2f, #b71c1c);
+  }
+
+  .matrix-info-box {
+    font-family: monospace;
+    font-size: 0.72rem;
+    color: #bbb;
+    background: #191c20;
+    border: 1px solid #2d3748;
+    border-radius: 4px;
+    padding: 6px 8px;
+    line-height: 1.4;
+  }
+  .matrix-info-box .hl { color: #00e5ff; font-weight: bold; }
+
+  /* Workspace Layout */
+  .workspace {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .panel-2d {
+    flex: 1 1 50%;
+    min-width: 250px;
+    background: #161616;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    padding: 6px 6px 0 6px;
+    overflow: hidden;
+  }
+  .panel-2d-toolbar {
+    height: 28px;
+    min-height: 28px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 4px;
+    margin-bottom: 4px;
+    flex-shrink: 0;
+    font-size: 0.75rem;
+  }
+  .panel-2d canvas {
+    width: 100%;
+    height: 100%;
+    flex: 1 1 0px;
+    min-height: 0;
+    background: #080808;
+    border-radius: 4px;
+    cursor: crosshair;
+    display: block;
+  }
+  .panel-2d-footer {
+    height: 22px;
+    min-height: 22px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 6px;
+    font-size: 0.70rem;
+    color: #aaa;
+    font-family: monospace;
+    flex-shrink: 0;
+  }
+
+  .panel-resizer {
+    width: 6px;
+    background: #252525;
+    cursor: col-resize;
+    transition: background 0.15s;
+    flex-shrink: 0;
+  }
+  .panel-resizer:hover { background: #00e5ff; }
+
+  .panel-1d-container {
+    flex: 1 1 50%;
+    min-width: 280px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    background: #141414;
+    padding: 6px 6px 6px 0;
+    overflow-y: auto;
+  }
+
+  .panel-1d {
+    flex: 1 1 0px;
+    min-height: 140px;
+    background: #181818;
+    border-radius: 5px;
+    border: 1px solid #2a2a2a;
+    display: flex;
+    flex-direction: column;
+    padding: 4px 6px 4px 6px;
+    position: relative;
+  }
+  .panel-1d-header {
+    height: 26px;
+    min-height: 26px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 4px;
+    flex-shrink: 0;
+    font-size: 0.75rem;
+  }
+  .panel-1d-title {
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .panel-1d canvas {
+    width: 100%;
+    height: 100%;
+    flex: 1 1 0px;
+    min-height: 0;
+    background: #111;
+    border-radius: 4px;
+    cursor: crosshair;
+    display: block;
+  }
+
+  .scale-toggle-btn, .grid-toggle-btn {
+    padding: 2px 7px;
+    font-size: 0.70rem;
+    border-radius: 3px;
+    background: #252525;
+    color: #aaa;
+    border: 1px solid #444;
+    cursor: pointer;
+  }
+  .scale-toggle-btn:hover, .grid-toggle-btn:hover {
+    color: #ffd600;
+    border-color: #ffd600;
+  }
+  .grid-toggle-btn.active {
+    color: #00e5ff;
+    border-color: #00e5ff;
+  }
+
+  .fit-btn-close {
+    background: transparent;
+    border: 1px solid #555;
+    color: #bbb;
+    padding: 1px 6px;
+    font-size: 0.7rem;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .fit-btn-close:hover { background: #333; color: #fff; }
+  .fit-btn-toggle {
+    background: transparent;
+    border: 1px solid #444;
+    color: #aaa;
+    padding: 1px 6px;
+    font-size: 0.68rem;
+    border-radius: 3px;
+    cursor: pointer;
+  }
+  .fit-btn-toggle:hover { background: #333; color: #fff; }
+
+  /* Fit / Integration Cards */
+  .fit-results-card {
+    background: #191c20;
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 0.74rem;
+    font-family: monospace;
+    flex-shrink: 0;
+    display: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    margin-top: 4px;
+  }
+  .fit-card-1d { border: 1px solid #00e5ff; }
+  .fit-card-multi-1d { border: 1px solid #00e676; max-height: 220px; overflow-y: auto; }
+  .fit-card-2d { border: 1px solid #ffd600; }
+
+  .fit-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+    font-weight: bold;
+    color: #ffd600;
+  }
+  .fit-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 4px 10px;
+  }
+  .fit-item { display: flex; flex-direction: column; }
+  .fit-item .lbl { color: #888; font-size: 0.68rem; text-transform: uppercase; }
+  .fit-item .val { color: #fff; font-weight: bold; font-family: monospace; }
+
+  .fit-compact-box {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 2px 0;
+    overflow-x: auto;
+  }
+  .fit-compact-line {
+    font-family: monospace;
+    font-size: 0.74rem;
+    color: #eee;
+    white-space: pre;
+    line-height: 1.4;
+  }
+
+  /* Help & Browser Modals */
+  .modal-backdrop {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0, 0, 0, 0.75);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    backdrop-filter: blur(2px);
+  }
+  .modal {
+    background: #1f1f1f;
+    border: 1px solid #444;
+    border-radius: 8px;
+    padding: 16px 20px;
+    max-width: 680px;
+    width: 90%;
+    max-height: 85vh;
+    overflow-y: auto;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.8);
+  }
+  .modal-title {
+    font-size: 1.1rem;
+    color: #00e5ff;
+    font-weight: bold;
+    margin-bottom: 12px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .shortcuts-table { width: 100%; border-collapse: collapse; font-size: 0.78rem; }
+  .shortcuts-table td, .shortcuts-table th { padding: 4px 8px; border-bottom: 1px solid #333; text-align: left; }
+  .shortcuts-table kbd { background: #333; border: 1px solid #555; border-radius: 3px; padding: 1px 5px; font-family: monospace; color: #ffd600; }
+
+  /* Server File Browser Modal */
+  .browser-modal {
+    position: fixed;
+    top: 50%; left: 50%;
+    transform: translate(-50%, -50%);
+    background: #131720;
+    border: 1px solid #2d3748;
+    border-radius: 8px;
+    padding: 16px 20px 14px;
+    max-width: 840px;
+    width: 92%;
+    max-height: 88vh;
+    box-shadow: 0 24px 60px rgba(0,0,0,0.9), 0 0 0 1px rgba(0, 229, 255, 0.15);
+    display: none;
+    z-index: 120;
+    flex-direction: column;
+    box-sizing: border-box;
+  }
+  .browser-modal-backdrop {
+    position: fixed;
+    top: 0; left: 0;
+    width: 100vw; height: 100vh;
+    background: rgba(0, 0, 0, 0.65);
+    backdrop-filter: blur(2px);
+    z-index: 115;
+    display: none;
+  }
+  .browser-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .browser-header h2 {
+    font-size: 1.12rem;
+    color: #00e5ff;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .browser-nav-bar {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  .browser-btn {
+    background: #1e293b;
+    border: 1px solid #334155;
+    color: #cbd5e1;
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 0.76rem;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.12s ease;
+  }
+  .browser-btn:hover { background: #334155; color: #fff; border-color: #64748b; }
+  .browser-breadcrumbs {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    background: #0b0f17;
+    border: 1px solid #1e293b;
+    border-radius: 4px;
+    padding: 3px 8px;
+    flex: 1;
+    min-width: 240px;
+    overflow-x: auto;
+    white-space: nowrap;
+    font-family: monospace;
+    font-size: 0.78rem;
+  }
+  .browser-filter-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .browser-filter-input {
+    flex: 1;
+    background: #0b0f17;
+    border: 1px solid #334155;
+    color: #f1f5f9;
+    border-radius: 4px;
+    padding: 5px 10px;
+    font-size: 0.8rem;
+    outline: none;
+  }
+  .browser-table-wrap {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 220px;
+    max-height: 400px;
+    border: 1px solid #1e293b;
+    border-radius: 4px;
+    background: #080c14;
+    margin-bottom: 10px;
+  }
+  .browser-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+  .browser-table th { background: #0f172a; padding: 6px 10px; text-align: left; color: #94a3b8; border-bottom: 1px solid #1e293b; position: sticky; top: 0; z-index: 1; }
+  .browser-table td { padding: 5px 10px; border-bottom: 1px solid #141b2d; }
+  .browser-table tr:hover td { background: #1e293b; cursor: pointer; }
+  .browser-table tr.selected td { background: #0284c7; color: #fff; }
+  .browser-footer { display: flex; justify-content: space-between; align-items: center; padding-top: 4px; }
+
+  /* Toast Notification */
+  .matrix-toast {
+    position: fixed;
+    bottom: 24px; right: 24px;
+    background: #1e293b;
+    border: 1px solid #00e676;
+    color: #69f0ae;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    font-family: monospace;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.7);
+    z-index: 2000;
+    display: none;
+    transition: opacity 0.25s ease;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title">
+    <button id="btnToggleSidebar" class="btn-sidebar-toggle" title="Toggle Sidebar Menu [M]">Menu</button>
+    <span>GASPware 3D</span>
+    <span class="badge badge-3d">3D Matrix</span>
+  </div>
+
+  <!-- 2D View Plane Selector -->
+  <div class="plane-selector-bar" title="Select 2D Projection Plane (Press 'Tab' to cycle)">
+    <span style="font-size: 0.72rem; color: #aaa; margin-right: 4px; font-weight: 700;">PLANE:</span>
+    <button id="btnPlane01" class="plane-btn active" onclick="setPlane('0-1')">Det 1 vs Det 2 (X-Y)</button>
+    <button id="btnPlane02" class="plane-btn" onclick="setPlane('0-2')">Det 1 vs Rings (X-Z)</button>
+    <button id="btnPlane12" class="plane-btn" onclick="setPlane('1-2')">Det 2 vs Rings (Y-Z)</button>
+  </div>
+
+  <!-- 3rd Axis Gate Badge -->
+  <div class="third-axis-badge" id="thirdAxisBadge" title="Current 3rd axis gating state">
+    <span id="thirdAxisText">3rd Axis: All (Summed)</span>
+    <button id="btnClearGate3rd" class="fit-btn-close" style="display: none; padding: 1px 5px; font-size: 0.68rem;" onclick="clearGate3rd()">✕ Clear</button>
+  </div>
+
+  <!-- Banana Gate Badge -->
+  <div class="banana-badge" id="bananaGateBadge">
+    <span id="bananaGateText">Banana Gate Active</span>
+    <button id="btnClearBanana" class="fit-btn-close" style="padding: 1px 5px; font-size: 0.68rem;" onclick="clearBananaGate()">✕ Clear</button>
+  </div>
+
+  <!-- Matrix Switcher -->
+  <div class="matrix-select-wrap">
+    <select id="matrixSelect" class="matrix-select" onchange="onSelectMatrix(this.value)" title="Active 3D Matrix ([ / ] to cycle)"></select>
+    <button id="btnOpenFs" class="matrix-open-btn" onclick="openServerBrowser()">📂 Open</button>
+  </div>
+
+  <!-- Dynamic HUD -->
+  <div class="hud" id="hudCoords">Hover cursor over 2D matrix or 1D histograms</div>
+</header>
+
+<div class="main-container">
+  <!-- Left Sidebar Controls -->
+  <aside id="sidebar">
+    <!-- 1. Active Matrix Information -->
+    <div class="control-group">
+      <h3>Active Matrix</h3>
+      <div class="matrix-info-box" id="matrixInfoBox">Loading matrix...</div>
+    </div>
+
+    <!-- 2. Display & Colors -->
+    <div class="control-group">
+      <h3>2D Display &amp; Colormap</h3>
+      <label>Colormap [C]
+        <select id="cmapSelect" onchange="onColormapChange()">
+          <option value="turbo" selected>Turbo</option>
+          <option value="viridis">Viridis</option>
+          <option value="plasma">Plasma</option>
+          <option value="inferno">Inferno</option>
+          <option value="hot">Hot</option>
+          <option value="jet">Jet</option>
+          <option value="gray">Grayscale</option>
+        </select>
+      </label>
+      <label>Scale Mode [L]
+        <select id="scaleSelect" onchange="onScaleChange()">
+          <option value="log" selected>Logarithmic [4]</option>
+          <option value="linear">Linear [1]</option>
+          <option value="sqrt">Square Root / Power [2]</option>
+        </select>
+      </label>
+      <label>Max Contrast (vmax) <span class="range-val" id="vmaxLabel">500</span></label>
+      <input type="range" id="vmaxSlider" min="0" max="1000" value="500" oninput="onVmaxInput(this.value)">
+      <label>Min Threshold (vmin) <span class="range-val" id="vminLabel">1</span></label>
+      <input type="range" id="vminSlider" min="0" max="100" value="1" oninput="onVminInput(this.value)">
+      <div style="display:flex; gap:6px;">
+        <button class="secondary" style="flex:1" onclick="autoContrast()">Auto Contrast</button>
+        <button class="secondary" style="flex:1" onclick="resetContrast()">Reset</button>
+      </div>
+      <label>1D Projection Range
+        <select id="projRangeSelect" onchange="fetch1DProjections()">
+          <option value="synced" selected>Synced to 2D View</option>
+          <option value="full">Full Matrix Range</option>
+        </select>
+      </label>
+      <label>1D Projection Scale
+        <select id="projScaleSelect" onchange="onProjScaleChange(this.value)">
+          <option value="linear" selected>Linear</option>
+          <option value="log">Logarithmic</option>
+        </select>
+      </label>
+    </div>
+
+    <!-- 3. 3rd Axis Gating / Slicing -->
+    <div class="control-group">
+      <h3>3rd Axis Slicing &amp; Gate</h3>
+      <label>Channel / Range (e.g. 11 or 11-15)</label>
+      <div style="display:flex; gap:6px;">
+        <input type="text" id="inputGate3rd" placeholder="All (leave blank for sum)" style="flex:1">
+        <button onclick="applyGate3rdInput()">Apply</button>
+      </div>
+      <div style="display:flex; gap:6px;">
+        <button class="secondary" style="flex:1" onclick="clearGate3rd()">Clear (Sum All)</button>
+      </div>
+    </div>
+
+    <!-- 4. 2D Banana Gate -->
+    <div class="control-group">
+      <h3>2D Banana Gate (Polygon)</h3>
+      <div style="font-size:0.72rem; color:#aaa; line-height:1.3;">
+        Draw arbitrary closed polygon on active 2D plane to project enclosed voxels onto the remaining 3rd axis.
+      </div>
+      <div style="display:flex; gap:6px; margin-top:3px;">
+        <button id="btnDrawBanana" style="flex:1; background:#33691e; color:#ccff90; border-color:#64dd17;" onclick="toggleBananaGateMode()">Draw Banana [Shift+G]</button>
+        <button class="secondary" style="flex:1;" onclick="clearBananaGate()">Clear</button>
+      </div>
+    </div>
+
+    <!-- 5. Peak Search & Fitting -->
+    <div class="control-group">
+      <h3>Peak Fitting (1D &amp; 2D)</h3>
+      <label>Peak Model
+        <select id="fitTypeSelect">
+          <option value="gaussian" selected>Gaussian + Step</option>
+          <option value="gaussian_tail">RadWare Tail</option>
+          <option value="hypermet">Hypermet</option>
+        </select>
+      </label>
+      <label>Fit Verbosity
+        <select id="fitVerbositySelect" onchange="updateFitCardsVerbosity()">
+          <option value="compact" selected>Compact (1-Line)</option>
+          <option value="full">Full Details</option>
+        </select>
+      </label>
+      <label>1D Fit ROI (FWHM Multiplier) <span class="range-val" id="fwhmMultLabel">4.0×</span></label>
+      <input type="range" id="fwhmMultSlider1D" min="2" max="10" step="0.5" value="4.0" oninput="document.getElementById('fwhmMultLabel').innerText = this.value + '×'">
+      <label>2D Fit ROI Half-Width <span class="range-val" id="roiWidthLabel">16 ch</span></label>
+      <input type="range" id="roiWidthSlider2D" min="4" max="64" step="2" value="16" oninput="document.getElementById('roiWidthLabel').innerText = this.value + ' ch'">
+    </div>
+
+    <!-- 6. 1D Coincidence Gating -->
+    <div class="control-group">
+      <h3>1D Coincidence Gating</h3>
+      <div style="font-size:0.72rem; color:#aaa; line-height:1.3;">
+        Set coincidence gates on 1 or 2 axes (<kbd>W</kbd>=peak, <kbd>X</kbd>=bg, <kbd>Z</kbd>=clear).
+      </div>
+      <div style="display:flex; gap:6px; margin-top:3px;">
+        <button class="secondary" style="flex:1;" onclick="clear1DGates(true)">Clear 1D Gates [Z]</button>
+      </div>
+    </div>
+
+    <!-- 7. Automatic Peak Search -->
+    <div class="control-group">
+      <h3>1D Automatic Peak Search</h3>
+      <label>Search Method
+        <select id="searchMethodSelect">
+          <option value="cwt" selected>Continuous Wavelet (CWT)</option>
+          <option value="prominence">Prominence / Peak Detect</option>
+          <option value="mariscotti">Mariscotti 2nd Difference</option>
+        </select>
+      </label>
+      <label>Search Sensitivity (SNR) <span class="range-val" id="snrLabel">9.0</span></label>
+      <input type="range" id="snrSlider" min="2" max="25" step="0.5" value="9.0" oninput="document.getElementById('snrLabel').innerText = this.value">
+      <label>Search Range
+        <select id="peakSearchRangeSelect">
+          <option value="visible" selected>Visible Spectrum</option>
+          <option value="full">Full Matrix Range</option>
+        </select>
+      </label>
+      <div style="display:flex; gap:6px; margin-top:3px;">
+        <button class="secondary" style="flex:1; color:#ffd54f; border-color:#ffb300;" onclick="searchPeaks1D(getActive1DAxis())">Find Peaks [P]</button>
+        <button class="secondary" style="flex:1; color:#00e676; border-color:#00c853;" onclick="fitAllPeaks1D(getActive1DAxis())">Fit All [H]</button>
+      </div>
+      <button class="fit-btn-close" style="width:100%; margin-top:4px;" onclick="clearAllFits()">Clear Peaks &amp; Fits [=]</button>
+    </div>
+
+    <!-- 8. Configuration -->
+    <div class="control-group">
+      <h3>Configuration</h3>
+      <button id="btnSaveConfig" style="background:#1565c0; color:#e3f2fd; border-color:#1e88e5;" onclick="saveConfig()">Save Current Configuration</button>
+    </div>
+
+    <!-- 9. Calibration -->
+    <div class="control-group">
+      <h3>Energy Calibration</h3>
+      <label>Det 1 / Axis 0 (a0, a1, a2)</label>
+      <input type="text" id="calInput0" placeholder="0.0, 1.0, 0.0" onchange="updateCalFromInput(0)">
+      <label>Det 2 / Axis 1 (a0, a1, a2)</label>
+      <input type="text" id="calInput1" placeholder="0.0, 1.0, 0.0" onchange="updateCalFromInput(1)">
+      <label>Det 3 / Rings / Axis 2 (a0, a1, a2)</label>
+      <input type="text" id="calInput2" placeholder="0.0, 1.0, 0.0" onchange="updateCalFromInput(2)">
+    </div>
+
+    <!-- 10. Navigation & Help -->
+    <div class="control-group">
+      <h3>Navigation &amp; System</h3>
+      <label>Scroll Sensitivity <span class="range-val" id="scrollSensLabel">4%</span></label>
+      <input type="range" id="scrollSensitivitySlider" min="1" max="15" value="4" oninput="document.getElementById('scrollSensLabel').innerText = this.value + '%'; scrollSensitivity = parseInt(this.value, 10) / 100.0;">
+      <button class="secondary" style="background:#4a148c; margin-top:4px;" onclick="toggleHelpModal()">Shortcuts / Help [?]</button>
+      <button class="secondary" style="background:#b71c1c; margin-top:4px;" onclick="quitViewer()">Quit Viewer [Q]</button>
+    </div>
+  </aside>
+
+  <!-- Main Central Workspace -->
+  <div class="workspace">
+    <!-- Left: 2D Matrix Panel -->
+    <div class="panel-2d" id="panel2D">
+      <div class="panel-2d-toolbar">
+        <span id="panel2DTitle" style="font-weight:700; color:#00e5ff;">2D Coincidence Plane: Det 1 vs Det 2</span>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <button id="btnBanana2D" class="secondary" style="color:#ffd600; border-color:#fbc02d; padding:2px 8px;" onclick="toggleBananaGateMode()">Banana Gate</button>
+          <button id="btnScaleToggle2D" class="scale-toggle-btn" onclick="cycle2DScale()">LOG</button>
+          <button class="btn-pdf" onclick="exportPDF2D()">Print 2D PDF</button>
+        </div>
+      </div>
+      <canvas id="canvas2d" tabindex="0"></canvas>
+      <div class="panel-2d-footer">
+        <span id="overlayStatus">Limits: [L: - | R: - | D: - | U: -] • 'E' Expand • 'F' Full</span>
+        <span style="color:#777;">Click &amp; Drag box-zoom • Right-drag pan • Scroll zoom</span>
+      </div>
+    </div>
+
+    <!-- Resizer divider -->
+    <div class="panel-resizer" id="panelResizer"></div>
+
+    <!-- Right: Three 1D Histogram Panels -->
+    <div class="panel-1d-container" id="panel1DContainer">
+      <!-- Axis 0 (Det 1) -->
+      <div class="panel-1d" id="panel1D_0">
+        <div class="panel-1d-header">
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span class="panel-1d-title" style="color:#00e5ff;">Det 1 / Axis 0 (X)</span>
+            <button id="btnScaleToggle0" class="scale-toggle-btn" onclick="toggle1DScale(0)">LIN</button>
+            <button id="btnGridToggle0" class="grid-toggle-btn active" onclick="cycle1DGridMode()">GRID</button>
+            <button id="btnClearGate0" class="fit-btn-close" style="display:none; padding:1px 6px;" onclick="clearGate(0)">Gate ✕</button>
+          </div>
+          <div style="display:flex; gap:4px;">
+            <button class="secondary" onclick="handleIntegrateKeyPress(0)">Integrate [I]</button>
+            <button class="secondary" style="color:#ffd54f; border-color:#ffb300;" onclick="searchPeaks1D(0)">Peaks [P]</button>
+            <button class="secondary" style="color:#00e676; border-color:#00c853;" onclick="fitAllPeaks1D(0)">Fit All [H]</button>
+            <button id="btnClearPeaks0" class="fit-btn-close" style="display:none;" onclick="clearFoundPeaks(0)">Clear</button>
+            <button class="btn-pdf" onclick="exportPDF1D(0)">PDF</button>
+            <button onclick="exportDat(0)">.dat</button>
+          </div>
+        </div>
+        <canvas id="canvas1d_0"></canvas>
+      </div>
+
+      <!-- Axis 1 (Det 2) -->
+      <div class="panel-1d" id="panel1D_1">
+        <div class="panel-1d-header">
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span class="panel-1d-title" style="color:#ff9800;">Det 2 / Axis 1 (Y)</span>
+            <button id="btnScaleToggle1" class="scale-toggle-btn" onclick="toggle1DScale(1)">LIN</button>
+            <button id="btnGridToggle1" class="grid-toggle-btn active" onclick="cycle1DGridMode()">GRID</button>
+            <button id="btnClearGate1" class="fit-btn-close" style="display:none; padding:1px 6px;" onclick="clearGate(1)">Gate ✕</button>
+          </div>
+          <div style="display:flex; gap:4px;">
+            <button class="secondary" onclick="handleIntegrateKeyPress(1)">Integrate [I]</button>
+            <button class="secondary" style="color:#ffd54f; border-color:#ffb300;" onclick="searchPeaks1D(1)">Peaks [P]</button>
+            <button class="secondary" style="color:#00e676; border-color:#00c853;" onclick="fitAllPeaks1D(1)">Fit All [H]</button>
+            <button id="btnClearPeaks1" class="fit-btn-close" style="display:none;" onclick="clearFoundPeaks(1)">Clear</button>
+            <button class="btn-pdf" onclick="exportPDF1D(1)">PDF</button>
+            <button onclick="exportDat(1)">.dat</button>
+          </div>
+        </div>
+        <canvas id="canvas1d_1"></canvas>
+      </div>
+
+      <!-- Axis 2 (Det 3 / Rings) -->
+      <div class="panel-1d" id="panel1D_2">
+        <div class="panel-1d-header">
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span class="panel-1d-title" style="color:#00e676;">Det 3 / Axis 2 (Rings / Z)</span>
+            <button id="btnScaleToggle2" class="scale-toggle-btn" onclick="toggle1DScale(2)">LIN</button>
+            <button id="btnGridToggle2" class="grid-toggle-btn active" onclick="cycle1DGridMode()">GRID</button>
+            <button id="btnClearGate2" class="fit-btn-close" style="display:none; padding:1px 6px;" onclick="clearGate(2)">Gate ✕</button>
+          </div>
+          <div style="display:flex; gap:4px;">
+            <button class="secondary" onclick="handleIntegrateKeyPress(2)">Integrate [I]</button>
+            <button class="secondary" style="color:#ffd54f; border-color:#ffb300;" onclick="searchPeaks1D(2)">Peaks [P]</button>
+            <button class="secondary" style="color:#00e676; border-color:#00c853;" onclick="fitAllPeaks1D(2)">Fit All [H]</button>
+            <button id="btnClearPeaks2" class="fit-btn-close" style="display:none;" onclick="clearFoundPeaks(2)">Clear</button>
+            <button class="btn-pdf" onclick="exportPDF1D(2)">PDF</button>
+            <button onclick="exportDat(2)">.dat</button>
+          </div>
+        </div>
+        <canvas id="canvas1d_2"></canvas>
+      </div>
+
+      <!-- 1D Peak Integration Results Card -->
+      <div class="fit-results-card fit-card-1d" id="integrateCard1D" style="display: none; border-color: #00b0ff;">
+        <div class="fit-header" style="color: #00e5ff;">
+          <span id="integrateTitle1D">1D Peak Integration</span>
+          <div style="display: flex; gap: 6px;">
+            <button class="fit-btn-toggle" id="btnCopyIntegrate1D" title="Copy results to clipboard" onclick="copyIntegrationResults()">Copy</button>
+            <button class="fit-btn-close" id="btnCloseIntegrate1D" title="Close integration card" onclick="document.getElementById('integrateCard1D').style.display='none'">✕</button>
+          </div>
+        </div>
+        <div class="fit-compact-box" id="integrateCompactBox1D">
+          <div class="fit-compact-line" id="integrateCompactLine1D">-</div>
+        </div>
+        <div class="fit-grid" id="integrateGrid1D" style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #333;">
+          <div class="fit-item"><span class="lbl">Region:</span><span class="val" id="intRegion1D">-</span></div>
+          <div class="fit-item"><span class="lbl">BG Model:</span><span class="val" id="intBgModel1D">-</span></div>
+          <div class="fit-item"><span class="lbl">Gross Counts:</span><span class="val" id="intGross1D">-</span></div>
+          <div class="fit-item"><span class="lbl">BG Counts:</span><span class="val" id="intBgCounts1D">-</span></div>
+          <div class="fit-item"><span class="lbl">Net Area:</span><span class="val" id="intNetArea1D" style="color: #00e5ff; font-weight: bold;">-</span></div>
+          <div class="fit-item"><span class="lbl">Centroid:</span><span class="val" id="intCentroid1D">-</span></div>
+          <div class="fit-item"><span class="lbl">FWHM:</span><span class="val" id="intFWHM1D">-</span></div>
+          <div class="fit-item"><span class="lbl">Peak / BG:</span><span class="val" id="intPeakBg1D">-</span></div>
+        </div>
+      </div>
+
+      <!-- 1D Single Fit Results Card -->
+      <div class="fit-results-card fit-card-1d" id="fitCard1D">
+        <div class="fit-header" style="color: #00e5ff;">
+          <span id="fitTitle1D">1D Peak Fit Results</span>
+          <div style="display: flex; gap: 6px;">
+            <button class="fit-btn-toggle" id="btnToggleDetails1D" onclick="toggleDetails1D()">▾ Details</button>
+            <button class="fit-btn-close" id="btnCloseFit1D" onclick="clearFit1D(getActive1DAxis())">Clear 1D Fit</button>
+          </div>
+        </div>
+        <div class="fit-compact-box" id="fitCompactBox1D">
+          <div class="fit-compact-line" id="fitCompactLine1D">-</div>
+        </div>
+        <div class="fit-grid" id="fitGrid1D" style="display: none; margin-top: 6px; padding-top: 6px; border-top: 1px solid #333;">
+          <div class="fit-item"><span class="lbl">Centroid:</span><span class="val" id="fitCentroid1D">-</span></div>
+          <div class="fit-item"><span class="lbl">Peak Area:</span><span class="val" id="fitArea1D">-</span></div>
+          <div class="fit-item"><span class="lbl">FWHM:</span><span class="val" id="fitFWHM1D">-</span></div>
+          <div class="fit-item"><span class="lbl">Amplitude:</span><span class="val" id="fitAmp1D">-</span></div>
+          <div class="fit-item" id="fitTailItem1D"><span class="lbl">Left Tail (α):</span><span class="val" id="fitTail1D">-</span></div>
+          <div class="fit-item" id="fitHypermetItem1D" style="display: none;"><span class="lbl">Hypermet (fT/β):</span><span class="val" id="fitHypermet1D">-</span></div>
+          <div class="fit-item"><span class="lbl">Gross / Bg:</span><span class="val" id="fitGrossBg1D">-</span></div>
+          <div class="fit-item"><span class="lbl">Reduced χ²:</span><span class="val" id="fitChi21D">-</span></div>
+        </div>
+      </div>
+
+      <!-- 1D Multi-Peak Fit Results Card -->
+      <div class="fit-results-card fit-card-multi-1d" id="fitCardMulti1D">
+        <div class="fit-header" style="color: #00e676; position: sticky; top: 0; background: #191c20; z-index: 2; padding-bottom: 4px;">
+          <span id="fitTitleMulti1D">1D Multi-Peak Fit (Local Linear Baselines)</span>
+          <div style="display: flex; gap: 6px;">
+            <button class="fit-btn-close" id="btnCloseMultiFit1D" onclick="clearMultiFit1D(getActive1DAxis())">Clear Multi-Fit [=]</button>
+          </div>
+        </div>
+        <div id="fitSummaryMulti1D" style="font-size: 0.73rem; color: #aaa; margin: 4px 0 6px 0;">-</div>
+        <table id="fitTableMulti1D" style="width: 100%; border-collapse: collapse; font-size: 0.72rem; font-family: monospace;">
+          <thead>
+            <tr style="color: #888; border-bottom: 1px solid #333; text-align: right;">
+              <th style="text-align: left; padding: 2px 4px;">#</th>
+              <th style="padding: 2px 4px;">Centroid (ch)</th>
+              <th style="padding: 2px 4px;">Energy (keV)</th>
+              <th style="padding: 2px 4px;">FWHM</th>
+              <th style="padding: 2px 4px;">Net Area (cts)</th>
+              <th style="padding: 2px 4px;">Peak/BG</th>
+            </tr>
+          </thead>
+          <tbody id="fitTableBodyMulti1D"></tbody>
+        </table>
+      </div>
+
+      <!-- 2D Coincidence Fit Results Card -->
+      <div class="fit-results-card fit-card-2d" id="fitCard2D">
+        <div class="fit-header" style="color: #ffd600;">
+          <span id="fitTitle2D">2D Coincidence Peak Fit</span>
+          <div style="display: flex; gap: 6px;">
+            <button class="fit-btn-toggle" id="btnToggleDetails2D" onclick="toggleDetails2D()">▾ Details</button>
+            <button class="fit-btn-close" id="btnCloseFit2D" onclick="clearFit2D()">Clear 2D Fit</button>
+          </div>
+        </div>
+        <div class="fit-compact-box" id="fitCompactBox2D">
+          <div class="fit-compact-line" id="fitCompactLine2D_X">-</div>
+          <div class="fit-compact-line" id="fitCompactLine2D_Y">-</div>
+          <div class="fit-compact-line" id="fitCompactLine2D_Gamba" style="color: #81c784; font-size: 0.72rem; margin-top: 3px;">-</div>
+        </div>
+        <div class="fit-grid" id="fitGrid2D" style="display: none; margin-top: 6px; padding-top: 6px; border-top: 1px solid #333;">
+          <div class="fit-item"><span class="lbl">2D Centroid:</span><span class="val" id="fitCentroid2D">-</span></div>
+          <div class="fit-item"><span class="lbl">Fitted Net Vol:</span><span class="val" id="fitVolume2D" style="color: #4caf50;">-</span></div>
+          <div class="fit-item"><span class="lbl">Gamba Gate Net:</span><span class="val" id="fitGambaNet2D" style="color: #81c784;">-</span></div>
+          <div class="fit-item"><span class="lbl">Peak/Total BG (Π):</span><span class="val" id="fitPiRatio2D" style="color: #64b5f6;">-</span></div>
+          <div class="fit-item"><span class="lbl">FWHM (X / Y):</span><span class="val" id="fitFWHM2D">-</span></div>
+          <div class="fit-item"><span class="lbl">Amplitude (H):</span><span class="val" id="fitAmp2D">-</span></div>
+          <div class="fit-item" id="fitTailItem2D"><span class="lbl">Left Tails (α):</span><span class="val" id="fitTail2D">-</span></div>
+          <div class="fit-item" id="fitHypermetItem2D" style="display: none;"><span class="lbl">Hypermet Tails:</span><span class="val" id="fitHypermet2D">-</span></div>
+          <div class="fit-item"><span class="lbl">2D Cont. (bg|bg):</span><span class="val" id="fitContBg2D">-</span></div>
+          <div class="fit-item"><span class="lbl">Cross-Ridges:</span><span class="val" id="fitRidges2D">-</span></div>
+          <div class="fit-item"><span class="lbl">Gross / Total BG:</span><span class="val" id="fitGrossBg2D">-</span></div>
+          <div class="fit-item"><span class="lbl">Reduced χ² / NDF:</span><span class="val" id="fitChi22D">-</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Shortcuts Modal -->
+<div class="modal-backdrop" id="helpModal" onclick="if(event.target===this) toggleHelpModal()">
+  <div class="modal">
+    <div class="modal-title">
+      <span>Keyboard Shortcuts &amp; 3D Navigation</span>
+      <button class="fit-btn-close" onclick="toggleHelpModal()">✕</button>
+    </div>
+    <table class="shortcuts-table">
+      <tr><th>Key</th><th>Action</th></tr>
+      <tr><td><kbd>Tab</kbd></td><td>Cycle 2D projection planes (0-1 → 0-2 → 1-2)</td></tr>
+      <tr><td><kbd>M</kbd></td><td>Toggle sidebar menu open/close</td></tr>
+      <tr><td><kbd>Left-Click Drag</kbd></td><td>Box zoom in 2D matrix or 1D histogram</td></tr>
+      <tr><td><kbd>Right-Click Drag</kbd></td><td>Pan 2D matrix view</td></tr>
+      <tr><td><kbd>Scroll Wheel (2D)</kbd></td><td>Smooth zoom centered at mouse cursor</td></tr>
+      <tr><td><kbd>Scroll Wheel (1D)</kbd></td><td>Vertical counts scale zoom; <kbd>Shift+Wheel</kbd> horizontal channel zoom</td></tr>
+      <tr><td><kbd>←</kbd> <kbd>→</kbd> <kbd>↓</kbd> <kbd>↑</kbd> in 2D</td><td>Set Left, Right, Down, Up zoom limits (<kbd>Shift+Arrows</kbd> pan)</td></tr>
+      <tr><td><kbd>←</kbd> <kbd>→</kbd> in 1D</td><td>Pan channel range left / right (<kbd>Shift</kbd> fast pan)</td></tr>
+      <tr><td><kbd>↑</kbd> <kbd>↓</kbd> in 1D</td><td>Zoom vertical scale (↑ taller peaks, ↓ shorter peaks)</td></tr>
+      <tr><td><kbd>E</kbd> / <kbd>e</kbd></td><td>Expand / Zoom into set limits</td></tr>
+      <tr><td><kbd>F</kbd> / <kbd>f</kbd></td><td>Full matrix / spectrum view reset</td></tr>
+      <tr><td><kbd>W</kbd> / <kbd>w</kbd></td><td>Set 1D Coincidence Peak Gate (consecutive pairs: Limit 1, Limit 2)</td></tr>
+      <tr><td><kbd>X</kbd> / <kbd>x</kbd></td><td>Set 1D Coincidence Background Gate (Limit 1, Limit 2)</td></tr>
+      <tr><td><kbd>Z</kbd> / <kbd>z</kbd></td><td>Cancel pending gate limit or clear active 1D coincidence gate</td></tr>
+      <tr><td><kbd>B</kbd> / <kbd>b</kbd></td><td>In 2D: Draw banana gate; In 1D: Set background region</td></tr>
+      <tr><td><kbd>R</kbd> / <kbd>r</kbd></td><td>Set 1D Fit / Integration Region limits</td></tr>
+      <tr><td><kbd>I</kbd> / <kbd>i</kbd></td><td>Integrate peak over Region ('R') subtracting background</td></tr>
+      <tr><td><kbd>V</kbd> / <kbd>v</kbd></td><td>Fit single peak at cursor (1D or 2D coincidence peak)</td></tr>
+      <tr><td><kbd>H</kbd> / <kbd>h</kbd></td><td>Fit all visible peaks on focused 1D display</td></tr>
+      <tr><td><kbd>P</kbd> / <kbd>p</kbd></td><td>Automatic 1D Peak Search on focused spectrum (CWT method)</td></tr>
+      <tr><td><kbd>G</kbd> / <kbd>g</kbd></td><td>Add / remove manual peak marker at cursor</td></tr>
+      <tr><td><kbd>=</kbd> / <kbd>+</kbd></td><td>Clear all active peak fits, peak labels, and integrations</td></tr>
+      <tr><td><kbd>C</kbd> / <kbd>c</kbd></td><td>Cycle colormaps (Turbo, Viridis, Plasma, etc.)</td></tr>
+      <tr><td><kbd>L</kbd> / <kbd>l</kbd></td><td>Cycle scale: 2D (Log -> Lin -> Sqrt) or 1D (Lin / Log)</td></tr>
+      <tr><td><kbd>1</kbd> / <kbd>2</kbd> / <kbd>4</kbd></td><td>Direct 2D scale: 1 (Linear), 2 (Sqrt), 4 (Log)</td></tr>
+      <tr><td><kbd>[</kbd> / <kbd>]</kbd></td><td>Switch between loaded 3D matrices (prev / next)</td></tr>
+      <tr><td><kbd>Ctrl+O</kbd></td><td>Browse server filesystem to select and open 3D .cmat matrix</td></tr>
+      <tr><td><kbd>Q</kbd> / <kbd>q</kbd></td><td>Quit viewer (stop server)</td></tr>
+    </table>
+    <button onclick="toggleHelpModal()" style="margin-top: 14px;">Close</button>
+  </div>
+</div>
+
+<!-- Server File Browser Modal -->
+<div class="browser-modal-backdrop" id="browserBackdrop"></div>
+<div class="browser-modal" id="serverBrowserModal">
+  <div class="browser-header">
+    <h2>
+      <span>📁 Server 3D Matrix Browser</span>
+      <span id="browserItemCount" class="badge" style="background:#1e293b; color:#00e5ff; font-size:0.7rem; font-weight:normal;">-</span>
+    </h2>
+    <button id="btnBrowserClose" class="fit-btn-close" style="font-size: 1rem; padding: 2px 8px;" title="Close [Esc]" onclick="closeServerBrowser()">✕</button>
+  </div>
+
+  <div class="browser-nav-bar">
+    <button id="btnBrowserUp" class="browser-btn" title="Go to Parent Directory" onclick="browserNavUp()">⬆ Up</button>
+    <button id="btnBrowserHome" class="browser-btn" title="Go to Server Home Directory" onclick="browserNavHome()">🏠 Home</button>
+    <button id="btnBrowserCwd" class="browser-btn" title="Go to Server Working Directory" onclick="browserNavCwd()">📍 CWD</button>
+    <button id="btnBrowserRefresh" class="browser-btn" title="Refresh Directory" onclick="browserRefresh()">🔄</button>
+    <div class="browser-breadcrumbs" id="browserBreadcrumbs" title="Current server directory"></div>
+  </div>
+
+  <div class="browser-filter-bar">
+    <input type="text" id="browserFilterInput" class="browser-filter-input" placeholder="🔍 Filter matrices by name (e.g. GeE, Rings, cmat)..." oninput="renderBrowserEntries()">
+    <label style="display: flex; align-items: center; gap: 5px; font-size: 0.76rem; color: #cbd5e1; cursor: pointer; user-select: none; white-space: nowrap;">
+      <input type="checkbox" id="chkBrowserCmatOnly" checked style="accent-color: #00e5ff; cursor: pointer;" onchange="renderBrowserEntries()">
+      <span>.cmat only</span>
+    </label>
+  </div>
+
+  <div class="browser-table-wrap" id="browserTableWrap">
+    <table class="browser-table">
+      <thead>
+        <tr>
+          <th style="width: 58%;">Name</th>
+          <th style="width: 18%; text-align: right;">Size</th>
+          <th style="width: 24%; text-align: right;">Modified</th>
+        </tr>
+      </thead>
+      <tbody id="browserTableBody">
+        <tr><td colspan="3" style="text-align: center; color: #64748b; padding: 24px;">Loading server filesystem...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="browser-footer">
+    <div class="browser-selected-info" id="browserSelectedInfo">
+      Selected: <span id="browserSelectedLabel" style="color: #ffd600; font-family: monospace; font-weight: bold;">None</span>
+    </div>
+    <div style="display: flex; gap: 8px;">
+      <button id="btnBrowserCancel" class="secondary" style="width: auto; padding: 6px 14px; margin: 0;" onclick="closeServerBrowser()">Cancel</button>
+      <button id="btnBrowserOpenSubmit" disabled style="width: auto; padding: 6px 18px; background: #00c853; border-color: #00e676; margin: 0; font-weight: bold;" onclick="submitOpenMatrix()">Open Matrix</button>
+    </div>
+  </div>
+</div>
+
+<div id="matrixToast" class="matrix-toast"></div>
+
+<script>
+  // =========================================================================
+  // GASPware 3D Matrix Web Viewer - Complete Interactive Application
+  // =========================================================================
+
+  // Core Metadata & Session
+  let metadata = null;
+  let activePlane = "0-1"; // '0-1', '0-2', '1-2'
+  let activeGate3rd = null;
+  let maxCountGlobal = 10000;
+
+  // Viewport in Channel Coordinates
+  let view2D = { x0: 0, x1: 4096, y0: 0, y1: 4096 };
+  let markers = { left: null, right: null, down: null, up: null };
+
+  // 1D Histograms State across 3 Axes (0=Det 1, 1=Det 2, 2=Rings)
+  let spec1D = { 0: null, 1: null, 2: null };
+  let sumSpec1D = { 0: null, 1: null, 2: null };
+  let view1D = {
+    0: { start: 0, end: 4096 },
+    1: { start: 0, end: 4096 },
+    2: { start: 0, end: 128 }
+  };
+  let zoom1DY = { 0: 1.0, 1: 1.0, 2: 1.0 };
+  let projScale1D = { 0: 'linear', 1: 'linear', 2: 'linear' };
+  let grid1DMode = 'both'; // 'both', 'major', 'none'
+  let scrollSensitivity = 0.04;
+
+  // 2D Display & Density Heatmap State
+  let scaleMode2D = 'log'; // 'log', 'linear', 'sqrt'
+  let colormap = 'turbo';
+  let colorLUT = new Uint32Array(256);
+  let currentTileData = null;
+  let tileW = 0;
+  let tileH = 0;
+  let currentTileMax = 100;
+  let currentVmax = 500;
+
+  // Coincidence Gating State across 3 Axes
+  let gates1D = {
+    0: { w: [], b: [], pending_w: null, pending_b: null },
+    1: { w: [], b: [], pending_w: null, pending_b: null },
+    2: { w: [], b: [], pending_w: null, pending_b: null }
+  };
+  let lastGateResults = {};
+  let lastGateConfigKey = '';
+
+  // Network Request & Debounce Controllers
+  let tileAbortCtrl = null;
+  let projAbortCtrl = null;
+  let gateAbortCtrl = null;
+  let sync2DTimeout = null;
+
+  function schedule2DSync(delay = 45) {
+    if (sync2DTimeout) clearTimeout(sync2DTimeout);
+    sync2DTimeout = setTimeout(() => {
+      sync2DTimeout = null;
+      fetchTileAndRender();
+      fetchProjections();
+    }, delay);
+  }
+
+  // 2D Banana Gate Polygon State
+  let bananaMode = false;
+  let bananaPolygon = []; // [{x, y}]
+  let bananaGateActive = false;
+  let bananaGateResult = null;
+
+  // Fit & Analysis State
+  let foundPeaks1D = { 0: [], 1: [], 2: [] };
+  let manualPeaks1D = { 0: [], 1: [], 2: [] };
+  let fit1DResults = { 0: null, 1: null, 2: null };
+  let activeFits1D = { 0: [], 1: [], 2: [] };
+  let multiFit1DResults = { 0: null, 1: null, 2: null };
+  let activeMultiFits1D = { 0: [], 1: [], 2: [] };
+  let fit2DResult = null;
+  let activeFits2D = [];
+  let integrateResult1D = { 0: null, 1: null, 2: null };
+
+  // Pending Interactive 1D Windows (R=fit region, B=fit bg)
+  let pendingRegion1D = { 0: null, 1: null, 2: null };
+  let activeRegion1D = { 0: null, 1: null, 2: null };
+  let pendingBg1D = { 0: null, 1: null, 2: null };
+  let activeBg1D = { 0: [], 1: [], 2: [] };
+
+  // Interactive Cursor & Focus
+  let hovered1DAxis = null;
+  let focusedPanel = '2d'; // '2d', '1d-0', '1d-1', '1d-2'
+  let cursorChannel1D = { 0: null, 1: null, 2: null };
+  let cursor2D = { x: 0, y: 0 };
+  let isMouseOver2D = false;
+
+  // Drag & Box Zoom State
+  let isBoxZooming2D = false;
+  let dragStart2D = null;
+  let dragCurrent2D = null;
+
+  let is1DBoxZooming = { 0: false, 1: false, 2: false };
+  let drag1DStartPos = { 0: null, 1: null, 2: null };
+  let drag1DCurrentPos = { 0: null, 1: null, 2: null };
+
+  // Layout Margins
+  const margin2D = { left: 74, right: 25, top: 25, bottom: 65 };
+  const margin1D = { left: 74, right: 25, top: 20, bottom: 42 };
+
+  // DOM Elements
+  const canvas2d = document.getElementById('canvas2d');
+  const ctx2d = canvas2d.getContext('2d');
+  const canvas1D = {
+    0: document.getElementById('canvas1d_0'),
+    1: document.getElementById('canvas1d_1'),
+    2: document.getElementById('canvas1d_2')
+  };
+  const ctx1D = {
+    0: canvas1D[0].getContext('2d'),
+    1: canvas1D[1].getContext('2d'),
+    2: canvas1D[2].getContext('2d')
+  };
+
+  // Filesystem Browser State
+  let browserState = {
+    currentPath: '',
+    parentPath: '',
+    isRoot: false,
+    homePath: '',
+    cwdPath: '',
+    entries: [],
+    selectedEntry: null,
+    filterText: '',
+    cmatOnly: true
+  };
+
+  // --- Utility Functions ---
+  function getActive1DAxis() {
+    if (hovered1DAxis !== null && hovered1DAxis !== undefined) return hovered1DAxis;
+    if (focusedPanel && focusedPanel.startsWith('1d-')) return parseInt(focusedPanel.split('-')[1], 10);
+    return 0;
+  }
+
+  function getPlaneAxes(plane) {
+    if (plane === '0-2') return { x: 0, y: 2, z: 1, nameX: 'Det 1', nameY: 'Rings', nameZ: 'Det 2' };
+    if (plane === '1-2') return { x: 1, y: 2, z: 0, nameX: 'Det 2', nameY: 'Rings', nameZ: 'Det 1' };
+    return { x: 0, y: 1, z: 2, nameX: 'Det 1', nameY: 'Det 2', nameZ: 'Rings' };
+  }
+
+  function getCalForAxis(axis) {
+    if (metadata && metadata[`cal_${axis}`]) return metadata[`cal_${axis}`];
+    return [0.0, 1.0, 0.0];
+  }
+
+  function chToEnergy(axis, ch) {
+    const c = getCalForAxis(axis);
+    return c[0] + c[1] * ch + c[2] * ch * ch;
+  }
+
+  function isAxisCalibrated(axis) {
+    const c = getCalForAxis(axis);
+    return !(Math.abs(c[0]) < 1e-7 && Math.abs(c[1] - 1.0) < 1e-7 && Math.abs(c[2]) < 1e-7);
+  }
+
+  function vmaxSliderToValue(val) {
+    const minVal = 1;
+    const maxVal = Math.max(1000, maxCountGlobal || 10000);
+    const logMin = Math.log10(minVal);
+    const logMax = Math.log10(maxVal);
+    const frac = Math.max(0, Math.min(1000, val)) / 1000.0;
+    return Math.max(1, Math.round(Math.pow(10, logMin + frac * (logMax - logMin))));
+  }
+
+  function valueToVmaxSlider(val) {
+    const minVal = 1;
+    const maxVal = Math.max(1000, maxCountGlobal || 10000);
+    const logMin = Math.log10(minVal);
+    const logMax = Math.log10(maxVal);
+    const clamped = Math.max(minVal, Math.min(maxVal, val));
+    const frac = (Math.log10(clamped) - logMin) / (logMax - logMin);
+    return Math.round(Math.max(0, Math.min(1, frac)) * 1000);
+  }
+
+  function getPlotRect2D() {
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas2d.width / dpr;
+    const h = canvas2d.height / dpr;
+    return {
+      x: margin2D.left,
+      y: margin2D.top,
+      w: Math.max(10, w - margin2D.left - margin2D.right),
+      h: Math.max(10, h - margin2D.top - margin2D.bottom)
+    };
+  }
+
+  function getPlotRect1D(axis) {
+    const c = canvas1D[axis];
+    const dpr = window.devicePixelRatio || 1;
+    const w = c.width / dpr;
+    const h = c.height / dpr;
+    return {
+      x: margin1D.left,
+      y: margin1D.top,
+      w: Math.max(10, w - margin1D.left - margin1D.right),
+      h: Math.max(10, h - margin1D.top - margin1D.bottom)
+    };
+  }
+
+  function chToPx2D(chX, chY) {
+    const pr = getPlotRect2D();
+    const px = pr.x + ((chX - view2D.x0) / (view2D.x1 - view2D.x0)) * pr.w;
+    const py = pr.y + pr.h - ((chY - view2D.y0) / (view2D.y1 - view2D.y0)) * pr.h;
+    return { x: px, y: py };
+  }
+
+  function pxToCh2D(px, py) {
+    const pr = getPlotRect2D();
+    const chX = view2D.x0 + ((px - pr.x) / pr.w) * (view2D.x1 - view2D.x0);
+    const chY = view2D.y0 + ((pr.y + pr.h - py) / pr.h) * (view2D.y1 - view2D.y0);
+    return { x: chX, y: chY };
+  }
+
+  function getVisible1DRange(axis) {
+    const isSynced = (document.getElementById('projRangeSelect')?.value === 'synced');
+    const plAxes = getPlaneAxes(activePlane);
+    const spec = spec1D[axis];
+    const specLen = spec ? spec.length : (metadata ? (metadata.shape[axis] || 4096) : 4096);
+
+    if (isSynced) {
+      if (axis === plAxes.x) {
+        return {
+          start: Math.max(0, Math.floor(view2D.x0)),
+          end: Math.min(specLen, Math.ceil(view2D.x1))
+        };
+      } else if (axis === plAxes.y) {
+        return {
+          start: Math.max(0, Math.floor(view2D.y0)),
+          end: Math.min(specLen, Math.ceil(view2D.y1))
+        };
+      }
+    }
+    return {
+      start: Math.max(0, Math.floor(view1D[axis].start)),
+      end: Math.min(specLen, Math.ceil(view1D[axis].end))
+    };
+  }
+
+  function rgba32(r, g, b, a = 255) {
+    return (a << 24) | (b << 16) | (g << 8) | r;
+  }
+
+  function updateColorLUT() {
+    const cm = document.getElementById('cmapSelect') ? document.getElementById('cmapSelect').value : colormap;
+    colormap = cm;
+    for (let i = 0; i < 256; i++) {
+      let t = i / 255.0;
+      let r, g, b;
+      if (cm === 'turbo') {
+        r = 34.61 + t * (1172.33 + t * (-10791.3 + t * (33300.1 + t * (-38394.4 + t * 14825.2))));
+        g = 23.31 + t * (557.33 + t * (1225.33 + t * (-3574.96 + t * (1073.77 + t * 707.56))));
+        b = 27.2 + t * (3211.1 - t * (15327.97 - t * (27814.0 - t * (22569.18 - t * 6838.66))));
+      } else if (cm === 'viridis') {
+        r = Math.sin(t * Math.PI * 0.7) * 200 + 40;
+        g = t * 240;
+        b = Math.cos(t * Math.PI * 0.7) * 220 + 30;
+      } else if (cm === 'plasma') {
+        r = Math.min(255, t * 300);
+        g = Math.sin(t * Math.PI) * 210;
+        b = Math.cos(t * Math.PI * 0.5) * 255;
+      } else if (cm === 'inferno') {
+        r = Math.min(255, t * 290);
+        g = Math.max(0, Math.min(255, (t - 0.2) * 320));
+        b = Math.max(0, Math.min(255, (t - 0.5) * 450));
+      } else if (cm === 'hot') {
+        r = Math.min(255, t * 3.0 * 255);
+        g = t > 0.33 ? Math.min(255, (t - 0.33) * 3.0 * 255) : 0;
+        b = t > 0.67 ? Math.min(255, (t - 0.67) * 3.0 * 255) : 0;
+      } else if (cm === 'jet') {
+        const x = t * 4;
+        r = Math.min(255, Math.max(0, 255 * (1.5 - Math.abs(x - 3))));
+        g = Math.min(255, Math.max(0, 255 * (1.5 - Math.abs(x - 2))));
+        b = Math.min(255, Math.max(0, 255 * (1.5 - Math.abs(x - 1))));
+      } else { // Grayscale
+        r = i; g = i; b = i;
+      }
+      r = Math.max(0, Math.min(255, Math.round(r)));
+      g = Math.max(0, Math.min(255, Math.round(g)));
+      b = Math.max(0, Math.min(255, Math.round(b)));
+      colorLUT[i] = rgba32(r, g, b, 255);
+    }
+  }
+
+  function resizeCanvases() {
+    const dpr = window.devicePixelRatio || 1;
+    const r2d = canvas2d.getBoundingClientRect();
+    if (r2d.width > 0 && r2d.height > 0) {
+      canvas2d.width = Math.round(r2d.width * dpr);
+      canvas2d.height = Math.round(r2d.height * dpr);
+      ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    for (let ax = 0; ax < 3; ax++) {
+      const c = canvas1D[ax];
+      const r = c.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) {
+        c.width = Math.round(r.width * dpr);
+        c.height = Math.round(r.height * dpr);
+        ctx1D[ax].setTransform(dpr, 0, 0, dpr, 0, 0);
+      }
+    }
+    render2D();
+    renderAll1DSpectra();
+  }
+
+  function showMatrixToast(msg, isError = false) {
+    const toast = document.getElementById('matrixToast');
+    if (!toast) return;
+    toast.innerText = msg;
+    toast.style.display = 'block';
+    toast.style.opacity = '1';
+    toast.style.borderColor = isError ? '#ff5252' : '#00e676';
+    toast.style.color = isError ? '#ff8a80' : '#69f0ae';
+    setTimeout(() => {
+      toast.style.opacity = '0';
+      setTimeout(() => { toast.style.display = 'none'; }, 250);
+    }, 2500);
+  }
+
+  function setFocusPanel(panel) {
+    focusedPanel = panel;
+    document.querySelectorAll('.panel-1d, .panel-2d').forEach(el => el.classList.remove('focused'));
+    if (panel === '2d') {
+      document.getElementById('panel2D')?.classList.add('focused');
+    } else if (panel.startsWith('1d-')) {
+      const ax = panel.split('-')[1];
+      document.getElementById(`panel1D_${ax}`)?.classList.add('focused');
+    }
+  }
+
+  function getFocusedPanel() {
+    return focusedPanel;
+  }
+
+  function unfocusControls() {
+    if (document.activeElement && ['INPUT', 'SELECT', 'TEXTAREA', 'BUTTON'].includes(document.activeElement.tagName)) {
+      document.activeElement.blur();
+    }
+  }
+
+  function updateOverlayStatus() {
+    const statusEl = document.getElementById('overlayStatus');
+    if (statusEl) {
+      const lStr = markers.left !== null ? markers.left : '-';
+      const rStr = markers.right !== null ? markers.right : '-';
+      const dStr = markers.down !== null ? markers.down : '-';
+      const uStr = markers.up !== null ? markers.up : '-';
+      statusEl.innerHTML = `Limits: [L: <span style="color:#00e5ff">${lStr}</span> | R: <span style="color:#00e5ff">${rStr}</span> | D: <span style="color:#ff4081">${dStr}</span> | U: <span style="color:#ff4081">${uStr}</span>] &nbsp;•&nbsp; 'E' Expand &nbsp;•&nbsp; 'F' Full`;
+    }
+  }
+
+  // --- Metadata & Matrix Management ---
+  async function fetchMetadata() {
+    try {
+      const res = await fetch('/api/metadata');
+      const data = await res.json();
+      if (!data.loaded) return;
+      metadata = data;
+      maxCountGlobal = data.max_count || 10000;
+      currentVmax = Math.min(800, maxCountGlobal);
+      const vmaxSl = document.getElementById('vmaxSlider');
+      if (vmaxSl) vmaxSl.value = valueToVmaxSlider(currentVmax);
+      const vmaxLbl = document.getElementById('vmaxLabel');
+      if (vmaxLbl) vmaxLbl.innerText = currentVmax;
+
+      updateUIWithMetadata();
+      await fetchProjections();
+      await fetchTileAndRender();
+    } catch (e) {
+      console.error("Failed to fetch metadata:", e);
+    }
+  }
+
+  function updateUIWithMetadata() {
+    if (!metadata) return;
+
+    activePlane = metadata.active_plane || '0-1';
+    document.querySelectorAll('.plane-btn').forEach(btn => btn.classList.remove('active'));
+    if (activePlane === '0-1') document.getElementById('btnPlane01')?.classList.add('active');
+    else if (activePlane === '0-2') document.getElementById('btnPlane02')?.classList.add('active');
+    else if (activePlane === '1-2') document.getElementById('btnPlane12')?.classList.add('active');
+
+    const shape = metadata.shape || [4096, 4096, 128];
+    const plAxes = getPlaneAxes(activePlane);
+    view2D.x0 = 0; view2D.x1 = shape[plAxes.x];
+    view2D.y0 = 0; view2D.y1 = shape[plAxes.y];
+
+    view1D[0] = { start: 0, end: shape[0] };
+    view1D[1] = { start: 0, end: shape[1] };
+    view1D[2] = { start: 0, end: shape[2] };
+
+    // Matrix selector dropdown
+    const sel = document.getElementById('matrixSelect');
+    if (sel && metadata.matrices) {
+      sel.innerHTML = '';
+      const curIdx = metadata.matrix_index !== undefined ? metadata.matrix_index : (metadata.current_index || 0);
+      metadata.matrices.forEach((m, idx) => {
+        const opt = document.createElement('option');
+        opt.value = idx;
+        opt.innerText = `[${idx+1}/${metadata.matrices.length}] ${m.filename}`;
+        if (idx === curIdx) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    }
+
+    // Sidebar matrix details
+    const infoBox = document.getElementById('matrixInfoBox');
+    if (infoBox) {
+      const curIdx = metadata.matrix_index !== undefined ? metadata.matrix_index : (metadata.current_index || 0);
+      const curMat = (metadata.matrices && metadata.matrices[curIdx]) || metadata;
+      const shStr = (curMat.shape || shape).join(' × ');
+      const cntStr = (curMat.total_counts || 0).toLocaleString();
+      infoBox.innerHTML = `
+        <div style="font-weight:600; color:#fff; word-break:break-all; margin-bottom:4px;">${curMat.filename || 'Matrix'}</div>
+        <div>Shape: <span style="color:#00e5ff;">${shStr}</span></div>
+        <div>Counts: <span style="color:#ffd600;">${cntStr}</span></div>
+        <div>Plane: <span style="color:#b388ff;">${activePlane} (${plAxes.nameX} vs ${plAxes.nameY})</span></div>
+      `;
+    }
+
+    // Calibrations
+    const c0 = getCalForAxis(0);
+    const c1 = getCalForAxis(1);
+    const c2 = getCalForAxis(2);
+    if (document.getElementById('calInput0')) document.getElementById('calInput0').value = c0.join(', ');
+    if (document.getElementById('calInput1')) document.getElementById('calInput1').value = c1.join(', ');
+    if (document.getElementById('calInput2')) document.getElementById('calInput2').value = c2.join(', ');
+
+    updatePanelTitles();
+    updateGateUI();
+    updateOverlayStatus();
+  }
+
+  function updatePanelTitles() {
+    const plAxes = getPlaneAxes(activePlane);
+    const p2dTitle = document.getElementById('panel2DTitle');
+    if (p2dTitle) {
+      p2dTitle.innerHTML = `2D Matrix &mdash; Plane <span style="color:#00e5ff;">${activePlane}</span> (${plAxes.nameX} vs ${plAxes.nameY})`;
+    }
+  }
+
+  async function setPlane(plane) {
+    if (plane === activePlane) return;
+    try {
+      const res = await fetch(`/api/set_plane?plane=${plane}`);
+      const data = await res.json();
+      if (data.active_plane) {
+        activePlane = data.active_plane;
+        const shape = metadata.shape || [4096, 4096, 128];
+        const plAxes = getPlaneAxes(activePlane);
+        view2D.x0 = 0; view2D.x1 = shape[plAxes.x];
+        view2D.y0 = 0; view2D.y1 = shape[plAxes.y];
+        markers = { left: null, right: null, down: null, up: null };
+        clearBananaGate();
+        activeFits2D = [];
+        fit2DResult = null;
+
+        document.querySelectorAll('.plane-btn').forEach(btn => btn.classList.remove('active'));
+        if (activePlane === '0-1') document.getElementById('btnPlane01')?.classList.add('active');
+        else if (activePlane === '0-2') document.getElementById('btnPlane02')?.classList.add('active');
+        else if (activePlane === '1-2') document.getElementById('btnPlane12')?.classList.add('active');
+
+        updatePanelTitles();
+        updateOverlayStatus();
+        await fetchProjections();
+        await fetchTileAndRender();
+        showMatrixToast(`Switched to Plane ${activePlane} (${plAxes.nameX} vs ${plAxes.nameY})`);
+      }
+    } catch (e) {
+      console.error("setPlane failed:", e);
+    }
+  }
+
+  async function switchMatrix(index) {
+    try {
+      const res = await fetch(`/api/select_matrix?matrix=${index}`);
+      const data = await res.json();
+      if (data.loaded) {
+        metadata = data;
+        clear1DGates(false);
+        clearBananaGate();
+        clearAllFits();
+        updateUIWithMetadata();
+        await fetchProjections();
+        await fetchTileAndRender();
+        showMatrixToast(`Loaded: ${data.filename || ('Matrix #' + (index+1))}`);
+      }
+    } catch (e) {
+      console.error("switchMatrix failed:", e);
+    }
+  }
+
+  function cycleMatrix(delta) {
+    if (!metadata || !metadata.matrices || metadata.matrices.length <= 1) return;
+    const curIdx = metadata.matrix_index !== undefined ? metadata.matrix_index : (metadata.current_index || 0);
+    let nextIdx = (curIdx + delta) % metadata.matrices.length;
+    if (nextIdx < 0) nextIdx += metadata.matrices.length;
+    switchMatrix(nextIdx);
+  }
+
+  // --- 3rd Axis Gate & Zoom Cut Param ---
+  function get3rdAxisGateParam() {
+    if (!metadata) return '';
+    const plAxes = getPlaneAxes(activePlane);
+    const zAx = plAxes.z;
+    const shape = metadata.shape || [4096, 4096, 128];
+    const maxCh = shape[zAx];
+
+    if (gates1D[zAx] && gates1D[zAx].w && gates1D[zAx].w.length > 0) {
+      return JSON.stringify(gates1D[zAx].w);
+    }
+    if (view1D[zAx] && (view1D[zAx].start > 0 || view1D[zAx].end < maxCh)) {
+      const s = Math.max(0, Math.floor(view1D[zAx].start));
+      const e = Math.min(maxCh - 1, Math.ceil(view1D[zAx].end) - 1);
+      if (s <= e) {
+        return JSON.stringify([[s, e]]);
+      }
+    }
+    return '';
+  }
+
+  // --- Tiles & Projections (Density Heatmap Engine) ---
+  async function fetchTileAndRender() {
+    if (!metadata) return;
+    if (tileAbortCtrl) {
+      tileAbortCtrl.abort();
+    }
+    tileAbortCtrl = new AbortController();
+    const signal = tileAbortCtrl.signal;
+
+    const dpr = window.devicePixelRatio || 1;
+    const pr = getPlotRect2D();
+    const reqW = Math.min(2048, Math.max(128, Math.round(pr.w * dpr)));
+    const reqH = Math.min(2048, Math.max(128, Math.round(pr.h * dpr)));
+
+    const gate3rd = get3rdAxisGateParam();
+    let url = `/api/tile?plane=${activePlane}&x0=${Math.floor(view2D.x0)}&x1=${Math.ceil(view2D.x1)}&y0=${Math.floor(view2D.y0)}&y1=${Math.ceil(view2D.y1)}&w=${reqW}&h=${reqH}`;
+    if (gate3rd) {
+      url += `&gate_3rd=${encodeURIComponent(gate3rd)}`;
+    }
+    try {
+      const res = await fetch(url, { signal });
+      if (!res.ok) return;
+      const hw = res.headers.get('X-Shape-W') || res.headers.get('x-shape-w');
+      const hh = res.headers.get('X-Shape-H') || res.headers.get('x-shape-h');
+      tileW = hw ? parseInt(hw, 10) : reqW;
+      tileH = hh ? parseInt(hh, 10) : reqH;
+      const buf = await res.arrayBuffer();
+
+      currentTileData = new Int32Array(buf);
+      if (tileW > 0 && currentTileData.length % tileW === 0 && currentTileData.length !== tileW * tileH) {
+        tileH = Math.round(currentTileData.length / tileW);
+      }
+      let maxVal = 0;
+      for (let i = 0; i < currentTileData.length; i++) {
+        if (currentTileData[i] > maxVal) maxVal = currentTileData[i];
+      }
+      currentTileMax = Math.max(2, maxVal);
+
+      render2D();
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+      console.error("fetchTile failed:", e);
+    } finally {
+      if (tileAbortCtrl && tileAbortCtrl.signal === signal) {
+        tileAbortCtrl = null;
+      }
+    }
+  }
+
+  async function fetchProjections() {
+    if (!metadata) return;
+    if (projAbortCtrl) {
+      projAbortCtrl.abort();
+    }
+    projAbortCtrl = new AbortController();
+    const signal = projAbortCtrl.signal;
+
+    const gate3rd = get3rdAxisGateParam();
+    let url = `/api/projection_region?plane=${activePlane}&x0=${Math.floor(view2D.x0)}&x1=${Math.ceil(view2D.x1)}&y0=${Math.floor(view2D.y0)}&y1=${Math.ceil(view2D.y1)}`;
+    if (gate3rd) {
+      url += `&gate_3rd=${encodeURIComponent(gate3rd)}`;
+    }
+    try {
+      const res = await fetch(url, { signal });
+      if (!res.ok) return;
+      const data = await res.json();
+      sumSpec1D[0] = data.spec0;
+      sumSpec1D[1] = data.spec1;
+      sumSpec1D[2] = data.spec2;
+
+      recomputeGates(false);
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+      console.error("fetchProjections failed:", e);
+    } finally {
+      if (projAbortCtrl && projAbortCtrl.signal === signal) {
+        projAbortCtrl = null;
+      }
+    }
+  }
+
+  // --- Coincidence Gating Logic ---
+  async function recomputeGates(force = false) {
+    if (bananaGateActive && bananaGateResult) {
+      const plAxes = getPlaneAxes(activePlane);
+      const zAx = plAxes.z;
+      spec1D[zAx] = bananaGateResult.net_spec;
+      spec1D[plAxes.x] = sumSpec1D[plAxes.x];
+      spec1D[plAxes.y] = sumSpec1D[plAxes.y];
+      updateGateUI();
+      renderAll1DSpectra();
+      render2D();
+      return;
+    }
+
+    const gatedAxes = [];
+    for (let ax = 0; ax < 3; ax++) {
+      if (gates1D[ax].w.length > 0) gatedAxes.push(ax);
+    }
+
+    if (gatedAxes.length === 0) {
+      spec1D[0] = sumSpec1D[0];
+      spec1D[1] = sumSpec1D[1];
+      spec1D[2] = sumSpec1D[2];
+      lastGateConfigKey = '';
+      updateGateUI();
+      renderAll1DSpectra();
+      render2D();
+      return;
+    }
+
+    const w0Str = JSON.stringify(gates1D[0].w);
+    const b0Str = JSON.stringify(gates1D[0].b);
+    const w1Str = JSON.stringify(gates1D[1].w);
+    const b1Str = JSON.stringify(gates1D[1].b);
+    const w2Str = JSON.stringify(gates1D[2].w);
+    const b2Str = JSON.stringify(gates1D[2].b);
+
+    const gateConfigKey = `${w0Str}|${b0Str}|${w1Str}|${b1Str}|${w2Str}|${b2Str}`;
+
+    if (!force && gateConfigKey === lastGateConfigKey) {
+      if (gatedAxes.length === 1) {
+        const src = gatedAxes[0];
+        spec1D[src] = sumSpec1D[src];
+      } else if (gatedAxes.length === 2) {
+        spec1D[gatedAxes[0]] = sumSpec1D[gatedAxes[0]];
+        spec1D[gatedAxes[1]] = sumSpec1D[gatedAxes[1]];
+      }
+      updateGateUI();
+      renderAll1DSpectra();
+      render2D();
+      return;
+    }
+
+    lastGateConfigKey = gateConfigKey;
+
+    if (gateAbortCtrl) {
+      gateAbortCtrl.abort();
+    }
+    gateAbortCtrl = new AbortController();
+    const signal = gateAbortCtrl.signal;
+
+    const queryBase = `w0=${encodeURIComponent(w0Str)}&b0=${encodeURIComponent(b0Str)}&w1=${encodeURIComponent(w1Str)}&b1=${encodeURIComponent(b1Str)}&w2=${encodeURIComponent(w2Str)}&b2=${encodeURIComponent(b2Str)}`;
+
+    try {
+      if (gatedAxes.length === 1) {
+        const src = gatedAxes[0];
+        const targets = [0, 1, 2].filter(a => a !== src);
+        spec1D[src] = sumSpec1D[src];
+
+        for (const tgt of targets) {
+          const res = await fetch(`/api/gate_1d?target_axis=${tgt}&${queryBase}`, { signal });
+          if (!res.ok) continue;
+          const data = await res.json();
+          if (data.success) {
+            spec1D[tgt] = data.net_spec;
+            lastGateResults[tgt] = data;
+          }
+        }
+      } else if (gatedAxes.length === 2) {
+        const tgt = [0, 1, 2].find(a => !gatedAxes.includes(a));
+        spec1D[gatedAxes[0]] = sumSpec1D[gatedAxes[0]];
+        spec1D[gatedAxes[1]] = sumSpec1D[gatedAxes[1]];
+
+        const res = await fetch(`/api/gate_1d?target_axis=${tgt}&${queryBase}`, { signal });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.success) {
+          spec1D[tgt] = data.net_spec;
+          lastGateResults[tgt] = data;
+        }
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+      console.error("Gating calculation failed:", e);
+    } finally {
+      if (gateAbortCtrl && gateAbortCtrl.signal === signal) {
+        gateAbortCtrl = null;
+      }
+    }
+
+    updateGateUI();
+    renderAll1DSpectra();
+    render2D();
+  }
+
+  function handleGateKeyPress(type) {
+    let axis = hovered1DAxis;
+    if (axis === null && focusedPanel && focusedPanel.startsWith('1d-')) {
+      axis = parseInt(focusedPanel.split('-')[1], 10);
+    }
+    if (axis === null || axis === undefined) {
+      const hud = document.getElementById('hudCoords');
+      if (hud) hud.innerText = `Hover cursor over a 1D spectrum to set [${type.toUpperCase()}] gate.`;
+      return;
+    }
+
+    const curCh = cursorChannel1D[axis];
+    if (curCh === null) return;
+
+    const axNames = ['Det 1', 'Det 2', 'Rings'];
+
+    if (type === 'w') {
+      if (gates1D[axis].pending_w === null) {
+        gates1D[axis].pending_w = curCh;
+        gates1D[axis].pending_b = null;
+        document.getElementById('hudCoords').innerText = `[${axNames[axis]}] Gate W${gates1D[axis].w.length + 1} Limit 1: ch ${curCh}. Move cursor and press 'W' for Limit 2.`;
+      } else {
+        const c0 = Math.min(gates1D[axis].pending_w, curCh);
+        const c1 = Math.max(gates1D[axis].pending_w, curCh);
+        gates1D[axis].w.push([c0, c1]);
+        gates1D[axis].pending_w = null;
+        document.getElementById('hudCoords').innerText = `[${axNames[axis]}] Gate W set: [${c0}..${c1}] (${c1 - c0 + 1} ch). Computing coincidence cut...`;
+        recomputeGates(true);
+        if (axis === getPlaneAxes(activePlane).z) {
+          fetchTileAndRender();
+          fetchProjections();
+        }
+      }
+    } else if (type === 'x' || type === 'b') {
+      if (gates1D[axis].pending_b === null) {
+        gates1D[axis].pending_b = curCh;
+        gates1D[axis].pending_w = null;
+        document.getElementById('hudCoords').innerText = `[${axNames[axis]}] Background X${gates1D[axis].b.length + 1} Limit 1: ch ${curCh}. Move cursor and press 'X' for Limit 2.`;
+      } else {
+        const c0 = Math.min(gates1D[axis].pending_b, curCh);
+        const c1 = Math.max(gates1D[axis].pending_b, curCh);
+        gates1D[axis].b.push([c0, c1]);
+        gates1D[axis].pending_b = null;
+        document.getElementById('hudCoords').innerText = `[${axNames[axis]}] Background X set: [${c0}..${c1}] (${c1 - c0 + 1} ch). Updating coincidence...`;
+        if (gates1D[axis].w.length > 0) {
+          recomputeGates(true);
+          if (axis === getPlaneAxes(activePlane).z) {
+            fetchTileAndRender();
+            fetchProjections();
+          }
+        }
+      }
+    }
+    renderAll1DSpectra();
+    render2D();
+  }
+
+  function clear1DGates(fetchNormal = true) {
+    let hadPending = false;
+    for (let ax = 0; ax < 3; ax++) {
+      if (gates1D[ax].pending_w !== null || gates1D[ax].pending_b !== null) {
+        gates1D[ax].pending_w = null;
+        gates1D[ax].pending_b = null;
+        hadPending = true;
+      }
+    }
+    if (hadPending) {
+      document.getElementById('hudCoords').innerText = 'Pending gate limit cancelled.';
+      renderAll1DSpectra();
+      return;
+    }
+
+    for (let ax = 0; ax < 3; ax++) {
+      gates1D[ax] = { w: [], b: [], pending_w: null, pending_b: null };
+    }
+    lastGateResults = {};
+    lastGateConfigKey = '';
+    fetchTileAndRender();
+    fetchProjections();
+    if (fetchNormal) recomputeGates(true);
+    showMatrixToast("All coincidence gates cleared");
+  }
+
+  function updateGateUI() {
+    for (let ax = 0; ax < 3; ax++) {
+      const btn = document.getElementById(`btnClearGate${ax}`);
+      if (btn) {
+        btn.style.display = (gates1D[ax].w.length > 0 || gates1D[ax].b.length > 0) ? 'inline-block' : 'none';
+      }
+    }
+  }
+
+  // --- 2D Banana Gate ---
+  function toggleBananaMode() {
+    bananaMode = !bananaMode;
+    const btn = document.getElementById('btnBanana2D');
+    const drawBtn = document.getElementById('btnDrawBanana');
+    if (bananaMode) {
+      if (btn) { btn.style.background = '#ffd600'; btn.style.color = '#000'; }
+      if (drawBtn) drawBtn.innerText = "Close Polygon (Click Start)";
+      canvas2d.style.cursor = 'crosshair';
+      bananaPolygon = [];
+      showMatrixToast("Click points on 2D plane to draw Banana ROI");
+    } else {
+      if (btn) { btn.style.background = ''; btn.style.color = ''; }
+      if (drawBtn) drawBtn.innerText = "Draw Banana [Shift+G]";
+      canvas2d.style.cursor = 'crosshair';
+      render2D();
+    }
+  }
+
+  function clearBananaGate() {
+    bananaMode = false;
+    bananaPolygon = [];
+    bananaGateActive = false;
+    bananaGateResult = null;
+    const btn = document.getElementById('btnBanana2D');
+    const drawBtn = document.getElementById('btnDrawBanana');
+    if (btn) { btn.style.background = ''; btn.style.color = ''; }
+    if (drawBtn) drawBtn.innerText = "Draw Banana [Shift+G]";
+    const clrBtn = document.getElementById('btnClearBanana');
+    if (clrBtn) clrBtn.style.display = 'none';
+
+    recomputeGates();
+    render2D();
+    showMatrixToast("Banana gate cleared");
+  }
+
+  async function applyBananaGate() {
+    if (bananaPolygon.length < 3) {
+      showMatrixToast("Polygon must have at least 3 vertices", true);
+      return;
+    }
+    try {
+      const polyStr = JSON.stringify(bananaPolygon);
+      const res = await fetch(`/api/banana_gate?plane=${activePlane}&polygon=${encodeURIComponent(polyStr)}`);
+      const data = await res.json();
+      if (data.success) {
+        bananaGateActive = true;
+        bananaGateResult = data;
+        bananaMode = false;
+        const btn = document.getElementById('btnBanana2D');
+        const drawBtn = document.getElementById('btnDrawBanana');
+        if (btn) { btn.style.background = ''; btn.style.color = ''; }
+        if (drawBtn) drawBtn.innerText = "Draw Banana [Shift+G]";
+        const clrBtn = document.getElementById('btnClearBanana');
+        if (clrBtn) clrBtn.style.display = 'inline-block';
+
+        const plAxes = getPlaneAxes(activePlane);
+        showMatrixToast(`Banana cut: ${data.total_counts.toLocaleString()} counts projected on ${plAxes.nameZ}`);
+        recomputeGates();
+      } else {
+        showMatrixToast(data.error || "Banana gating failed", true);
+      }
+    } catch (e) {
+      console.error("Banana gate failed:", e);
+    }
+  }
+
+  // --- Peak Finding & Fitting (1D & 2D) ---
+  async function searchPeaks1D(axis) {
+    if (axis === undefined || axis === null) axis = getActive1DAxis();
+    const method = document.getElementById('searchMethodSelect')?.value || 'cwt';
+    const snr = parseFloat(document.getElementById('snrSlider')?.value || 9.0);
+    const rangeMode = document.getElementById('peakSearchRangeSelect')?.value || 'visible';
+
+    const rng = getVisible1DRange(axis);
+    const chMin = rng.start;
+    const chMax = rng.end;
+
+    const x0 = Math.floor(Math.max(0, view2D.x0));
+    const x1 = Math.ceil(view2D.x1);
+    const y0 = Math.floor(Math.max(0, view2D.y0));
+    const y1 = Math.ceil(view2D.y1);
+
+    let gateParams = '';
+    for (let a = 0; a < 3; a++) {
+      if (gates1D[a] && gates1D[a].w && gates1D[a].w.length > 0) {
+        gateParams += `&w${a}=${encodeURIComponent(JSON.stringify(gates1D[a].w))}`;
+      }
+      if (gates1D[a] && gates1D[a].b && gates1D[a].b.length > 0) {
+        gateParams += `&b${a}=${encodeURIComponent(JSON.stringify(gates1D[a].b))}`;
+      }
+    }
+
+    const url = `/api/search_peaks?axis=${axis}&method=${method}&min_snr=${snr}&fwhm_est=4.0&range=${rangeMode}&ch_min=${chMin}&ch_max=${chMax}&plane=${activePlane}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}${gateParams}`;
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.success) {
+        if (rangeMode === 'visible') {
+          const outside = (foundPeaks1D[axis] || []).filter(p => p.channel < chMin || p.channel > chMax);
+          foundPeaks1D[axis] = [...outside, ...(data.peaks || [])].sort((a, b) => a.channel - b.channel);
+        } else {
+          foundPeaks1D[axis] = data.peaks || [];
+        }
+        const btnClr = document.getElementById(`btnClearPeaks${axis}`);
+        if (btnClr) btnClr.style.display = foundPeaks1D[axis].length > 0 ? 'inline-block' : 'none';
+
+        const axisNames = ['Det 1 (X)', 'Det 2 (Y)', 'Det 3 / Rings (Z)'];
+        const methodTag = method === 'mariscotti' ? 'Mariscotti' : (method === 'cwt' ? 'CWT' : 'Prominence');
+        const hud = document.getElementById('hudCoords');
+        if (hud) {
+          hud.innerText = `Peak Search [${axisNames[axis]}]: Found ${data.count} peaks in ${data.elapsed_ms} ms (${methodTag} | SNR ≥ ${snr})`;
+        }
+        showMatrixToast(`${axisNames[axis]}: Found ${data.count} peaks`);
+        render1DSpectrum(axis);
+      } else {
+        showMatrixToast(data.error || "Peak search failed", true);
+      }
+    } catch (e) {
+      console.error("Peak search failed:", e);
+    }
+  }
+
+  function clearFoundPeaks(axis) {
+    if (axis === undefined || axis === null) {
+      for (let a = 0; a < 3; a++) {
+        foundPeaks1D[a] = [];
+        manualPeaks1D[a] = [];
+        const btnClr = document.getElementById(`btnClearPeaks${a}`);
+        if (btnClr) btnClr.style.display = 'none';
+      }
+    } else {
+      foundPeaks1D[axis] = [];
+      manualPeaks1D[axis] = [];
+      const btnClr = document.getElementById(`btnClearPeaks${axis}`);
+      if (btnClr) btnClr.style.display = 'none';
+    }
+    renderAll1DSpectra();
+  }
+
+  function addManualPeakMarker(axis, ch) {
+    const isCal = isAxisCalibrated(axis);
+    const spec = spec1D[axis];
+    const chInt = Math.round(ch);
+    const energy = isCal ? chToEnergy(axis, ch) : ch;
+    const axNames = ['Det 1 (X)', 'Det 2 (Y)', 'Det 3 / Rings (Z)'];
+
+    const existingIdx = (foundPeaks1D[axis] || []).findIndex(p => Math.abs(p.channel - ch) < 1.5);
+    if (existingIdx >= 0) {
+      const removed = foundPeaks1D[axis].splice(existingIdx, 1)[0];
+      const rLbl = isCal ? `${(removed.energy !== undefined ? removed.energy : chToEnergy(axis, removed.channel)).toFixed(1)} keV` : `ch ${removed.channel}`;
+      const hud = document.getElementById('hudCoords');
+      if (hud) hud.innerText = `Removed peak marker at ${rLbl} on ${axNames[axis]} (${foundPeaks1D[axis].length} remaining)`;
+      showMatrixToast(`Removed peak marker at ${rLbl}`);
+    } else {
+      const newMarker = {
+        channel: ch,
+        energy: energy,
+        counts: (spec && chInt >= 0 && chInt < spec.length) ? spec[chInt] : 0,
+        manual: true
+      };
+      if (!foundPeaks1D[axis]) foundPeaks1D[axis] = [];
+      foundPeaks1D[axis].push(newMarker);
+      foundPeaks1D[axis].sort((a, b) => a.channel - b.channel);
+      const pLbl = isCal ? `${energy.toFixed(1)} keV` : `ch ${ch}`;
+      const hud = document.getElementById('hudCoords');
+      if (hud) hud.innerText = `Added peak marker at ${pLbl} on ${axNames[axis]} (Total: ${foundPeaks1D[axis].length} peaks | Press 'V' to fit)`;
+      showMatrixToast(`Added peak marker at ${pLbl}`);
+    }
+    render1DSpectrum(axis);
+  }
+
+  async function requestPeakFit(axis, ch) {
+    if (ch === null || ch === undefined || isNaN(ch)) return;
+
+    const x0 = Math.floor(Math.max(0, view2D.x0));
+    const x1 = Math.ceil(Math.min(metadata.shape ? metadata.shape[0] : 4096, view2D.x1));
+    const y0 = Math.floor(Math.max(0, view2D.y0));
+    const y1 = Math.ceil(Math.min(metadata.shape ? metadata.shape[1] : 4096, view2D.y1));
+    const fitType = document.getElementById('fitTypeSelect')?.value || 'gaussian';
+    const fwhmEst = parseFloat(document.getElementById('peakSearchFwhmSlider')?.value || '4.0');
+    const fwhmMult = document.getElementById('fwhmMultSlider1D') ? parseFloat(document.getElementById('fwhmMultSlider1D').value) : 4.0;
+    const axNames = ['Det 1', 'Det 2', 'Rings'];
+    const detLabel = axNames[axis] || `Det ${axis + 1}`;
+    const gate3rd = get3rdAxisGateParam();
+
+    let gateParams = '';
+    if (gate3rd) gateParams += `&gate_3rd=${encodeURIComponent(gate3rd)}`;
+    for (let a = 0; a < 3; a++) {
+      if (gates1D[a] && gates1D[a].w && gates1D[a].w.length > 0) {
+        gateParams += `&w${a}=${encodeURIComponent(JSON.stringify(gates1D[a].w))}`;
+      }
+      if (gates1D[a] && gates1D[a].b && gates1D[a].b.length > 0) {
+        gateParams += `&b${a}=${encodeURIComponent(JSON.stringify(gates1D[a].b))}`;
+      }
+    }
+
+    // 1. REGION FIT: If user defined a fit region with 'R', fit all peaks in region
+    if (activeRegion1D[axis] !== null) {
+      const [r0, r1] = activeRegion1D[axis];
+      if (ch >= r0 - 35 && ch <= r1 + 35) {
+        const hud = document.getElementById('hudCoords');
+        if (hud) hud.innerText = `Fitting region [${r0}..${r1}] on ${detLabel}...`;
+
+        const regionPeaks = (foundPeaks1D[axis] || []).filter(p => p.channel >= r0 - 0.8 && p.channel <= r1 + 0.8);
+        const peakChannels = regionPeaks.map(p => p.channel.toFixed(2)).join(',');
+
+        let url = `/api/fit_all_peaks_1d?axis=${axis}&region=${r0},${r1}&peaks=${encodeURIComponent(peakChannels)}&fit_type=${fitType}&fwhm_est=${fwhmEst}&fwhm_mult=${fwhmMult}&plane=${activePlane}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}${gateParams}`;
+        if (activeBg1D[axis] && activeBg1D[axis].length > 0) {
+          url += `&bg_regions=${encodeURIComponent(JSON.stringify(activeBg1D[axis]))}`;
+        }
+
+        try {
+          const res = await fetch(url);
+          const data = await res.json();
+          if (data.success) {
+            if (!activeMultiFits1D[axis]) activeMultiFits1D[axis] = [];
+            activeMultiFits1D[axis].push(data);
+            multiFit1DResults[axis] = data;
+
+            if (data.peaks && data.peaks.length > 0) {
+              const fittedMarkers = data.peaks.map(p => ({
+                channel: p.centroid_ch,
+                energy: p.centroid_e,
+                counts: p.amplitude,
+                fwhm: p.fwhm_ch,
+                area: p.area,
+                area_err: p.area_err,
+                fitted: true
+              }));
+              const outside = (foundPeaks1D[axis] || []).filter(p => p.channel < r0 - 0.8 || p.channel > r1 + 0.8);
+              foundPeaks1D[axis] = [...outside, ...fittedMarkers].sort((a, b) => a.channel - b.channel);
+            }
+
+            displayMultiFitCard1D(data, axis);
+            render1DSpectrum(axis);
+            if (hud) hud.innerText = `1D Region Fit [${detLabel}]: Fitted ${data.peaks_fitted} peaks | χ²_red = ${data.red_chi2} (${data.fit_type} | ${data.elapsed_ms} ms)`;
+            showMatrixToast(`Fitted ${data.peaks_fitted} peaks in region [${r0}..${r1}]`);
+          } else {
+            showMatrixToast(data.error || "Region fit failed", true);
+          }
+        } catch (err) {
+          console.error("Region fit error:", err);
+        }
+        return;
+      }
+    }
+
+    // 2. MULTIPLET FIT: Check if markers form a cluster near ch
+    const allPeaks = foundPeaks1D[axis] || [];
+    const clusterThresh = Math.max(14, 3.8 * fwhmEst);
+    const halfW = Math.max(7, 2.8 * fwhmEst);
+
+    const sortedPeaks = [...allPeaks].sort((a, b) => a.channel - b.channel);
+    const clusters = [];
+    for (const p of sortedPeaks) {
+      if (!clusters.length || p.channel - clusters[clusters.length - 1][clusters[clusters.length - 1].length - 1].channel > clusterThresh) {
+        clusters.push([p]);
+      } else {
+        clusters[clusters.length - 1].push(p);
+      }
+    }
+
+    let targetCluster = null;
+    for (const cl of clusters) {
+      const minC = cl[0].channel;
+      const maxC = cl[cl.length - 1].channel;
+      if (ch >= minC - halfW && ch <= maxC + halfW) {
+        targetCluster = cl;
+        break;
+      }
+    }
+
+    if (targetCluster && targetCluster.length >= 2) {
+      const hud = document.getElementById('hudCoords');
+      if (hud) hud.innerText = `Fitting multiplet of ${targetCluster.length} peaks on ${detLabel}...`;
+      const peakChannels = targetCluster.map(p => p.channel.toFixed(2)).join(',');
+      const minSnr = parseFloat(document.getElementById('peakSearchSnrSlider')?.value || '9.0');
+      const minCluster = targetCluster[0].channel;
+      const maxCluster = targetCluster[targetCluster.length - 1].channel;
+      const padW = Math.max(12, Math.round(fwhmEst * 4.5));
+      const specLen = (spec1D[axis] ? spec1D[axis].length : 4096);
+      const chMin = Math.max(0, Math.floor(minCluster - padW));
+      const chMax = Math.min(specLen - 1, Math.ceil(maxCluster + padW));
+
+      let url = `/api/fit_all_peaks_1d?axis=${axis}&ch_min=${chMin}&ch_max=${chMax}&peaks=${encodeURIComponent(peakChannels)}&fit_type=${fitType}&fwhm_est=${fwhmEst}&min_snr=${minSnr}&plane=${activePlane}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}&fwhm_mult=${fwhmMult}${gateParams}`;
+      if (activeBg1D[axis] && activeBg1D[axis].length > 0) {
+        url += `&bg_regions=${encodeURIComponent(JSON.stringify(activeBg1D[axis]))}`;
+      }
+
+      try {
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.success) {
+          if (!activeMultiFits1D[axis]) activeMultiFits1D[axis] = [];
+          activeMultiFits1D[axis].push(data);
+          multiFit1DResults[axis] = data;
+
+          if (data.peaks && data.peaks.length > 0) {
+            const fittedMarkers = data.peaks.map(p => ({
+              channel: p.centroid_ch,
+              energy: p.centroid_e,
+              counts: p.amplitude,
+              fwhm: p.fwhm_ch,
+              area: p.area,
+              area_err: p.area_err,
+              fitted: true
+            }));
+            const clusterChs = new Set(targetCluster.map(p => p.channel));
+            const outside = (foundPeaks1D[axis] || []).filter(p => !clusterChs.has(p.channel));
+            foundPeaks1D[axis] = [...outside, ...fittedMarkers].sort((a, b) => a.channel - b.channel);
+          }
+
+          displayMultiFitCard1D(data, axis);
+          render1DSpectrum(axis);
+          if (hud) hud.innerText = `1D Multiplet Fit [${detLabel}]: Fitted ${data.peaks_fitted} peaks | χ²_red = ${data.red_chi2} (${data.fit_type} | ${data.elapsed_ms} ms)`;
+          showMatrixToast(`Fitted multiplet of ${data.peaks_fitted} peaks`);
+        } else {
+          showMatrixToast(data.error || "Multiplet fit failed", true);
+        }
+      } catch (err) {
+        console.error("Multiplet fit error:", err);
+      }
+      return;
+    }
+
+    // 3. SINGLE PEAK FIT: Proceed with standard single peak fit
+    let fitCh = ch;
+    if (targetCluster && targetCluster.length === 1) {
+      fitCh = targetCluster[0].channel;
+    }
+
+    const url = `/api/fit_peak?axis=${axis}&channel=${fitCh}&fit_type=${fitType}&fwhm_mult=${fwhmMult}&plane=${activePlane}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}${gateParams}`;
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.success) {
+        if (!activeFits1D[axis]) activeFits1D[axis] = [];
+        const thresh1D = Math.max(2.0, (data.fwhm_ch || 4.0) * 0.8);
+        const existingIdx = activeFits1D[axis].findIndex(f =>
+          Math.abs(f.centroid_ch - data.centroid_ch) < thresh1D
+        );
+        if (existingIdx >= 0) {
+          activeFits1D[axis][existingIdx] = data;
+        } else {
+          activeFits1D[axis].push(data);
+        }
+        fit1DResults[axis] = data;
+
+        const newMarker = {
+          channel: data.centroid_ch,
+          energy: data.centroid_e,
+          counts: data.amplitude,
+          fwhm: data.fwhm_ch,
+          area: data.area,
+          area_err: data.area_err,
+          fitted: true
+        };
+        const outside = (foundPeaks1D[axis] || []).filter(p => Math.abs(p.channel - data.centroid_ch) >= 1.5);
+        foundPeaks1D[axis] = [...outside, newMarker].sort((a, b) => a.channel - b.channel);
+        displayFitCard1D(data, axis);
+        render1DSpectrum(axis);
+        const isCal = isAxisCalibrated(axis);
+        const enStr = isCal ? ` (${data.centroid_e} keV)` : '';
+        showMatrixToast(`Fitted Peak: Centroid=${data.centroid_ch?.toFixed(2)}${enStr}, Area=${Math.round(data.area || 0)}`);
+      } else {
+        showMatrixToast(data.error || "Fit failed", true);
+      }
+    } catch (e) {
+      console.error("Peak fit failed:", e);
+    }
+  }
+
+  async function fitAllPeaks1D(axis) {
+    if (axis === undefined || axis === null) axis = getActive1DAxis();
+    const fitType = document.getElementById('fitTypeSelect')?.value || 'gaussian';
+    const fwhmMult = parseFloat(document.getElementById('fwhmMultSlider1D')?.value || 4.0);
+    const fwhmEst = parseFloat(document.getElementById('peakSearchFwhmSlider')?.value || '4.0');
+    const minSnr = parseFloat(document.getElementById('peakSearchSnrSlider')?.value || '9.0');
+    const gate3rd = get3rdAxisGateParam();
+
+    const rng = getVisible1DRange(axis);
+    const chMin = rng.start;
+    const chMax = rng.end;
+
+    // Check visible found peaks in current display range
+    let visiblePeaks = (foundPeaks1D[axis] || []).filter(p => p.channel >= chMin && p.channel <= chMax);
+
+    // If no peaks found yet on display, automatically perform peak search first
+    if (visiblePeaks.length === 0) {
+      const hud = document.getElementById('hudCoords');
+      if (hud) hud.innerText = `No peak markers in visible window [${chMin}..${chMax}]. Searching peaks first...`;
+      await searchPeaks1D(axis);
+      visiblePeaks = (foundPeaks1D[axis] || []).filter(p => p.channel >= chMin && p.channel <= chMax);
+    }
+
+    if (visiblePeaks.length === 0) {
+      const hud = document.getElementById('hudCoords');
+      if (hud) hud.innerText = `No peaks found on display [${chMin}..${chMax}] to fit.`;
+      showMatrixToast("No peaks found to fit", true);
+      return;
+    }
+
+    const allPeaks = visiblePeaks.map(p => p.channel);
+    const peaksParam = allPeaks.length > 0 ? `&peaks=${allPeaks.join(',')}` : '';
+
+    let gateParams = '';
+    if (gate3rd) gateParams += `&gate_3rd=${encodeURIComponent(gate3rd)}`;
+    for (let a = 0; a < 3; a++) {
+      if (gates1D[a] && gates1D[a].w && gates1D[a].w.length > 0) {
+        gateParams += `&w${a}=${encodeURIComponent(JSON.stringify(gates1D[a].w))}`;
+      }
+      if (gates1D[a] && gates1D[a].b && gates1D[a].b.length > 0) {
+        gateParams += `&b${a}=${encodeURIComponent(JSON.stringify(gates1D[a].b))}`;
+      }
+    }
+
+    const x0 = Math.floor(Math.max(0, view2D.x0));
+    const x1 = Math.ceil(Math.min(metadata.shape ? metadata.shape[0] : 4096, view2D.x1));
+    const y0 = Math.floor(Math.max(0, view2D.y0));
+    const y1 = Math.ceil(Math.min(metadata.shape ? metadata.shape[1] : 4096, view2D.y1));
+
+    const url = `/api/fit_all_peaks_1d?axis=${axis}&fit_type=${fitType}&fwhm_est=${fwhmEst}&min_snr=${minSnr}&fwhm_mult=${fwhmMult}&ch_min=${chMin}&ch_max=${chMax}&plane=${activePlane}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}${peaksParam}${gateParams}`;
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.success) {
+        if (!activeMultiFits1D[axis]) activeMultiFits1D[axis] = [];
+        activeMultiFits1D[axis].push(data);
+        multiFit1DResults[axis] = data;
+        if (data.peaks && data.peaks.length > 0) {
+          const fittedMarkers = data.peaks.map(p => ({
+            channel: p.centroid_ch,
+            energy: p.centroid_e,
+            counts: p.amplitude,
+            fwhm: p.fwhm_ch,
+            area: p.area,
+            area_err: p.area_err,
+            fitted: true
+          }));
+          const outside = (foundPeaks1D[axis] || []).filter(p => p.channel < chMin || p.channel > chMax);
+          foundPeaks1D[axis] = [...outside, ...fittedMarkers].sort((a, b) => a.channel - b.channel);
+        }
+        displayMultiFitCard1D(data, axis);
+        render1DSpectrum(axis);
+        showMatrixToast(`Multi-fit complete: ${data.peaks?.length || 0} peaks fitted`);
+      } else {
+        showMatrixToast(data.error || "Multi-fit failed", true);
+      }
+    } catch (e) {
+      console.error("Multi-fit failed:", e);
+    }
+  }
+
+  async function requestPeakFit2D(x, y) {
+    const fitType = document.getElementById('fitTypeSelect')?.value || 'gaussian';
+    const roiHalf = parseInt(document.getElementById('roiWidthSlider2D')?.value || 16, 10);
+
+    const gate3rd = get3rdAxisGateParam();
+    let url = `/api/fit_peak_2d?plane=${activePlane}&x=${x}&y=${y}&fit_type=${fitType}&roi_half_width=${roiHalf}`;
+    if (gate3rd) {
+      url += `&gate_3rd=${encodeURIComponent(gate3rd)}`;
+    }
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.success) {
+        if (!activeFits2D) activeFits2D = [];
+        const cx = data.centroid_x_ch !== undefined ? data.centroid_x_ch : data.centroid_x;
+        const cy = data.centroid_y_ch !== undefined ? data.centroid_y_ch : data.centroid_y;
+        const fx = data.fwhm_x_ch !== undefined ? data.fwhm_x_ch : (data.fwhm_x || 4.0);
+        const fy = data.fwhm_y_ch !== undefined ? data.fwhm_y_ch : (data.fwhm_y || 4.0);
+
+        const thresh2D = Math.max(3.0, fx * 0.8);
+        const existing2DIdx = activeFits2D.findIndex(f => {
+          const fcx = f.centroid_x_ch !== undefined ? f.centroid_x_ch : f.centroid_x;
+          const fcy = f.centroid_y_ch !== undefined ? f.centroid_y_ch : f.centroid_y;
+          return Math.hypot(fcx - cx, fcy - cy) < thresh2D;
+        });
+        if (existing2DIdx >= 0) {
+          activeFits2D[existing2DIdx] = data;
+        } else {
+          activeFits2D.push(data);
+        }
+        fit2DResult = data;
+
+        // Add 1D projection markers for fitted 2D peak
+        const plAxes = getPlaneAxes(activePlane);
+        const newMarkerX = {
+          channel: cx,
+          energy: data.centroid_x_e,
+          counts: data.amplitude || 0,
+          fwhm: fx,
+          area: data.volume,
+          fitted: true,
+          fitted2D: true
+        };
+        const outsideX = (foundPeaks1D[plAxes.x] || []).filter(p => Math.abs(p.channel - cx) >= 1.5);
+        foundPeaks1D[plAxes.x] = [...outsideX, newMarkerX].sort((a, b) => a.channel - b.channel);
+
+        const newMarkerY = {
+          channel: cy,
+          energy: data.centroid_y_e,
+          counts: data.amplitude || 0,
+          fwhm: fy,
+          area: data.volume,
+          fitted: true,
+          fitted2D: true
+        };
+        const outsideY = (foundPeaks1D[plAxes.y] || []).filter(p => Math.abs(p.channel - cy) >= 1.5);
+        foundPeaks1D[plAxes.y] = [...outsideY, newMarkerY].sort((a, b) => a.channel - b.channel);
+
+        displayFitCard2D(data);
+        render2D();
+        renderAll1DSpectra();
+        const gambaVol = Math.round(data.gamba_net !== undefined ? data.gamba_net : (data.gamba_net_counts || 0));
+        showMatrixToast(`2D Coincidence Fit: Vol=${Math.round(data.volume || 0)}, Gamba=${gambaVol}`);
+      } else {
+        showMatrixToast(data.error || "2D fit failed", true);
+      }
+    } catch (e) {
+      console.error("2D fit failed:", e);
+    }
+  }
+
+  // --- 1D Peak Integration ---
+  function handleFitBgKeyPress() {
+    let axis = hovered1DAxis;
+    if (axis === null && focusedPanel.startsWith('1d-')) axis = parseInt(focusedPanel.split('-')[1], 10);
+    if (axis === null || axis === undefined) return;
+    const curCh = cursorChannel1D[axis];
+    if (curCh === null) return;
+
+    if (pendingBg1D[axis] === null) {
+      pendingBg1D[axis] = curCh;
+      showMatrixToast(`[Axis ${axis}] BG window Limit 1 set: ch ${curCh}. Press 'B' for Limit 2.`);
+    } else {
+      const c0 = Math.min(pendingBg1D[axis], curCh);
+      const c1 = Math.max(pendingBg1D[axis], curCh);
+      activeBg1D[axis].push([c0, c1]);
+      pendingBg1D[axis] = null;
+      showMatrixToast(`[Axis ${axis}] Added BG window: [${c0}..${c1}]`);
+      render1DSpectrum(axis);
+    }
+  }
+
+  function handleRegionKeyPress() {
+    let axis = hovered1DAxis;
+    if (axis === null && focusedPanel.startsWith('1d-')) axis = parseInt(focusedPanel.split('-')[1], 10);
+    if (axis === null || axis === undefined) return;
+    const curCh = cursorChannel1D[axis];
+    if (curCh === null) return;
+
+    if (pendingRegion1D[axis] === null) {
+      pendingRegion1D[axis] = curCh;
+      showMatrixToast(`[Axis ${axis}] Region Limit 1 set: ch ${curCh}. Press 'R' for Limit 2.`);
+    } else {
+      const c0 = Math.min(pendingRegion1D[axis], curCh);
+      const c1 = Math.max(pendingRegion1D[axis], curCh);
+      activeRegion1D[axis] = [c0, c1];
+      pendingRegion1D[axis] = null;
+      showMatrixToast(`[Axis ${axis}] Set Fit/Integration Region: [${c0}..${c1}]`);
+      render1DSpectrum(axis);
+    }
+  }
+
+  async function handleIntegrateKeyPress(axisOpt) {
+    let axis = (axisOpt !== undefined) ? axisOpt : (hovered1DAxis !== null ? hovered1DAxis : (focusedPanel.startsWith('1d-') ? parseInt(focusedPanel.split('-')[1], 10) : 0));
+    const reg = activeRegion1D[axis];
+    if (!reg) {
+      showMatrixToast(`Define region on Axis ${axis} first using 'R' key (or cursor)`, true);
+      return;
+    }
+
+    const bgStr = activeBg1D[axis].map(b => `${b[0]}-${b[1]}`).join(',');
+    const url = `/api/integrate_1d?axis=${axis}&region=${reg[0]},${reg[1]}&bg_regions=${encodeURIComponent(bgStr)}&plane=${activePlane}`;
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.success) {
+        integrateResult1D[axis] = data;
+        displayIntegrateCard1D(data, axis);
+        render1DSpectrum(axis);
+        showMatrixToast(`Integration: Net=${Math.round(data.net_area || 0)}, Gross=${data.gross_counts}`);
+      } else {
+        showMatrixToast(data.error || "Integration failed", true);
+      }
+    } catch (e) {
+      console.error("Integration failed:", e);
+    }
+  }
+
+  function clearIntegration1D() {
+    for (let a = 0; a < 3; a++) {
+      integrateResult1D[a] = null;
+      activeRegion1D[a] = null;
+      activeBg1D[a] = [];
+    }
+    const card = document.getElementById('integrateCard1D');
+    if (card) card.style.display = 'none';
+    renderAll1DSpectra();
+  }
+
+  function clearAllFits() {
+    for (let a = 0; a < 3; a++) {
+      fit1DResults[a] = null;
+      activeFits1D[a] = [];
+      multiFit1DResults[a] = null;
+      activeMultiFits1D[a] = [];
+      integrateResult1D[a] = null;
+      foundPeaks1D[a] = [];
+      manualPeaks1D[a] = [];
+      activeRegion1D[a] = null;
+      activeBg1D[a] = [];
+      const btnClr = document.getElementById(`btnClearPeaks${a}`);
+      if (btnClr) btnClr.style.display = 'none';
+    }
+    fit2DResult = null;
+    activeFits2D = [];
+
+    document.getElementById('integrateCard1D').style.display = 'none';
+    document.getElementById('fitCard1D').style.display = 'none';
+    document.getElementById('fitCardMulti1D').style.display = 'none';
+    document.getElementById('fitCard2D').style.display = 'none';
+
+    renderAll1DSpectra();
+    render2D();
+    showMatrixToast("All fits, peak marks, and integrations cleared");
+  }
+
+  // --- Canvas Rendering: 2D Matrix Heatmap ---
+  function render2D() {
+    updateScaleBadge2D();
+    const dpr = window.devicePixelRatio || 1;
+    ctx2d.setTransform(1, 0, 0, 1, 0, 0);
+    ctx2d.clearRect(0, 0, canvas2d.width, canvas2d.height);
+    ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const pr = getPlotRect2D();
+
+    // 1. Draw Density Heatmap using ColorLUT
+    if (currentTileData && tileW > 0 && tileH > 0) {
+      const imgData = ctx2d.createImageData(tileW, tileH);
+      const buf32 = new Uint32Array(imgData.data.buffer);
+
+      const vmin = parseInt(document.getElementById('vminSlider')?.value || 0, 10) || 0;
+      let vmax = currentVmax || 500;
+      if (vmax <= vmin) vmax = vmin + 1;
+      const scaleMode = scaleMode2D;
+
+      const isLog = (scaleMode === 'log');
+      const isSqrt = (scaleMode === 'sqrt');
+      const logMin = Math.log(Math.max(1, vmin));
+      const logScale = 255.0 / (Math.log(Math.max(2, vmax)) - logMin);
+      const sqrtScale = 255.0 / Math.sqrt(Math.max(1, vmax));
+      const linScale = 255.0 / Math.max(1, vmax - vmin);
+
+      for (let i = 0; i < currentTileData.length; i++) {
+        let val = currentTileData[i];
+        if (val <= vmin) {
+          buf32[i] = 0xFF000000;
+        } else {
+          let idx;
+          if (isLog) idx = (Math.log(val) - logMin) * logScale;
+          else if (isSqrt) idx = Math.sqrt(val) * sqrtScale;
+          else idx = (val - vmin) * linScale;
+          idx = Math.max(0, Math.min(255, idx | 0));
+          buf32[i] = colorLUT[idx];
+        }
+      }
+
+      const offCanvas = document.createElement('canvas');
+      offCanvas.width = tileW;
+      offCanvas.height = tileH;
+      offCanvas.getContext('2d').putImageData(imgData, 0, 0);
+
+      ctx2d.save();
+      ctx2d.beginPath();
+      ctx2d.rect(pr.x, pr.y, pr.w, pr.h);
+      ctx2d.clip();
+      ctx2d.imageSmoothingEnabled = false;
+      ctx2d.translate(pr.x, pr.y + pr.h);
+      ctx2d.scale(1, -1);
+      ctx2d.drawImage(offCanvas, 0, 0, pr.w, pr.h);
+      ctx2d.restore();
+    }
+
+    // 2. Axes Border & Grid Ticks
+    ctx2d.strokeStyle = '#444';
+    ctx2d.lineWidth = 1.2;
+    ctx2d.strokeRect(pr.x, pr.y, pr.w, pr.h);
+    ctx2d.fillStyle = '#bbb';
+    ctx2d.font = 'bold 15px system-ui, -apple-system, sans-serif';
+    ctx2d.textAlign = 'center';
+
+    const numTicks = 6;
+    for (let i = 0; i <= numTicks; i++) {
+      const frac = i / numTicks;
+      const chX = Math.round(view2D.x0 + frac * (view2D.x1 - view2D.x0));
+      const chY = Math.round(view2D.y0 + frac * (view2D.y1 - view2D.y0));
+      const px = Math.round(pr.x + frac * pr.w);
+      const py = Math.round(pr.y + pr.h - frac * pr.h);
+
+      ctx2d.beginPath();
+      ctx2d.moveTo(px, pr.y + pr.h); ctx2d.lineTo(px, pr.y + pr.h + 6); ctx2d.stroke();
+      ctx2d.fillText(chX.toString(), px, pr.y + pr.h + 22);
+
+      ctx2d.beginPath();
+      ctx2d.moveTo(pr.x, py); ctx2d.lineTo(pr.x - 6, py); ctx2d.stroke();
+      ctx2d.textAlign = 'right';
+      ctx2d.fillText(chY.toString(), pr.x - 10, py + 5);
+      ctx2d.textAlign = 'center';
+    }
+
+    // 2D Axis Titles
+    const plAxes = getPlaneAxes(activePlane);
+    const isCalX = isAxisCalibrated(plAxes.x);
+    const isCalY = isAxisCalibrated(plAxes.y);
+    ctx2d.fillStyle = '#00e5ff';
+    ctx2d.font = 'bold 15px system-ui, -apple-system, sans-serif';
+    ctx2d.textAlign = 'center';
+    ctx2d.fillText(isCalX ? `${plAxes.nameX} Energy (keV)` : `${plAxes.nameX} Channel`, pr.x + pr.w / 2, pr.y + pr.h + 46);
+
+    ctx2d.save();
+    ctx2d.translate(pr.x - 52, pr.y + pr.h / 2);
+    ctx2d.rotate(-Math.PI / 2);
+    ctx2d.fillStyle = '#ff9800';
+    ctx2d.font = 'bold 15px system-ui, -apple-system, sans-serif';
+    ctx2d.textAlign = 'center';
+    ctx2d.fillText(isCalY ? `${plAxes.nameY} Energy (keV)` : `${plAxes.nameY} Channel`, 0, 0);
+    ctx2d.restore();
+
+    // 3. Limit Markers
+    ctx2d.save();
+    ctx2d.beginPath();
+    ctx2d.rect(pr.x, pr.y, pr.w, pr.h);
+    ctx2d.clip();
+    ctx2d.lineWidth = 1.5;
+    if (markers.left !== null) { let pt = chToPx2D(markers.left, 0); ctx2d.strokeStyle = '#00e5ff'; ctx2d.setLineDash([5, 5]); ctx2d.beginPath(); ctx2d.moveTo(pt.x, pr.y); ctx2d.lineTo(pt.x, pr.y + pr.h); ctx2d.stroke(); }
+    if (markers.right !== null) { let pt = chToPx2D(markers.right, 0); ctx2d.strokeStyle = '#00e5ff'; ctx2d.setLineDash([2, 4]); ctx2d.beginPath(); ctx2d.moveTo(pt.x, pr.y); ctx2d.lineTo(pt.x, pr.y + pr.h); ctx2d.stroke(); }
+    if (markers.down !== null) { let pt = chToPx2D(0, markers.down); ctx2d.strokeStyle = '#ff4081'; ctx2d.setLineDash([5, 5]); ctx2d.beginPath(); ctx2d.moveTo(pr.x, pt.y); ctx2d.lineTo(pr.x + pr.w, pt.y); ctx2d.stroke(); }
+    if (markers.up !== null) { let pt = chToPx2D(0, markers.up); ctx2d.strokeStyle = '#ff4081'; ctx2d.setLineDash([2, 4]); ctx2d.beginPath(); ctx2d.moveTo(pr.x, pt.y); ctx2d.lineTo(pr.x + pr.w, pt.y); ctx2d.stroke(); }
+    ctx2d.setLineDash([]);
+    ctx2d.restore();
+
+    // 4. Box Zoom Drag Rect
+    if (isBoxZooming2D && dragStart2D && dragCurrent2D) {
+      const rx = Math.min(dragStart2D.x, dragCurrent2D.x);
+      const ry = Math.min(dragStart2D.y, dragCurrent2D.y);
+      const rw = Math.abs(dragCurrent2D.x - dragStart2D.x);
+      const rh = Math.abs(dragCurrent2D.y - dragStart2D.y);
+      ctx2d.fillStyle = 'rgba(0, 229, 255, 0.28)';
+      ctx2d.strokeStyle = '#00e5ff';
+      ctx2d.lineWidth = 1.8;
+      ctx2d.fillRect(rx, ry, rw, rh);
+      ctx2d.strokeRect(rx, ry, rw, rh);
+    }
+
+    // 5. 1D Gating Slices on 2D Matrix
+    for (const ax of [plAxes.x, plAxes.y]) {
+      const isX = (ax === plAxes.x);
+      const g = gates1D[ax];
+      if (g.w.length > 0 || g.b.length > 0 || g.pending_w !== null || g.pending_b !== null) {
+        ctx2d.save();
+        ctx2d.beginPath();
+        ctx2d.rect(pr.x, pr.y, pr.w, pr.h);
+        ctx2d.clip();
+
+        // Pending gate markers
+        if (g.pending_w !== null) {
+          const pt = isX ? chToPx2D(g.pending_w, 0) : chToPx2D(0, g.pending_w);
+          ctx2d.strokeStyle = '#00e676';
+          ctx2d.lineWidth = 1.5;
+          ctx2d.setLineDash([4, 4]);
+          ctx2d.beginPath();
+          if (isX) { ctx2d.moveTo(pt.x, pr.y); ctx2d.lineTo(pt.x, pr.y + pr.h); }
+          else { ctx2d.moveTo(pr.x, pt.y); ctx2d.lineTo(pr.x + pr.w, pt.y); }
+          ctx2d.stroke();
+        }
+
+        // Active W Gates (Green band)
+        for (const [w0, w1] of g.w) {
+          const p0 = isX ? chToPx2D(w0, 0) : chToPx2D(0, w0);
+          const p1 = isX ? chToPx2D(w1, 0) : chToPx2D(0, w1);
+          ctx2d.fillStyle = 'rgba(0, 230, 118, 0.22)';
+          ctx2d.strokeStyle = '#00e676';
+          ctx2d.lineWidth = 1.5;
+          if (isX) {
+            const rx = Math.min(p0.x, p1.x);
+            const rw = Math.max(1, Math.abs(p1.x - p0.x));
+            ctx2d.fillRect(rx, pr.y, rw, pr.h);
+            ctx2d.strokeRect(rx, pr.y, rw, pr.h);
+          } else {
+            const ry = Math.min(p0.y, p1.y);
+            const rh = Math.max(1, Math.abs(p1.y - p0.y));
+            ctx2d.fillRect(pr.x, ry, pr.w, rh);
+            ctx2d.strokeRect(pr.x, ry, pr.w, rh);
+          }
+        }
+
+        // Active B/X Bg Gates (Red band)
+        for (const [b0, b1] of g.b) {
+          const p0 = isX ? chToPx2D(b0, 0) : chToPx2D(0, b0);
+          const p1 = isX ? chToPx2D(b1, 0) : chToPx2D(0, b1);
+          ctx2d.fillStyle = 'rgba(255, 64, 129, 0.20)';
+          ctx2d.strokeStyle = '#ff4081';
+          ctx2d.lineWidth = 1.5;
+          if (isX) {
+            const rx = Math.min(p0.x, p1.x);
+            const rw = Math.max(1, Math.abs(p1.x - p0.x));
+            ctx2d.fillRect(rx, pr.y, rw, pr.h);
+            ctx2d.strokeRect(rx, pr.y, rw, pr.h);
+          } else {
+            const ry = Math.min(p0.y, p1.y);
+            const rh = Math.max(1, Math.abs(p1.y - p0.y));
+            ctx2d.fillRect(pr.x, ry, pr.w, rh);
+            ctx2d.strokeRect(pr.x, ry, pr.w, rh);
+          }
+        }
+        ctx2d.restore();
+      }
+    }
+
+    // 6. 2D Banana Gate Polygon
+    if (bananaPolygon.length > 0) {
+      ctx2d.save();
+      ctx2d.beginPath();
+      ctx2d.rect(pr.x, pr.y, pr.w, pr.h);
+      ctx2d.clip();
+
+      ctx2d.beginPath();
+      const pt0 = chToPx2D(bananaPolygon[0].x, bananaPolygon[0].y);
+      ctx2d.moveTo(pt0.x, pt0.y);
+      for (let i = 1; i < bananaPolygon.length; i++) {
+        const pt = chToPx2D(bananaPolygon[i].x, bananaPolygon[i].y);
+        ctx2d.lineTo(pt.x, pt.y);
+      }
+      if (bananaGateActive) ctx2d.closePath();
+      ctx2d.fillStyle = 'rgba(255, 214, 0, 0.25)';
+      ctx2d.strokeStyle = '#ffd600';
+      ctx2d.lineWidth = 2.0;
+      if (bananaGateActive) ctx2d.fill();
+      ctx2d.stroke();
+
+      // Vertices
+      for (const p of bananaPolygon) {
+        const pt = chToPx2D(p.x, p.y);
+        ctx2d.fillStyle = '#ff9100';
+        ctx2d.beginPath();
+        ctx2d.arc(pt.x, pt.y, 4, 0, 2 * Math.PI);
+        ctx2d.fill();
+      }
+      ctx2d.restore();
+    }
+
+    // 7. 2D Coincidence Peak Fit Indicators & FWHM Ellipses (Persistent Multi-Fits)
+    const fits2DList = (activeFits2D && activeFits2D.length > 0) ? activeFits2D : (fit2DResult && fit2DResult.success ? [fit2DResult] : []);
+    for (const f2d of fits2DList) {
+      if (!f2d || !f2d.success) continue;
+      const cx = f2d.centroid_x_ch !== undefined ? f2d.centroid_x_ch : f2d.centroid_x;
+      const cy = f2d.centroid_y_ch !== undefined ? f2d.centroid_y_ch : f2d.centroid_y;
+      const fx = f2d.fwhm_x_ch !== undefined ? f2d.fwhm_x_ch : (f2d.fwhm_x || 6.0);
+      const fy = f2d.fwhm_y_ch !== undefined ? f2d.fwhm_y_ch : (f2d.fwhm_y || 6.0);
+      if (cx === undefined || cy === undefined || isNaN(cx) || isNaN(cy)) continue;
+
+      const ptC = chToPx2D(cx, cy);
+
+      ctx2d.save();
+      ctx2d.beginPath();
+      ctx2d.rect(pr.x, pr.y, pr.w, pr.h);
+      ctx2d.clip();
+
+      // A. ROI box
+      if (f2d.roi_x_min !== undefined && f2d.roi_x_max !== undefined && f2d.roi_y_min !== undefined && f2d.roi_y_max !== undefined) {
+        const ptL = chToPx2D(f2d.roi_x_min, f2d.roi_y_max + 1);
+        const ptR = chToPx2D(f2d.roi_x_max + 1, f2d.roi_y_min);
+        ctx2d.fillStyle = 'rgba(255, 214, 0, 0.08)';
+        ctx2d.fillRect(Math.min(ptL.x, ptR.x), Math.min(ptL.y, ptR.y), Math.abs(ptR.x - ptL.x), Math.abs(ptR.y - ptL.y));
+        ctx2d.strokeStyle = 'rgba(255, 214, 0, 0.6)';
+        ctx2d.lineWidth = 1;
+        ctx2d.setLineDash([4, 4]);
+        ctx2d.strokeRect(Math.min(ptL.x, ptR.x), Math.min(ptL.y, ptR.y), Math.abs(ptR.x - ptL.x), Math.abs(ptR.y - ptL.y));
+        ctx2d.setLineDash([]);
+      }
+
+      // B. FWHM Ellipse
+      const ptXRadius = chToPx2D(cx + (fx / 2), cy);
+      const ptYRadius = chToPx2D(cx, cy + (fy / 2));
+      const radX = Math.abs(ptXRadius.x - ptC.x);
+      const radY = Math.abs(ptYRadius.y - ptC.y);
+
+      ctx2d.beginPath();
+      ctx2d.ellipse(ptC.x, ptC.y, Math.max(2, radX), Math.max(2, radY), 0, 0, 2 * Math.PI);
+      ctx2d.strokeStyle = '#ffd600';
+      ctx2d.lineWidth = 2.0;
+      ctx2d.stroke();
+
+      // C. Crosshair at Centroid
+      ctx2d.strokeStyle = '#ff007f';
+      ctx2d.lineWidth = 1.6;
+      ctx2d.beginPath();
+      ctx2d.moveTo(ptC.x - 8, ptC.y); ctx2d.lineTo(ptC.x + 8, ptC.y);
+      ctx2d.moveTo(ptC.x, ptC.y - 8); ctx2d.lineTo(ptC.x, ptC.y + 8);
+      ctx2d.stroke();
+
+      // D. 3-line unobtrusive text label with Centroid & Volume
+      const plAxes = getPlaneAxes(activePlane);
+      const isCalX = isAxisCalibrated(plAxes.x);
+      const isCalY = isAxisCalibrated(plAxes.y);
+      const xStr = (f2d.centroid_x_e !== undefined) ? `${Number(f2d.centroid_x_e).toFixed(1)} keV` : (isCalX ? `${chToEnergy(plAxes.x, cx).toFixed(1)} keV` : `${Number(cx).toFixed(1)} ch`);
+      const yStr = (f2d.centroid_y_e !== undefined) ? `${Number(f2d.centroid_y_e).toFixed(1)} keV` : (isCalY ? `${chToEnergy(plAxes.y, cy).toFixed(1)} keV` : `${Number(cy).toFixed(1)} ch`);
+      const vNum = (typeof f2d.volume === 'number') ? f2d.volume : parseFloat(f2d.volume || 0);
+      const volStr = vNum.toLocaleString(undefined, { maximumFractionDigits: 1 });
+
+      const lineX = `${plAxes.nameX}: ${xStr}`;
+      const lineY = `${plAxes.nameY}: ${yStr}`;
+      const lineVol = `Vol: ${volStr}`;
+
+      ctx2d.font = 'bold 13.5px system-ui, -apple-system, sans-serif';
+      const wX = ctx2d.measureText(lineX).width;
+      const wY = ctx2d.measureText(lineY).width;
+      const wVol = ctx2d.measureText(lineVol).width;
+      const maxW = Math.max(wX, wY, wVol);
+
+      const lineH = 16;
+      let bX = ptC.x + 8;
+      if (bX + maxW > pr.x + pr.w - 8) {
+        bX = Math.max(pr.x + 8, ptC.x - maxW - 8);
+      }
+      let bY = ptC.y - 12;
+      if (bY < pr.y + 18) {
+        bY = ptC.y + 18;
+      }
+      if (bY + lineH * 2 > pr.y + pr.h - 8) {
+        bY = Math.max(pr.y + 18, pr.y + pr.h - lineH * 2 - 8);
+      }
+
+      ctx2d.textAlign = 'left';
+      ctx2d.textBaseline = 'alphabetic';
+      ctx2d.lineJoin = 'round';
+      ctx2d.lineWidth = 3;
+      ctx2d.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+      ctx2d.strokeText(lineX, bX, bY);
+      ctx2d.strokeText(lineY, bX, bY + lineH);
+      ctx2d.strokeText(lineVol, bX, bY + lineH * 2);
+
+      ctx2d.fillStyle = '#ffd600';
+      ctx2d.fillText(lineX, bX, bY);
+      ctx2d.fillText(lineY, bX, bY + lineH);
+      ctx2d.fillText(lineVol, bX, bY + lineH * 2);
+      ctx2d.restore();
+    }
+  }
+
+  // --- Canvas Rendering: 1D Histogram Spectra ---
+  function renderAll1DSpectra() {
+    for (let ax = 0; ax < 3; ax++) render1DSpectrum(ax);
+  }
+
+  function render1DSpectrum(axis) {
+    const c = canvas1D[axis];
+    const ctx = ctx1D[axis];
+    const dpr = window.devicePixelRatio || 1;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, c.width, c.height);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    const pr = getPlotRect1D(axis);
+    const spec = spec1D[axis];
+    if (!spec || spec.length === 0) return;
+
+    const rng = getVisible1DRange(axis);
+    const ch0 = rng.start;
+    const ch1 = rng.end;
+    const chSpan = Math.max(1, ch1 - ch0);
+
+    // Visible max count
+    let maxVisible = 1;
+    for (let ch = Math.max(0, ch0); ch <= Math.min(spec.length - 1, ch1); ch++) {
+      if (spec[ch] > maxVisible) maxVisible = spec[ch];
+    }
+    const isLog = (projScale1D[axis] === 'log');
+    let yMax = Math.max(10, maxVisible / (zoom1DY[axis] || 1.0));
+    let yMin = isLog ? 0.5 : 0;
+
+    function valToPx(val) {
+      let py;
+      if (isLog) {
+        const vClamped = Math.max(0.5, val);
+        py = pr.y + pr.h - (Math.log10(vClamped) / Math.log10(yMax)) * pr.h;
+      } else {
+        py = pr.y + pr.h - (val / yMax) * pr.h;
+      }
+      return Math.max(pr.y, Math.min(pr.y + pr.h, py));
+    }
+
+    // 1. Gridlines
+    if (grid1DMode !== 'none') {
+      ctx.strokeStyle = '#222';
+      ctx.lineWidth = 1;
+      const numGridY = 4;
+      for (let i = 1; i <= numGridY; i++) {
+        const gy = pr.y + pr.h - (i / numGridY) * pr.h;
+        ctx.beginPath();
+        ctx.moveTo(pr.x, gy); ctx.lineTo(pr.x + pr.w, gy); ctx.stroke();
+      }
+    }
+
+    // 2. Plot Stepped Histogram Spectrum (Stairs & Translucent Fill, matching cmat_webviewer)
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(pr.x, pr.y, pr.w, pr.h);
+    ctx.clip();
+
+    const strokeColor = (axis === 0) ? '#00e5ff' : (axis === 1 ? '#ff9800' : '#00e676');
+    const fillColor = (axis === 0) ? 'rgba(0, 229, 255, 0.08)' : (axis === 1 ? 'rgba(255, 152, 0, 0.08)' : 'rgba(0, 230, 118, 0.08)');
+
+    // A. Stepped Fill
+    ctx.beginPath();
+    ctx.moveTo(pr.x, pr.y + pr.h);
+    for (let ch = Math.max(0, ch0); ch <= Math.min(spec.length - 1, ch1); ch++) {
+      const xL = pr.x + ((ch - ch0) / chSpan) * pr.w;
+      const xR = pr.x + ((ch + 1 - ch0) / chSpan) * pr.w;
+      const y = valToPx(spec[ch] || 0);
+      ctx.lineTo(xL, y);
+      ctx.lineTo(xR, y);
+    }
+    ctx.lineTo(pr.x + pr.w, pr.y + pr.h);
+    ctx.closePath();
+    ctx.fillStyle = fillColor;
+    ctx.fill();
+
+    // B. Stepped Outline (Stairs)
+    ctx.beginPath();
+    for (let ch = Math.max(0, ch0); ch <= Math.min(spec.length - 1, ch1); ch++) {
+      const xL = pr.x + ((ch - ch0) / chSpan) * pr.w;
+      const xR = pr.x + ((ch + 1 - ch0) / chSpan) * pr.w;
+      const y = valToPx(spec[ch] || 0);
+      if (ch === Math.max(0, ch0)) ctx.moveTo(xL, y); else ctx.lineTo(xL, y);
+      ctx.lineTo(xR, y);
+    }
+    ctx.strokeStyle = strokeColor;
+    ctx.lineWidth = 1.2;
+    ctx.stroke();
+
+    // 3. Draw Fit Curves (Persistent Single Fits & Multi-Fits)
+    const fitsList = (activeFits1D && activeFits1D[axis] && activeFits1D[axis].length > 0)
+      ? activeFits1D[axis]
+      : (fit1DResults[axis] ? [fit1DResults[axis]] : []);
+
+    for (const fit of fitsList) {
+      if (!fit || !fit.curve_x || fit.curve_x.length === 0) continue;
+      if (fit.roi_ch_max < ch0 || fit.roi_ch_min > ch1) continue;
+
+      // ROI Shading
+      const xRoiL = pr.x + ((fit.roi_ch_min - ch0) / chSpan) * pr.w;
+      const xRoiR = pr.x + ((fit.roi_ch_max + 1 - ch0) / chSpan) * pr.w;
+      ctx.fillStyle = (axis === 0) ? 'rgba(0, 229, 255, 0.08)' : (axis === 1 ? 'rgba(255, 152, 0, 0.08)' : 'rgba(0, 230, 118, 0.08)');
+      ctx.fillRect(Math.max(pr.x, xRoiL), pr.y, Math.min(pr.w, xRoiR - Math.max(pr.x, xRoiL)), pr.h);
+
+      // Baseline Background Curve (Dashed Magenta #ff4081)
+      if (fit.curve_bg && fit.curve_bg.length > 0) {
+        ctx.beginPath();
+        ctx.strokeStyle = '#ff4081';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        for (let k = 0; k < fit.curve_x.length; k++) {
+          const cx = pr.x + ((fit.curve_x[k] - ch0) / chSpan) * pr.w;
+          const cy = valToPx(fit.curve_bg[k]);
+          if (k === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Total Fit Curve (Bright Gold #ffd600)
+      if (fit.curve_fit && fit.curve_fit.length > 0) {
+        ctx.beginPath();
+        ctx.strokeStyle = '#ffd600';
+        ctx.lineWidth = 2.2;
+        for (let k = 0; k < fit.curve_x.length; k++) {
+          const cx = pr.x + ((fit.curve_x[k] - ch0) / chSpan) * pr.w;
+          const cy = valToPx(fit.curve_fit[k]);
+          if (k === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
+        }
+        ctx.stroke();
+      }
+
+      // Centroid Vertical Line
+      const cX = pr.x + ((fit.centroid_ch - ch0) / chSpan) * pr.w;
+      if (cX >= pr.x && cX <= pr.x + pr.w) {
+        ctx.strokeStyle = '#ffd600';
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([2, 2]);
+        ctx.beginPath();
+        ctx.moveTo(cX, pr.y);
+        ctx.lineTo(cX, pr.y + pr.h);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+    }
+
+    // Multi-Peak Fit Curves (Local Linear Baselines + Multi-Peak Fitted Model)
+    const mFitsList = (activeMultiFits1D && activeMultiFits1D[axis] && activeMultiFits1D[axis].length > 0)
+      ? activeMultiFits1D[axis]
+      : (multiFit1DResults[axis] ? [multiFit1DResults[axis]] : []);
+
+    for (const mFit of mFitsList) {
+      if (!mFit || !mFit.curve_x || mFit.curve_x.length === 0) continue;
+      if (mFit.ch_max < ch0 || mFit.ch_min > ch1) continue;
+
+      // Local Linear Baseline Background Curve (Dashed Amber #ffa726)
+      if (mFit.curve_bg && mFit.curve_bg.length > 0) {
+        ctx.beginPath();
+        ctx.strokeStyle = '#ffa726';
+        ctx.lineWidth = 1.8;
+        ctx.setLineDash([5, 4]);
+        for (let k = 0; k < mFit.curve_x.length; k++) {
+          const cx = pr.x + ((mFit.curve_x[k] - ch0) / chSpan) * pr.w;
+          const cy = valToPx(mFit.curve_bg[k]);
+          if (k === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Multi-Peak Fitted Composite Model Curve (Vibrant Neon Green #00e676)
+      if (mFit.curve_fit && mFit.curve_fit.length > 0) {
+        ctx.beginPath();
+        ctx.strokeStyle = '#00e676';
+        ctx.lineWidth = 2.2;
+        for (let k = 0; k < mFit.curve_x.length; k++) {
+          const cx = pr.x + ((mFit.curve_x[k] - ch0) / chSpan) * pr.w;
+          const cy = valToPx(mFit.curve_fit[k]);
+          if (k === 0) ctx.moveTo(cx, cy); else ctx.lineTo(cx, cy);
+        }
+        ctx.stroke();
+      }
+
+      // Dotted Centroid Lines for Multi-Fitted Peaks
+      if (mFit.peaks && mFit.peaks.length > 0) {
+        ctx.strokeStyle = 'rgba(0, 230, 118, 0.6)';
+        ctx.lineWidth = 1.0;
+        ctx.setLineDash([2, 2]);
+        for (const pk of mFit.peaks) {
+          const cX = pr.x + ((pk.centroid_ch - ch0) / chSpan) * pr.w;
+          if (cX >= pr.x && cX <= pr.x + pr.w) {
+            ctx.beginPath();
+            ctx.moveTo(cX, pr.y);
+            ctx.lineTo(cX, pr.y + pr.h);
+            ctx.stroke();
+          }
+        }
+        ctx.setLineDash([]);
+      }
+    }
+
+    ctx.restore(); // Restore plot clip so peak markers, carets, labels, and badges are never truncated
+
+    // 4. Peak Markers & Labels (Unclipped, Dynamic Carets, Stems & Collision-Avoided Labels)
+    const pList = foundPeaks1D[axis];
+    if (pList && pList.length > 0) {
+      ctx.save();
+      const visiblePeaks = [];
+      const curCh = cursorChannel1D[axis];
+      const isCal = isAxisCalibrated(axis);
+
+      for (let i = 0; i < pList.length; i++) {
+        const p = pList[i];
+        if (p.channel >= ch0 && p.channel <= ch1) {
+          const px = pr.x + ((p.channel - ch0) / chSpan) * pr.w;
+          const chInt = Math.round(p.channel);
+          const currentCount = (chInt >= 0 && chInt < spec.length) ? spec[chInt] : (p.counts || 0);
+          const py = valToPx(currentCount);
+          const isNearCursor = (curCh !== null && Math.abs(p.channel - curCh) <= 2.5);
+          const caretTipY = Math.max(pr.y + 22, Math.min(pr.y + pr.h, py - 3));
+          const pLbl = isCal
+            ? (p.energy !== undefined ? p.energy.toFixed(1) : chToEnergy(axis, p.channel).toFixed(1))
+            : p.channel.toFixed(1);
+
+          visiblePeaks.push({ p, px, py, caretTipY, isNearCursor, pLbl });
+        }
+      }
+
+      // 1. Draw carets ▼ and guide stems for all visible peaks
+      for (const vp of visiblePeaks) {
+        const tipY = vp.caretTipY;
+        const isFitted = Boolean(vp.p && vp.p.fitted);
+        const isManual = Boolean(vp.p && vp.p.manual);
+        ctx.fillStyle = vp.isNearCursor ? '#ffffff' : (isFitted ? '#00e676' : (isManual ? '#00e5ff' : '#ffd54f'));
+        ctx.beginPath();
+        ctx.moveTo(vp.px, tipY);
+        ctx.lineTo(vp.px - 5, tipY - 8);
+        ctx.lineTo(vp.px + 5, tipY - 8);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.strokeStyle = vp.isNearCursor ? '#ffffff' : (isFitted ? 'rgba(0, 230, 118, 0.85)' : (isManual ? 'rgba(0, 229, 255, 0.85)' : 'rgba(255, 213, 79, 0.75)'));
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(vp.px, tipY);
+        ctx.lineTo(vp.px, Math.max(tipY, Math.min(pr.y + pr.h, vp.py)));
+        ctx.stroke();
+      }
+
+      // 2. Render sharp 12px text labels without rectangles when space permits
+      ctx.font = 'bold 12px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+      ctx.textAlign = 'center';
+
+      // Sort by prominence / counts descending; hovered peak has top priority
+      const sortedPeaks = [...visiblePeaks].sort((a, b) => {
+        if (a.isNearCursor !== b.isNearCursor) return a.isNearCursor ? -1 : 1;
+        const scoreA = (a.p.counts || 0) + (a.p.snr ? (typeof a.p.snr === 'number' ? a.p.snr * 100 : 500) : 0);
+        const scoreB = (b.p.counts || 0) + (b.p.snr ? (typeof b.p.snr === 'number' ? b.p.snr * 100 : 500) : 0);
+        return scoreB - scoreA;
+      });
+
+      const placedIntervals = [];
+      const labelsToDraw = [];
+
+      for (const vp of sortedPeaks) {
+        const lblW = ctx.measureText(vp.pLbl).width;
+        const halfW = lblW / 2 + 3;
+        const lblX = Math.max(pr.x + halfW, Math.min(pr.x + pr.w - halfW, vp.px));
+        const boxLeft = lblX - halfW;
+        const boxRight = lblX + halfW;
+
+        // Check if overlaps with an already placed label (minimum 3px gap)
+        let collides = false;
+        for (const interval of placedIntervals) {
+          if (!(boxRight + 3 < interval.left || boxLeft - 3 > interval.right)) {
+            collides = true;
+            break;
+          }
+        }
+
+        // Place label if space permits, or if user is hovering over this peak
+        if (!collides || vp.isNearCursor) {
+          if (!vp.isNearCursor) {
+            placedIntervals.push({ left: boxLeft, right: boxRight });
+          }
+          const lblY = Math.max(pr.y + 14, vp.caretTipY - 10);
+          labelsToDraw.push({ vp, lblX, lblY });
+        }
+      }
+
+      // Render clean, vector-sharp 12px text labels with dark outline
+      for (const item of labelsToDraw) {
+        const { vp, lblX, lblY } = item;
+        const isHovered = vp.isNearCursor;
+        const drawX = Math.round(lblX);
+        const drawY = Math.round(lblY);
+
+        ctx.strokeStyle = 'rgba(0, 0, 0, 0.9)';
+        ctx.lineWidth = 2.0;
+        ctx.lineJoin = 'round';
+        ctx.strokeText(vp.pLbl, drawX, drawY);
+
+        const isFitted = Boolean(vp.p && vp.p.fitted);
+        const isManual = Boolean(vp.p && vp.p.manual);
+        ctx.fillStyle = isHovered ? '#ffffff' : (isFitted ? '#81c784' : (isManual ? '#80d8ff' : '#ffd54f'));
+        ctx.fillText(vp.pLbl, drawX, drawY);
+      }
+
+      ctx.restore();
+    }
+
+    // 5. Coincidence Gating Markers & Bands on 1D
+    const g = gates1D[axis];
+    if (g) {
+      for (const [w0, w1] of g.w) {
+        const px0 = pr.x + ((w0 - ch0) / chSpan) * pr.w;
+        const px1 = pr.x + ((w1 - ch0) / chSpan) * pr.w;
+        ctx.fillStyle = 'rgba(0, 230, 118, 0.25)';
+        ctx.fillRect(Math.min(px0, px1), pr.y, Math.abs(px1 - px0), pr.h);
+      }
+      for (const [b0, b1] of g.b) {
+        const px0 = pr.x + ((b0 - ch0) / chSpan) * pr.w;
+        const px1 = pr.x + ((b1 - ch0) / chSpan) * pr.w;
+        ctx.fillStyle = 'rgba(255, 64, 129, 0.22)';
+        ctx.fillRect(Math.min(px0, px1), pr.y, Math.abs(px1 - px0), pr.h);
+      }
+      if (g.pending_w !== null) {
+        const px = pr.x + ((g.pending_w - ch0) / chSpan) * pr.w;
+        ctx.strokeStyle = '#00e676'; ctx.setLineDash([4, 4]); ctx.beginPath();
+        ctx.moveTo(px, pr.y); ctx.lineTo(px, pr.y + pr.h); ctx.stroke(); ctx.setLineDash([]);
+      }
+      if (g.pending_b !== null) {
+        const px = pr.x + ((g.pending_b - ch0) / chSpan) * pr.w;
+        ctx.strokeStyle = '#ff4081'; ctx.setLineDash([4, 4]); ctx.beginPath();
+        ctx.moveTo(px, pr.y); ctx.lineTo(px, pr.y + pr.h); ctx.stroke(); ctx.setLineDash([]);
+      }
+    }
+
+    // 6. Crosshair Cursor on 1D
+    const curCh = cursorChannel1D[axis];
+    if (curCh !== null && curCh >= ch0 && curCh <= ch1) {
+      const px = pr.x + ((curCh - ch0) / chSpan) * pr.w;
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.65)';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(px, pr.y); ctx.lineTo(px, pr.y + pr.h); ctx.stroke();
+      ctx.setLineDash([]);
+    }
+
+    // 7. 1D Drag Box Zoom Selection Overlay
+    if (is1DBoxZooming[axis] && drag1DStartPos[axis] && drag1DCurrentPos[axis]) {
+      const xS = Math.min(drag1DStartPos[axis].x, drag1DCurrentPos[axis].x);
+      const xE = Math.max(drag1DStartPos[axis].x, drag1DCurrentPos[axis].x);
+      const rX = Math.max(pr.x, xS);
+      const rW = Math.min(pr.x + pr.w, xE) - rX;
+      if (rW > 1) {
+        const strokeColor = (axis === 0) ? '#00e5ff' : (axis === 1 ? '#ff9800' : '#00e676');
+        const fillColor = (axis === 0) ? 'rgba(0, 229, 255, 0.28)' : (axis === 1 ? 'rgba(255, 152, 0, 0.28)' : 'rgba(0, 230, 118, 0.28)');
+        ctx.fillStyle = fillColor;
+        ctx.fillRect(rX, pr.y, rW, pr.h);
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 1.8;
+        ctx.strokeRect(rX, pr.y, rW, pr.h);
+
+        const frac0 = Math.max(0, Math.min(1, (rX - pr.x) / pr.w));
+        const frac1 = Math.max(0, Math.min(1, (rX + rW - pr.x) / pr.w));
+        const c0 = Math.round(ch0 + frac0 * chSpan);
+        const c1 = Math.round(ch0 + frac1 * chSpan);
+        const isCal = isAxisCalibrated(axis);
+        const badgeLbl = isCal
+          ? `Zoom: ${chToEnergy(axis, c0).toFixed(1)} - ${chToEnergy(axis, c1).toFixed(1)} keV (${c0} - ${c1} ch)`
+          : `Zoom: ch ${c0} - ${c1} (${c1 - c0} ch)`;
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.85)';
+        ctx.fillRect(rX, pr.y + 4, Math.min(rW, 240), 20);
+        ctx.strokeStyle = strokeColor;
+        ctx.strokeRect(rX, pr.y + 4, Math.min(rW, 240), 20);
+        ctx.fillStyle = strokeColor;
+        ctx.font = 'bold 11px monospace';
+        ctx.textAlign = 'left';
+        ctx.fillText(badgeLbl, rX + 6, pr.y + 18);
+      }
+    }
+
+    // 8. Border & Ticks
+    ctx.strokeStyle = '#444';
+    ctx.lineWidth = 1.2;
+    ctx.strokeRect(pr.x, pr.y, pr.w, pr.h);
+
+    ctx.fillStyle = '#aaa';
+    ctx.font = '13px monospace';
+    ctx.textAlign = 'center';
+    const numTicks = 5;
+    const isCalTicks = isAxisCalibrated(axis);
+    for (let i = 0; i <= numTicks; i++) {
+      const frac = i / numTicks;
+      const chVal = Math.round(ch0 + frac * chSpan);
+      const px = Math.round(pr.x + frac * pr.w);
+      ctx.beginPath();
+      ctx.moveTo(px, pr.y + pr.h); ctx.lineTo(px, pr.y + pr.h + 4); ctx.stroke();
+      if (isCalTicks) {
+        const eStr = chToEnergy(axis, chVal).toFixed(0);
+        ctx.fillText(`${eStr}k (${chVal})`, px, pr.y + pr.h + 16);
+      } else {
+        ctx.fillText(chVal.toString(), px, pr.y + pr.h + 16);
+      }
+    }
+  }
+
+  // --- Display Fit & Integration Result Cards ---
+  function displayFitCard1D(data, axis) {
+    if (!data) return;
+    const card = document.getElementById('fitCard1D');
+    if (!card) return;
+    card.style.display = 'block';
+
+    const axNames = ['Det 1', 'Det 2', 'Rings'];
+    const detLabel = axNames[axis] || `Det ${axis + 1}`;
+    const isCal = isAxisCalibrated(axis);
+    const modelTag = (data.fit_type === 'hypermet') ? '1D Hypermet Fit' : ((data.fit_type === 'gaussian_tail') ? '1D Left-Tail Fit' : '1D Gaussian Fit');
+
+    const titleEl = document.getElementById('fitTitle1D');
+    if (titleEl) titleEl.innerText = `${modelTag} [${detLabel}]: ${isCal ? (data.centroid_e !== undefined ? data.centroid_e + ' keV' : chToEnergy(axis, data.centroid_ch).toFixed(2) + ' keV') : 'ch ' + data.centroid_ch}`;
+
+    // Compact line in format: Centroid: ... | Area: ... | FWHM: ...
+    const dec1D = isCal ? 2 : 3;
+    const unit1D = isCal ? 'keV' : 'ch';
+    const c1DVal = (typeof (isCal ? (data.centroid_e !== undefined ? data.centroid_e : chToEnergy(axis, data.centroid_ch)) : data.centroid_ch) === 'number' ? (isCal ? (data.centroid_e !== undefined ? data.centroid_e : chToEnergy(axis, data.centroid_ch)) : data.centroid_ch) : parseFloat(isCal ? data.centroid_e : data.centroid_ch)).toFixed(dec1D);
+    const c1DErr = (typeof (isCal ? (data.centroid_e_err !== undefined ? data.centroid_e_err : 0) : data.centroid_ch_err) === 'number' ? (isCal ? data.centroid_e_err : data.centroid_ch_err) : parseFloat(isCal ? data.centroid_e_err : data.centroid_ch_err)).toFixed(dec1D);
+    const f1DVal = (typeof (isCal ? (data.fwhm_e !== undefined ? data.fwhm_e : data.fwhm_ch) : data.fwhm_ch) === 'number' ? (isCal ? (data.fwhm_e !== undefined ? data.fwhm_e : data.fwhm_ch) : data.fwhm_ch) : parseFloat(isCal ? data.fwhm_e : data.fwhm_ch)).toFixed(dec1D);
+    const f1DErr = (typeof (isCal ? (data.fwhm_e_err !== undefined ? data.fwhm_e_err : data.fwhm_ch_err) : data.fwhm_ch_err) === 'number' ? (isCal ? data.fwhm_e_err : data.fwhm_ch_err) : parseFloat(isCal ? data.fwhm_e_err : data.fwhm_ch_err)).toFixed(dec1D);
+    const areaVal = (typeof data.area === 'number' ? data.area : parseFloat(data.area || 0)).toFixed(1);
+    const areaErr = (typeof data.area_err === 'number' ? data.area_err : parseFloat(data.area_err || 0)).toFixed(1);
+    const compact1D = `Centroid: ${c1DVal}(${c1DErr}) ${unit1D} | Area: ${areaVal}(${areaErr}) counts | FWHM: ${f1DVal}(${f1DErr}) ${unit1D}`;
+    const compLine = document.getElementById('fitCompactLine1D');
+    if (compLine) compLine.innerText = compact1D;
+
+    // Detailed parameters grid
+    const fCent = document.getElementById('fitCentroid1D');
+    if (fCent) fCent.innerText = isCal
+      ? `${data.centroid_e || chToEnergy(axis, data.centroid_ch).toFixed(2)} ± ${data.centroid_e_err || 0} keV (${data.centroid_ch} ± ${data.centroid_ch_err || 0} ch)`
+      : `${data.centroid_ch} ± ${data.centroid_ch_err || 0} ch`;
+    const fArea = document.getElementById('fitArea1D');
+    if (fArea) fArea.innerText = `${Math.round(data.area || 0).toLocaleString()} ± ${Math.round(data.area_err || 0).toLocaleString()} counts`;
+    const fFWHM = document.getElementById('fitFWHM1D');
+    if (fFWHM) fFWHM.innerText = isCal
+      ? `${data.fwhm_e || data.fwhm_ch} ± ${data.fwhm_e_err || data.fwhm_ch_err} keV (${data.fwhm_ch} ± ${data.fwhm_ch_err} ch)`
+      : `${data.fwhm_ch} ± ${data.fwhm_ch_err} ch`;
+    const fAmp = document.getElementById('fitAmp1D');
+    if (fAmp) fAmp.innerText = `${Math.round(data.amplitude || 0).toLocaleString()} ± ${Math.round(data.amplitude_err || 0).toLocaleString()} cts`;
+
+    const tailItem = document.getElementById('fitTailItem1D');
+    if (tailItem) {
+      if (data.fit_type === 'gaussian_tail' && data.alpha !== null && data.alpha !== undefined) {
+        tailItem.style.display = 'flex';
+        document.getElementById('fitTail1D').innerText = `${data.alpha} ± ${data.alpha_err}`;
+      } else {
+        tailItem.style.display = 'none';
+      }
+    }
+
+    const hypItem = document.getElementById('fitHypermetItem1D');
+    if (hypItem) {
+      if (data.fit_type === 'hypermet' && data.tail_area !== undefined && data.tail_area !== null) {
+        hypItem.style.display = 'flex';
+        document.getElementById('fitHypermet1D').innerText = `fT=${data.tail_area} ± ${data.tail_area_err} (β=${data.tail_slope}, As=${data.step_height})`;
+      } else {
+        hypItem.style.display = 'none';
+      }
+    }
+
+    const grossBg = document.getElementById('fitGrossBg1D');
+    if (grossBg && data.gross_counts !== undefined) grossBg.innerText = `${Math.round(data.gross_counts).toLocaleString()} / ${Math.round(data.bg_counts || 0).toLocaleString()}`;
+    const chi2El = document.getElementById('fitChi21D');
+    if (chi2El) chi2El.innerText = `${data.red_chi2} (NDF=${data.ndf || '-'})`;
+
+    const hudEnergy = isCal ? ` (${data.centroid_e || chToEnergy(axis, data.centroid_ch).toFixed(2)} keV)` : '';
+    const hudEl = document.getElementById('hudCoords');
+    if (hudEl) hudEl.innerText = `1D Fit [${detLabel}]: Centroid = ${data.centroid_ch}${hudEnergy} | Area = ${Math.round(data.area || 0)} ± ${Math.round(data.area_err || 0)} | FWHM = ${isCal ? (data.fwhm_e || data.fwhm_ch) + ' keV' : data.fwhm_ch + ' ch'}`;
+  }
+
+  function displayMultiFitCard1D(d, axis) {
+    const card = document.getElementById('fitCardMulti1D');
+    if (!card) return;
+    card.style.display = 'block';
+    const isCal = isAxisCalibrated(axis);
+    const axNames = ['Det 1', 'Det 2', 'Rings'];
+    const detLabel = axNames[axis] || `Det ${axis + 1}`;
+
+    document.getElementById('fitTitleMulti1D').innerText = `${detLabel} Multi-Peak Fit (${d.peaks?.length || 0} peaks)`;
+    document.getElementById('fitSummaryMulti1D').innerText = `Region [${d.ch_min}..${d.ch_max}] | Total Area: ${Math.round(d.total_area || 0)} | χ²_red: ${d.red_chi2?.toFixed(2) || '-'}`;
+
+    const tbody = document.getElementById('fitTableBodyMulti1D');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    (d.peaks || []).forEach((p, idx) => {
+      const en = isCal ? (p.centroid_e !== undefined ? p.centroid_e.toFixed(2) : chToEnergy(axis, p.centroid_ch).toFixed(2)) : '-';
+      const tr = document.createElement('tr');
+      tr.style.borderBottom = '1px solid #222';
+      tr.innerHTML = `
+        <td style="text-align:left; padding:2px 4px; color:#ffd54f;">#${idx+1}</td>
+        <td style="padding:2px 4px;">${p.centroid_ch?.toFixed(2)}</td>
+        <td style="padding:2px 4px; color:#00e5ff;">${en}</td>
+        <td style="padding:2px 4px;">${p.fwhm_ch?.toFixed(2)}</td>
+        <td style="padding:2px 4px; font-weight:bold;">${Math.round(p.area || 0)}</td>
+        <td style="padding:2px 4px;">${p.p_to_b?.toFixed(2) || '-'}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function displayFitCard2D(d) {
+    const card = document.getElementById('fitCard2D');
+    if (!card) return;
+    card.style.display = 'block';
+    const plAxes = getPlaneAxes(activePlane);
+    const isCalX = isAxisCalibrated(plAxes.x);
+    const isCalY = isAxisCalibrated(plAxes.y);
+
+    const cx = d.centroid_x_ch !== undefined ? d.centroid_x_ch : d.centroid_x;
+    const cy = d.centroid_y_ch !== undefined ? d.centroid_y_ch : d.centroid_y;
+    const fx = d.fwhm_x_ch !== undefined ? d.fwhm_x_ch : (d.fwhm_x || 0);
+    const fy = d.fwhm_y_ch !== undefined ? d.fwhm_y_ch : (d.fwhm_y || 0);
+    const ex = d.centroid_x_e !== undefined ? `${Number(d.centroid_x_e).toFixed(1)} keV` : (isCalX ? `${chToEnergy(plAxes.x, cx).toFixed(1)} keV` : '');
+    const ey = d.centroid_y_e !== undefined ? `${Number(d.centroid_y_e).toFixed(1)} keV` : (isCalY ? `${chToEnergy(plAxes.y, cy).toFixed(1)} keV` : '');
+    const gambaNet = Math.round(d.gamba_net !== undefined ? d.gamba_net : (d.gamba_net_counts || 0));
+    const rChi2 = (d.red_chi2 !== undefined ? d.red_chi2 : d.reduced_chi2);
+
+    document.getElementById('fitCompactLine2D_X').innerText =
+      `${plAxes.nameX}: Centroid=${cx?.toFixed(2)} ch (${ex}) | FWHM=${fx?.toFixed(2)} ch`;
+    document.getElementById('fitCompactLine2D_Y').innerText =
+      `${plAxes.nameY}: Centroid=${cy?.toFixed(2)} ch (${ey}) | FWHM=${fy?.toFixed(2)} ch`;
+    document.getElementById('fitCompactLine2D_Gamba').innerText =
+      `Net Fitted Vol: ${Math.round(d.volume || 0)} cts | Gamba Net: ${gambaNet} | χ²: ${rChi2?.toFixed(2) || '-'}`;
+
+    document.getElementById('fitCentroid2D').innerText = `(${cx?.toFixed(2)}, ${cy?.toFixed(2)})`;
+    document.getElementById('fitVolume2D').innerText = Math.round(d.volume || 0);
+    document.getElementById('fitGambaNet2D').innerText = gambaNet;
+    document.getElementById('fitFWHM2D').innerText = `${fx?.toFixed(2)} / ${fy?.toFixed(2)}`;
+    document.getElementById('fitChi22D').innerText = rChi2?.toFixed(3) || '-';
+  }
+
+  function displayIntegrateCard1D(d, axis) {
+    const card = document.getElementById('integrateCard1D');
+    if (!card) return;
+    card.style.display = 'block';
+    const isCal = isAxisCalibrated(axis);
+    const en = isCal ? chToEnergy(axis, d.centroid).toFixed(2) + ' keV' : '';
+
+    document.getElementById('integrateTitle1D').innerText = `Det ${axis + 1} Peak Integration`;
+    document.getElementById('integrateCompactLine1D').innerText =
+      `Net Area: ${Math.round(d.net_area || 0)} ± ${Math.round(d.net_err || 0)} | Centroid: ${d.centroid?.toFixed(2)} ch (${en}) | FWHM: ${d.fwhm?.toFixed(2)} ch`;
+
+    document.getElementById('intRegion1D').innerText = `[${d.ch_min}..${d.ch_max}] (${d.ch_max - d.ch_min + 1} ch)`;
+    document.getElementById('intBgModel1D').innerText = d.bg_model || 'linear';
+    document.getElementById('intGross1D').innerText = d.gross_counts?.toLocaleString() || 0;
+    document.getElementById('intBgCounts1D').innerText = Math.round(d.bg_counts || 0).toLocaleString();
+    document.getElementById('intNetArea1D').innerText = `${Math.round(d.net_area || 0).toLocaleString()} ± ${Math.round(d.net_err || 0)}`;
+    document.getElementById('intCentroid1D').innerText = `${d.centroid?.toFixed(3)} ch (${en})`;
+    document.getElementById('intFWHM1D').innerText = `${d.fwhm?.toFixed(3)} ch`;
+    document.getElementById('intPeakBg1D').innerText = d.peak_to_bg?.toFixed(2) || '-';
+  }
+
+  // --- Zoom, Pan, Contrast & Scale Helpers ---
+  function pan1D(axis, dxRatio, dyRatio) {
+    if (dxRatio !== 0) {
+      const isSynced = (document.getElementById('projRangeSelect')?.value === 'synced');
+      const plAxes = getPlaneAxes(activePlane);
+      const shape = metadata ? (metadata.shape || [4096, 4096, 128]) : [4096, 4096, 128];
+      const maxCh = shape[axis];
+
+      if (isSynced && axis === plAxes.x) {
+        pan2D(dxRatio, 0);
+        return;
+      }
+      if (isSynced && axis === plAxes.y) {
+        pan2D(0, dxRatio);
+        return;
+      }
+
+      const span = view1D[axis].end - view1D[axis].start;
+      const shift = Math.round(span * scrollSensitivity * dxRatio);
+      view1D[axis].start = Math.max(0, Math.min(maxCh - span, view1D[axis].start + shift));
+      view1D[axis].end = view1D[axis].start + span;
+      render1DSpectrum(axis);
+      if (axis === plAxes.z) {
+        schedule2DSync(30);
+      }
+    }
+    if (dyRatio !== 0) {
+      const factor = dyRatio > 0 ? (1.0 - scrollSensitivity) : (1.0 / (1.0 - scrollSensitivity));
+      zoom1DY[axis] = Math.max(0.005, Math.min(100.0, (zoom1DY[axis] || 1.0) * factor));
+      render1DSpectrum(axis);
+    }
+  }
+
+  function expandMarkers() {
+    let xmin = markers.left !== null ? markers.left : view2D.x0;
+    let xmax = markers.right !== null ? markers.right : view2D.x1;
+    let ymin = markers.down !== null ? markers.down : view2D.y0;
+    let ymax = markers.up !== null ? markers.up : view2D.y1;
+    if (xmin > xmax) [xmin, xmax] = [xmax, xmin];
+    if (ymin > ymax) [ymin, ymax] = [ymax, ymin];
+    const plAxes = getPlaneAxes(activePlane);
+    const shape = metadata ? metadata.shape : [4096, 4096, 128];
+    const maxW = shape[plAxes.x];
+    const maxH = shape[plAxes.y];
+    if (xmax - xmin >= 1 || ymax - ymin >= 1) {
+      view2D.x0 = Math.max(0, xmin); view2D.x1 = Math.min(maxW, xmax);
+      view2D.y0 = Math.max(0, ymin); view2D.y1 = Math.min(maxH, ymax);
+      markers.left = null; markers.right = null; markers.down = null; markers.up = null;
+      updateOverlayStatus();
+      fetchTileAndRender();
+      fetchProjections();
+      showMatrixToast("Expanded view to ROI markers");
+    }
+  }
+
+  function zoomFull() {
+    const plAxes = getPlaneAxes(activePlane);
+    const shape = metadata ? metadata.shape : [4096, 4096, 128];
+    view2D.x0 = 0; view2D.x1 = shape[plAxes.x];
+    view2D.y0 = 0; view2D.y1 = shape[plAxes.y];
+    markers.left = null; markers.right = null; markers.down = null; markers.up = null;
+    for (let ax = 0; ax < 3; ax++) zoom1DY[ax] = 1.0;
+    updateOverlayStatus();
+    fetchTileAndRender();
+    fetchProjections();
+    showMatrixToast("2D View reset to full matrix");
+  }
+
+  function zoomFull1D(axis) {
+    const shape = metadata ? (metadata.shape || [4096, 4096, 128]) : [4096, 4096, 128];
+    const isSynced = (document.getElementById('projRangeSelect')?.value === 'synced');
+    const plAxes = getPlaneAxes(activePlane);
+
+    if (axis === null || axis === undefined) {
+      view1D[0].start = 0; view1D[0].end = shape[0];
+      view1D[1].start = 0; view1D[1].end = shape[1];
+      view1D[2].start = 0; view1D[2].end = shape[2];
+      zoom1DY = { 0: 1.0, 1: 1.0, 2: 1.0 };
+      if (isSynced) {
+        view2D.x0 = 0; view2D.x1 = shape[plAxes.x];
+        view2D.y0 = 0; view2D.y1 = shape[plAxes.y];
+      }
+      fetchTileAndRender();
+      fetchProjections();
+      renderAll1DSpectra();
+    } else {
+      view1D[axis].start = 0;
+      view1D[axis].end = shape[axis];
+      zoom1DY[axis] = 1.0;
+      if (isSynced && axis === plAxes.x) {
+        view2D.x0 = 0; view2D.x1 = shape[plAxes.x];
+        fetchTileAndRender();
+        fetchProjections();
+      } else if (isSynced && axis === plAxes.y) {
+        view2D.y0 = 0; view2D.y1 = shape[plAxes.y];
+        fetchTileAndRender();
+        fetchProjections();
+      } else if (axis === plAxes.z) {
+        fetchTileAndRender();
+        fetchProjections();
+      } else {
+        render1DSpectrum(axis);
+      }
+    }
+    showMatrixToast(`1D View reset for Axis ${axis !== null && axis !== undefined ? axis : 'all'}`);
+  }
+
+  function pan2D(dxRatio, dyRatio) {
+    const spanX = view2D.x1 - view2D.x0;
+    const spanY = view2D.y1 - view2D.y0;
+    const plAxes = getPlaneAxes(activePlane);
+    const shape = metadata ? metadata.shape : [4096, 4096, 128];
+    const maxSpanX = shape[plAxes.x];
+    const maxSpanY = shape[plAxes.y];
+
+    const shiftX = Math.round(spanX * scrollSensitivity * dxRatio);
+    const shiftY = Math.round(spanY * scrollSensitivity * dyRatio);
+
+    let newX0 = view2D.x0 + shiftX;
+    let newX1 = view2D.x1 + shiftX;
+    let newY0 = view2D.y0 + shiftY;
+    let newY1 = view2D.y1 + shiftY;
+
+    if (newX0 < 0) { newX1 -= newX0; newX0 = 0; }
+    if (newX1 > maxSpanX) { newX0 -= (newX1 - maxSpanX); newX1 = maxSpanX; }
+    if (newY0 < 0) { newY1 -= newY0; newY0 = 0; }
+    if (newY1 > maxSpanY) { newY0 -= (newY1 - maxSpanY); newY1 = maxSpanY; }
+
+    view2D.x0 = Math.max(0, newX0);
+    view2D.x1 = Math.min(maxSpanX, newX1);
+    view2D.y0 = Math.max(0, newY0);
+    view2D.y1 = Math.min(maxSpanY, newY1);
+
+    render2D();
+    const isSynced = (document.getElementById('projRangeSelect')?.value === 'synced');
+    if (isSynced) {
+      render1DSpectrum(plAxes.x);
+      render1DSpectrum(plAxes.y);
+    }
+    schedule2DSync(30);
+  }
+
+  function updateScaleBadge2D() {
+    const btn = document.getElementById('btnScaleToggle2D');
+    if (btn) btn.innerText = scaleMode2D.toUpperCase();
+    const sel = document.getElementById('scaleSelect');
+    if (sel) sel.value = scaleMode2D;
+  }
+
+  function cycle2DScale() {
+    const modes = ['log', 'linear', 'sqrt'];
+    let idx = modes.indexOf(scaleMode2D);
+    scaleMode2D = modes[(idx + 1) % modes.length];
+    updateScaleBadge2D();
+    render2D();
+  }
+
+  function cycle1DScale(axis) {
+    projScale1D[axis] = (projScale1D[axis] === 'linear') ? 'log' : 'linear';
+    const btn = document.getElementById(`btnScaleToggle${axis}`);
+    if (btn) btn.innerText = projScale1D[axis].toUpperCase();
+    render1DSpectrum(axis);
+  }
+
+  function cycle1DGridMode() {
+    const modes = ['both', 'major', 'none'];
+    let idx = modes.indexOf(grid1DMode);
+    grid1DMode = modes[(idx + 1) % modes.length];
+    for (let ax = 0; ax < 3; ax++) {
+      const btn = document.getElementById(`btnGridToggle${ax}`);
+      if (btn) btn.innerText = grid1DMode.toUpperCase();
+    }
+    renderAll1DSpectra();
+  }
+
+  function toggleSidebar() {
+    const side = document.getElementById('sidebar');
+    if (side) side.classList.toggle('collapsed');
+    resizeCanvases();
+  }
+
+  function quitViewer() {
+    fetch('/api/quit').then(() => {
+      document.body.innerHTML = '<div style="color:#ff5252; font-size:24px; text-align:center; margin-top:200px;">Server stopped. You can close this window.</div>';
+    });
+  }
+
+  // --- Inline Handler Bridge Functions ---
+  function toggleBananaGateMode() { toggleBananaMode(); }
+  function toggle1DScale(axis) { cycle1DScale(axis); }
+  function clearGate(axis) { clear1DGates(true); }
+
+  async function clearGate3rd() {
+    const inp = document.getElementById('inputGate3rd');
+    if (inp) inp.value = '';
+    await fetch('/api/set_gate_3rd?gate=');
+    await fetchMetadata();
+    showMatrixToast("3rd Axis gate cleared (sum projection)");
+  }
+
+  async function applyGate3rdInput() {
+    const inp = document.getElementById('inputGate3rd');
+    const val = inp ? inp.value.trim() : '';
+    await fetch(`/api/set_gate_3rd?gate=${encodeURIComponent(val)}`);
+    await fetchMetadata();
+    showMatrixToast(`3rd Axis gate applied: ${val || 'All'}`);
+  }
+
+  function autoContrast() {
+    if (currentTileMax && currentTileMax > 0) {
+      currentVmax = Math.max(10, currentTileMax);
+      const sl = document.getElementById('vmaxSlider');
+      if (sl) sl.value = valueToVmaxSlider(currentVmax);
+      const lbl = document.getElementById('vmaxLabel');
+      if (lbl) lbl.innerText = currentVmax;
+      render2D();
+      showMatrixToast(`Auto contrast set vmax=${currentVmax}`);
+    }
+  }
+
+  function resetContrast() {
+    currentVmax = Math.min(800, maxCountGlobal || 500);
+    const sl = document.getElementById('vmaxSlider');
+    if (sl) sl.value = valueToVmaxSlider(currentVmax);
+    const lbl = document.getElementById('vmaxLabel');
+    if (lbl) lbl.innerText = currentVmax;
+    const vminSl = document.getElementById('vminSlider');
+    if (vminSl) vminSl.value = 1;
+    const vminLbl = document.getElementById('vminLabel');
+    if (vminLbl) vminLbl.innerText = 1;
+    render2D();
+    showMatrixToast(`Contrast reset to default`);
+  }
+
+  function onVmaxInput(val) {
+    currentVmax = vmaxSliderToValue(parseFloat(val));
+    const lbl = document.getElementById('vmaxLabel');
+    if (lbl) lbl.innerText = currentVmax;
+    render2D();
+  }
+
+  function onVminInput(val) {
+    const lbl = document.getElementById('vminLabel');
+    if (lbl) lbl.innerText = val;
+    render2D();
+  }
+
+  function onScaleChange(val) {
+    const sel = document.getElementById('scaleSelect');
+    scaleMode2D = val || (sel ? sel.value : 'log');
+    updateScaleBadge2D();
+    render2D();
+  }
+
+  function onColormapChange(val) {
+    colormap = val || 'turbo';
+    updateColorLUT();
+    render2D();
+  }
+
+  function fetch1DProjections() {
+    renderAll1DSpectra();
+  }
+
+  function onProjScaleChange(val) {
+    for (let a = 0; a < 3; a++) projScale1D[a] = val;
+    renderAll1DSpectra();
+  }
+
+  function onSelectMatrix(idx) {
+    switchMatrix(parseInt(idx, 10));
+  }
+
+  function toggleHelpModal() {
+    const hm = document.getElementById('helpModal');
+    if (hm) hm.style.display = (hm.style.display === 'block') ? 'none' : 'block';
+  }
+
+  function exportPDF2D() {
+    const vmin = document.getElementById('vminSlider')?.value || 1;
+    const vmax = currentVmax || 500;
+    const url = `/api/export_pdf_2d?plane=${activePlane}&cmap=${colormap}&scale=${scaleMode2D}&vmin=${vmin}&vmax=${vmax}&x0=${Math.floor(view2D.x0)}&x1=${Math.ceil(view2D.x1)}&y0=${Math.floor(view2D.y0)}&y1=${Math.ceil(view2D.y1)}`;
+    window.open(url, '_blank');
+  }
+
+  function exportPDF1D(axis) {
+    if (axis === undefined) {
+      axis = (focusedPanel && focusedPanel.startsWith('1d-')) ? parseInt(focusedPanel.split('-')[1], 10) : 0;
+    }
+    const isLog = (projScale1D[axis] === 'log') ? 1 : 0;
+    const url = `/api/export_pdf_1d?axis=${axis}&plane=${activePlane}&is_log=${isLog}&x0=${Math.floor(view2D.x0)}&x1=${Math.ceil(view2D.x1)}&y0=${Math.floor(view2D.y0)}&y1=${Math.ceil(view2D.y1)}`;
+    window.open(url, '_blank');
+  }
+
+  function exportDat(axis) {
+    if (axis === undefined) axis = 0;
+    window.open(`/api/export_dat?axis=${axis}&plane=${activePlane}`, '_blank');
+  }
+
+  async function updateCalFromInput(axis) {
+    const inp = document.getElementById(`calInput${axis}`);
+    if (!inp) return;
+    const val = inp.value.trim();
+    try {
+      const res = await fetch(`/api/update_cal?axis=${axis}&coeffs=${encodeURIComponent(val)}`);
+      const data = await res.json();
+      if (data.success) {
+        if (metadata) metadata[`cal_${axis}`] = data.cal;
+        showMatrixToast(`Calibration updated for Axis ${axis}`);
+        renderAll1DSpectra();
+        render2D();
+      }
+    } catch (e) {
+      console.error("Failed to update cal:", e);
+    }
+  }
+
+  function copyIntegrationResults(axis) {
+    const card = document.getElementById(`integrateCard1D`);
+    if (!card) return;
+    navigator.clipboard?.writeText(card.innerText).then(() => {
+      showMatrixToast("Integration results copied to clipboard");
+    });
+  }
+
+  function browserNavUp() {
+    if (browserState.parentPath) fetchBrowsePath(browserState.parentPath);
+  }
+
+  function browserNavHome() {
+    if (browserState.homePath) fetchBrowsePath(browserState.homePath);
+  }
+
+  function browserNavCwd() {
+    if (browserState.cwdPath) fetchBrowsePath(browserState.cwdPath);
+  }
+
+  function browserRefresh() {
+    fetchBrowsePath(browserState.currentPath || '');
+  }
+
+  function clearFit1D(axis) {
+    if (axis === undefined) {
+      for (let a = 0; a < 3; a++) {
+        fit1DResults[a] = null;
+        activeFits1D[a] = [];
+      }
+    } else {
+      fit1DResults[axis] = null;
+      activeFits1D[axis] = [];
+    }
+    renderAll1DSpectra();
+    const card = document.getElementById('fitCard1D');
+    if (card) card.style.display = 'none';
+  }
+
+  function clearFit2D() {
+    fit2DResult = null;
+    activeFits2D = [];
+    render2D();
+    const card = document.getElementById('fitCard2D');
+    if (card) card.style.display = 'none';
+  }
+
+  function clearMultiFit1D(axis) {
+    if (axis === undefined) {
+      for (let a = 0; a < 3; a++) {
+        multiFit1DResults[a] = null;
+        activeMultiFits1D[a] = [];
+      }
+    } else {
+      multiFit1DResults[axis] = null;
+      activeMultiFits1D[axis] = [];
+    }
+    renderAll1DSpectra();
+    const card = document.getElementById('fitCardMulti1D');
+    if (card) card.style.display = 'none';
+  }
+
+  function toggleDetails1D() {
+    const grid = document.getElementById('fitGrid1D');
+    if (grid) grid.style.display = grid.style.display === 'none' ? 'grid' : 'none';
+  }
+
+  function toggleDetails2D() {
+    const grid = document.getElementById('fitGrid2D');
+    if (grid) grid.style.display = grid.style.display === 'none' ? 'grid' : 'none';
+  }
+
+  function updateFitCardsVerbosity(v) {}
+
+  // Explicit window export for all HTML inline handlers
+  window.toggleBananaGateMode = toggleBananaGateMode;
+  window.toggleBananaMode = toggleBananaMode;
+  window.clearBananaGate = clearBananaGate;
+  window.toggle1DScale = toggle1DScale;
+  window.cycle1DScale = cycle1DScale;
+  window.cycle2DScale = cycle2DScale;
+  window.cycle1DGridMode = cycle1DGridMode;
+  window.clearGate = clearGate;
+  window.clear1DGates = clear1DGates;
+  window.clearGate3rd = clearGate3rd;
+  window.applyGate3rdInput = applyGate3rdInput;
+  window.autoContrast = autoContrast;
+  window.resetContrast = resetContrast;
+  window.onVmaxInput = onVmaxInput;
+  window.onVminInput = onVminInput;
+  window.onScaleChange = onScaleChange;
+  window.onColormapChange = onColormapChange;
+  window.fetch1DProjections = fetch1DProjections;
+  window.onProjScaleChange = onProjScaleChange;
+  window.onSelectMatrix = onSelectMatrix;
+  window.exportPDF2D = exportPDF2D;
+  window.exportPDF1D = exportPDF1D;
+  window.exportDat = exportDat;
+  window.toggleHelpModal = toggleHelpModal;
+  window.updateCalFromInput = updateCalFromInput;
+  window.copyIntegrationResults = copyIntegrationResults;
+  window.browserNavUp = browserNavUp;
+  window.browserNavHome = browserNavHome;
+  window.browserNavCwd = browserNavCwd;
+  window.browserRefresh = browserRefresh;
+  window.clearFit1D = clearFit1D;
+  window.clearFit2D = clearFit2D;
+  window.clearMultiFit1D = clearMultiFit1D;
+  window.clearAllFits = clearAllFits;
+  window.clearFoundPeaks = clearFoundPeaks;
+  window.toggleDetails1D = toggleDetails1D;
+  window.toggleDetails2D = toggleDetails2D;
+  window.updateFitCardsVerbosity = updateFitCardsVerbosity;
+  window.setPlane = setPlane;
+  window.searchPeaks1D = searchPeaks1D;
+  window.fitAllPeaks1D = fitAllPeaks1D;
+  window.handleIntegrateKeyPress = handleIntegrateKeyPress;
+  window.getActive1DAxis = getActive1DAxis;
+  window.quitViewer = quitViewer;
+
+  // --- File Browser Implementation ---
+  async function openServerBrowser() {
+    const modal = document.getElementById('serverBrowserModal');
+    const backdrop = document.getElementById('browserBackdrop');
+    if (!modal) return;
+    modal.style.display = 'flex';
+    if (backdrop) backdrop.style.display = 'block';
+    await fetchBrowsePath('');
+  }
+
+  function closeServerBrowser() {
+    const modal = document.getElementById('serverBrowserModal');
+    const backdrop = document.getElementById('browserBackdrop');
+    if (modal) modal.style.display = 'none';
+    if (backdrop) backdrop.style.display = 'none';
+  }
+  window.openServerBrowser = openServerBrowser;
+  window.closeServerBrowser = closeServerBrowser;
+
+  async function fetchBrowsePath(target) {
+    try {
+      const res = await fetch(`/api/browse_fs?path=${encodeURIComponent(target)}`);
+      const data = await res.json();
+      if (data.success) {
+        browserState.currentPath = data.current_path;
+        browserState.parentPath = data.parent_path;
+        browserState.isRoot = data.is_root;
+        browserState.homePath = data.home_path;
+        browserState.cwdPath = data.cwd_path;
+        browserState.entries = data.entries || [];
+        browserState.selectedEntry = null;
+
+        const bc = document.getElementById('browserBreadcrumbs');
+        if (bc) bc.innerText = data.current_path;
+        renderBrowserEntries();
+      }
+    } catch (e) {
+      console.error("Browse failed:", e);
+    }
+  }
+
+  function renderBrowserEntries() {
+    const tbody = document.getElementById('browserTableBody');
+    if (!tbody) return;
+    tbody.innerHTML = '';
+    const q = (document.getElementById('browserFilterInput')?.value || '').toLowerCase().trim();
+    const cmatOnly = document.getElementById('chkBrowserCmatOnly')?.checked;
+
+    const filtered = (browserState.entries || []).filter(e => {
+      if (cmatOnly && !e.is_dir && !e.is_cmat) return false;
+      if (q && !e.name.toLowerCase().includes(q)) return false;
+      return true;
+    });
+
+    const badge = document.getElementById('browserItemCount');
+    if (badge) badge.innerText = `${filtered.length} items`;
+
+    filtered.forEach(item => {
+      const tr = document.createElement('tr');
+      tr.style.cursor = 'pointer';
+      tr.className = 'browser-row';
+      const icon = item.is_dir ? '📁' : '📊';
+      tr.innerHTML = `
+        <td style="padding:4px 6px;">${icon} ${item.name}</td>
+        <td style="padding:4px 6px; text-align:right; color:#888;">${item.size_str || '-'}</td>
+        <td style="padding:4px 6px; text-align:right; color:#888;">${item.modified_str || '-'}</td>
+      `;
+      tr.addEventListener('click', () => {
+        document.querySelectorAll('.browser-row').forEach(r => r.style.background = '');
+        tr.style.background = '#1e3a5f';
+        browserState.selectedEntry = item;
+        const subBtn = document.getElementById('btnBrowserOpenSubmit');
+        if (subBtn) subBtn.disabled = item.is_dir;
+        const lbl = document.getElementById('browserSelectedLabel');
+        if (lbl) lbl.innerText = item.name;
+      });
+      tr.addEventListener('dblclick', () => {
+        if (item.is_dir) fetchBrowsePath(item.path);
+        else submitOpenMatrix();
+      });
+      tbody.appendChild(tr);
+    });
+  }
+  window.renderBrowserEntries = renderBrowserEntries;
+
+  async function submitOpenMatrix() {
+    if (!browserState.selectedEntry || browserState.selectedEntry.is_dir) return;
+    const p = browserState.selectedEntry.path;
+    try {
+      const res = await fetch(`/api/open_file?path=${encodeURIComponent(p)}`);
+      const data = await res.json();
+      if (data.loaded) {
+        closeServerBrowser();
+        metadata = data;
+        clear1DGates(false);
+        clearBananaGate();
+        clearAllFits();
+        updateUIWithMetadata();
+        await fetchProjections();
+        await fetchTileAndRender();
+        showMatrixToast(`Loaded matrix: ${data.filename}`);
+      }
+    } catch (e) {
+      console.error("Open matrix failed:", e);
+    }
+  }
+  window.submitOpenMatrix = submitOpenMatrix;
+
+  async function saveConfig() {
+    const payload = {
+      default_plane: activePlane,
+      vmax: currentVmax
+    };
+    try {
+      const res = await fetch('/api/save_config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.success) showMatrixToast("Configuration saved to disk");
+      else showMatrixToast(data.error || "Save failed", true);
+    } catch (e) {
+      console.error("Save config failed:", e);
+    }
+  }
+  window.saveConfig = saveConfig;
+
+  // --- Event Handlers Setup ---
+  function setupEvents() {
+    window.addEventListener('resize', resizeCanvases);
+
+    // Sidebar & Plane Buttons
+    document.getElementById('btnToggleSidebar')?.addEventListener('click', toggleSidebar);
+    document.getElementById('btnPlane01')?.addEventListener('click', () => setPlane('0-1'));
+    document.getElementById('btnPlane02')?.addEventListener('click', () => setPlane('0-2'));
+    document.getElementById('btnPlane12')?.addEventListener('click', () => setPlane('1-2'));
+
+    // Clear Gates
+    document.getElementById('btnClearGate0')?.addEventListener('click', () => clear1DGates(true));
+    document.getElementById('btnClearGate1')?.addEventListener('click', () => clear1DGates(true));
+    document.getElementById('btnClearGate2')?.addEventListener('click', () => clear1DGates(true));
+    document.getElementById('btnClearBanana')?.addEventListener('click', clearBananaGate);
+    document.getElementById('btnBanana2D')?.addEventListener('click', toggleBananaMode);
+
+    // Badges & Scales
+    document.getElementById('btnScaleToggle2D')?.addEventListener('click', cycle2DScale);
+    document.getElementById('btnScaleToggle0')?.addEventListener('click', () => cycle1DScale(0));
+    document.getElementById('btnScaleToggle1')?.addEventListener('click', () => cycle1DScale(1));
+    document.getElementById('btnScaleToggle2')?.addEventListener('click', () => cycle1DScale(2));
+    document.getElementById('btnGridToggle0')?.addEventListener('click', cycle1DGridMode);
+    document.getElementById('btnGridToggle1')?.addEventListener('click', cycle1DGridMode);
+    document.getElementById('btnGridToggle2')?.addEventListener('click', cycle1DGridMode);
+
+    // Peak Clear Buttons
+    document.getElementById('btnClearPeaks0')?.addEventListener('click', () => clearFoundPeaks(0));
+    document.getElementById('btnClearPeaks1')?.addEventListener('click', () => clearFoundPeaks(1));
+    document.getElementById('btnClearPeaks2')?.addEventListener('click', () => clearFoundPeaks(2));
+
+    // Modals
+    document.getElementById('btnOpenFs')?.addEventListener('click', openServerBrowser);
+    document.getElementById('btnBrowserClose')?.addEventListener('click', closeServerBrowser);
+    document.getElementById('btnBrowserCancel')?.addEventListener('click', closeServerBrowser);
+    document.getElementById('btnBrowserOpenSubmit')?.addEventListener('click', submitOpenMatrix);
+    document.getElementById('btnSaveConfig')?.addEventListener('click', saveConfig);
+
+    // Colormap & Contrast Sliders
+    document.getElementById('cmapSelect')?.addEventListener('change', () => { updateColorLUT(); render2D(); });
+    document.getElementById('scaleSelect')?.addEventListener('change', (e) => { scaleMode2D = e.target.value; updateScaleBadge2D(); render2D(); });
+    document.getElementById('vmaxSlider')?.addEventListener('input', (e) => {
+      currentVmax = vmaxSliderToValue(parseFloat(e.target.value));
+      document.getElementById('vmaxLabel').innerText = currentVmax;
+      render2D();
+    });
+    document.getElementById('vminSlider')?.addEventListener('input', (e) => {
+      document.getElementById('vminLabel').innerText = e.target.value;
+      render2D();
+    });
+
+    // 2D Mouse Events
+    canvas2d.addEventListener('mouseenter', () => { isMouseOver2D = true; setFocusPanel('2d'); });
+    canvas2d.addEventListener('mouseleave', () => {
+      isMouseOver2D = false;
+      if (!isBoxZooming2D) {
+        cursorChannel1D = { 0: null, 1: null, 2: null };
+        renderAll1DSpectra();
+      }
+    });
+
+    canvas2d.addEventListener('mousedown', (e) => {
+      setFocusPanel('2d');
+      if (bananaMode) return;
+      if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+        const pr = getPlotRect2D();
+        const r = canvas2d.getBoundingClientRect();
+        const px = e.clientX - r.left;
+        const py = e.clientY - r.top;
+        if (px >= pr.x && px <= pr.x + pr.w && py >= pr.y && py <= pr.y + pr.h) {
+          isBoxZooming2D = true;
+          dragStart2D = { x: px, y: py };
+          dragCurrent2D = { x: px, y: py };
+        }
+      }
+    });
+
+    canvas2d.addEventListener('mousemove', (e) => {
+      const r = canvas2d.getBoundingClientRect();
+      const mouseX = e.clientX - r.left;
+      const mouseY = e.clientY - r.top;
+      const ch = pxToCh2D(mouseX, mouseY);
+      cursor2D = { x: Math.round(ch.x), y: Math.round(ch.y) };
+
+      const plAxes = getPlaneAxes(activePlane);
+      cursorChannel1D[plAxes.x] = cursor2D.x;
+      cursorChannel1D[plAxes.y] = cursor2D.y;
+      renderAll1DSpectra();
+
+      const hud = document.getElementById('hudCoords');
+      if (hud) {
+        const isCalX = isAxisCalibrated(plAxes.x);
+        const isCalY = isAxisCalibrated(plAxes.y);
+        const ex = isCalX ? ` (${chToEnergy(plAxes.x, cursor2D.x).toFixed(1)} keV)` : '';
+        const ey = isCalY ? ` (${chToEnergy(plAxes.y, cursor2D.y).toFixed(1)} keV)` : '';
+        hud.innerText = `2D [Plane ${activePlane}]: ${plAxes.nameX}=ch ${cursor2D.x}${ex} | ${plAxes.nameY}=ch ${cursor2D.y}${ey}`;
+      }
+    });
+
+    canvas2d.addEventListener('click', (e) => {
+      if (bananaMode) {
+        const r = canvas2d.getBoundingClientRect();
+        const ch = pxToCh2D(e.clientX - r.left, e.clientY - r.top);
+        const pt = { x: Math.round(ch.x), y: Math.round(ch.y) };
+
+        if (bananaPolygon.length >= 3) {
+          const p0 = bananaPolygon[0];
+          const dist = Math.hypot(pt.x - p0.x, pt.y - p0.y);
+          const spanX = view2D.x1 - view2D.x0;
+          if (dist < spanX * 0.03) {
+            applyBananaGate();
+            return;
+          }
+        }
+        bananaPolygon.push(pt);
+        render2D();
+      }
+    });
+
+    canvas2d.addEventListener('dblclick', () => {
+      zoomFull();
+    });
+
+    // 2D Wheel Zoom centered at mouse cursor
+    canvas2d.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? (1.0 - scrollSensitivity) : (1.0 / (1.0 - scrollSensitivity));
+      const r = canvas2d.getBoundingClientRect();
+      const ch = pxToCh2D(e.clientX - r.left, e.clientY - r.top);
+      const cx = ch.x;
+      const cy = ch.y;
+
+      const spanX = (view2D.x1 - view2D.x0) * factor;
+      const spanY = (view2D.y1 - view2D.y0) * factor;
+      const plAxes = getPlaneAxes(activePlane);
+      const shape = metadata ? (metadata.shape || [4096, 4096, 128]) : [4096, 4096, 128];
+      const maxSpanX = shape[plAxes.x];
+      const maxSpanY = shape[plAxes.y];
+
+      const fracX = (cx - view2D.x0) / (view2D.x1 - view2D.x0);
+      const fracY = (cy - view2D.y0) / (view2D.y1 - view2D.y0);
+
+      view2D.x0 = Math.max(0, Math.floor(cx - fracX * spanX));
+      view2D.x1 = Math.min(maxSpanX, Math.ceil(view2D.x0 + spanX));
+      view2D.y0 = Math.max(0, Math.floor(cy - fracY * spanY));
+      view2D.y1 = Math.min(maxSpanY, Math.ceil(view2D.y0 + spanY));
+
+      render2D();
+      const isSynced = (document.getElementById('projRangeSelect')?.value === 'synced');
+      if (isSynced) {
+        render1DSpectrum(plAxes.x);
+        render1DSpectrum(plAxes.y);
+      }
+      schedule2DSync(45);
+    }, { passive: false });
+
+    // 1D Spectrum Mouse Events across all 3 axes
+    for (let ax = 0; ax < 3; ax++) {
+      const c = canvas1D[ax];
+      c.addEventListener('mouseenter', () => { hovered1DAxis = ax; setFocusPanel(`1d-${ax}`); });
+      c.addEventListener('mouseleave', () => {
+        hovered1DAxis = null;
+        if (!is1DBoxZooming[ax]) {
+          cursorChannel1D[ax] = null;
+          render1DSpectrum(ax);
+        }
+      });
+
+      c.addEventListener('mousemove', (e) => {
+        const pr = getPlotRect1D(ax);
+        const r = c.getBoundingClientRect();
+        const px = e.clientX - r.left;
+        const rng = getVisible1DRange(ax);
+        const frac = Math.max(0, Math.min(1, (px - pr.x) / pr.w));
+        const ch = Math.round(rng.start + frac * (rng.end - rng.start));
+        cursorChannel1D[ax] = ch;
+
+        const hud = document.getElementById('hudCoords');
+        if (hud) {
+          const isCal = isAxisCalibrated(ax);
+          const en = isCal ? ` (${chToEnergy(ax, ch).toFixed(2)} keV)` : '';
+          const spec = spec1D[ax];
+          const cnt = (spec && ch >= 0 && ch < spec.length) ? spec[ch] : 0;
+          const axNames = ['Det 1', 'Det 2', 'Rings'];
+          hud.innerText = `${axNames[ax]}: Channel ${ch}${en} | Counts: ${cnt.toLocaleString()}`;
+        }
+        render1DSpectrum(ax);
+      });
+
+      c.addEventListener('mousedown', (e) => {
+        setFocusPanel(`1d-${ax}`);
+        if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+          const pr = getPlotRect1D(ax);
+          const r = c.getBoundingClientRect();
+          const mouseX = e.clientX - r.left;
+          const mouseY = e.clientY - r.top;
+          if (mouseX >= pr.x && mouseX <= pr.x + pr.w && mouseY >= pr.y && mouseY <= pr.y + pr.h) {
+            is1DBoxZooming[ax] = true;
+            drag1DStartPos[ax] = { x: mouseX, y: mouseY };
+            drag1DCurrentPos[ax] = { x: mouseX, y: mouseY };
+          }
+        }
+      });
+
+      c.addEventListener('dblclick', () => {
+        zoomFull1D(ax);
+      });
+
+      c.addEventListener('click', (e) => {
+        if (e.ctrlKey || e.metaKey) {
+          const pr = getPlotRect1D(ax);
+          const r = c.getBoundingClientRect();
+          const mouseX = e.clientX - r.left;
+          if (mouseX >= pr.x && mouseX <= pr.x + pr.w) {
+            const rng = getVisible1DRange(ax);
+            const frac = (mouseX - pr.x) / pr.w;
+            const ch = Math.round(rng.start + frac * (rng.end - rng.start));
+            requestPeakFit(ax, ch);
+          }
+        }
+      });
+
+      c.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        if (e.shiftKey) {
+          // Horizontal channel zoom
+          const factor = e.deltaY < 0 ? (1.0 - scrollSensitivity) : (1.0 / (1.0 - scrollSensitivity));
+          const pr = getPlotRect1D(ax);
+          const r = c.getBoundingClientRect();
+          const px = e.clientX - r.left;
+          const frac = Math.max(0, Math.min(1, (px - pr.x) / pr.w));
+          const rng = getVisible1DRange(ax);
+          const span = (rng.end - rng.start) * factor;
+          const cx = rng.start + frac * (rng.end - rng.start);
+          const shape = metadata ? (metadata.shape || [4096, 4096, 128]) : [4096, 4096, 128];
+          const maxCh = shape[ax];
+
+          const newStart = Math.max(0, Math.floor(cx - frac * span));
+          const newEnd = Math.min(maxCh, Math.ceil(newStart + span));
+
+          view1D[ax].start = newStart;
+          view1D[ax].end = newEnd;
+
+          const isSynced = (document.getElementById('projRangeSelect')?.value === 'synced');
+          const plAxes = getPlaneAxes(activePlane);
+          if (isSynced && ax === plAxes.x) {
+            view2D.x0 = newStart;
+            view2D.x1 = newEnd;
+            render1DSpectrum(ax);
+            render2D();
+            schedule2DSync(45);
+          } else if (isSynced && ax === plAxes.y) {
+            view2D.y0 = newStart;
+            view2D.y1 = newEnd;
+            render1DSpectrum(ax);
+            render2D();
+            schedule2DSync(45);
+          } else if (ax === plAxes.z) {
+            render1DSpectrum(ax);
+            schedule2DSync(45);
+          } else {
+            render1DSpectrum(ax);
+          }
+        } else {
+          // Vertical counts zoom
+          const factor = e.deltaY < 0 ? (1.0 - scrollSensitivity) : (1.0 / (1.0 - scrollSensitivity));
+          zoom1DY[ax] = Math.max(0.005, Math.min(100.0, (zoom1DY[ax] || 1.0) * factor));
+          render1DSpectrum(ax);
+        }
+      }, { passive: false });
+    }
+
+    // Window-level Mouse Move & Up for Smooth Drag-and-Drop Zoom across Viewers
+    window.addEventListener('mousemove', (e) => {
+      // 2D Box Zooming
+      if (isBoxZooming2D && dragStart2D) {
+        const r = canvas2d.getBoundingClientRect();
+        dragCurrent2D = { x: e.clientX - r.left, y: e.clientY - r.top };
+        render2D();
+      }
+
+      // 1D Box Zooming across all 3 axes
+      for (let ax = 0; ax < 3; ax++) {
+        if (is1DBoxZooming[ax] && drag1DStartPos[ax]) {
+          const c = canvas1D[ax];
+          const r = c.getBoundingClientRect();
+          drag1DCurrentPos[ax] = { x: e.clientX - r.left, y: e.clientY - r.top };
+          render1DSpectrum(ax);
+        }
+      }
+    });
+
+    window.addEventListener('mouseup', (e) => {
+      // 2D Box Zoom Finish
+      if (isBoxZooming2D && dragStart2D && dragCurrent2D) {
+        isBoxZooming2D = false;
+        const x0 = Math.min(dragStart2D.x, dragCurrent2D.x);
+        const x1 = Math.max(dragStart2D.x, dragCurrent2D.x);
+        const y0 = Math.min(dragStart2D.y, dragCurrent2D.y);
+        const y1 = Math.max(dragStart2D.y, dragCurrent2D.y);
+        if (Math.abs(x1 - x0) > 6 && Math.abs(y1 - y0) > 6) {
+          const ch0 = pxToCh2D(x0, y1);
+          const ch1 = pxToCh2D(x1, y0);
+          view2D.x0 = Math.max(0, Math.floor(ch0.x));
+          view2D.x1 = Math.ceil(ch1.x);
+          view2D.y0 = Math.max(0, Math.floor(ch0.y));
+          view2D.y1 = Math.ceil(ch1.y);
+          fetchTileAndRender();
+          fetchProjections();
+        }
+        dragStart2D = null;
+        dragCurrent2D = null;
+        render2D();
+      }
+
+      // 1D Box Zoom Finish across all 3 axes
+      for (let ax = 0; ax < 3; ax++) {
+        if (is1DBoxZooming[ax]) {
+          is1DBoxZooming[ax] = false;
+          if (drag1DStartPos[ax] && drag1DCurrentPos[ax]) {
+            const xS = Math.min(drag1DStartPos[ax].x, drag1DCurrentPos[ax].x);
+            const xE = Math.max(drag1DStartPos[ax].x, drag1DCurrentPos[ax].x);
+            if (xE - xS > 5) {
+              const pr = getPlotRect1D(ax);
+              const rng = getVisible1DRange(ax);
+              const span = Math.max(1, rng.end - rng.start);
+              const frac0 = Math.max(0, Math.min(1, (xS - pr.x) / pr.w));
+              const frac1 = Math.max(0, Math.min(1, (xE - pr.x) / pr.w));
+              const c0 = Math.round(rng.start + frac0 * span);
+              const c1 = Math.round(rng.start + frac1 * span);
+              if (c1 > c0) {
+                const shape = metadata ? (metadata.shape || [4096, 4096, 128]) : [4096, 4096, 128];
+                const maxCh = shape[ax];
+                const newStart = Math.max(0, c0);
+                const newEnd = Math.min(maxCh, c1 + 1);
+
+                view1D[ax].start = newStart;
+                view1D[ax].end = newEnd;
+
+                const isSynced = (document.getElementById('projRangeSelect')?.value === 'synced');
+                const plAxes = getPlaneAxes(activePlane);
+                if (isSynced && ax === plAxes.x) {
+                  view2D.x0 = newStart;
+                  view2D.x1 = newEnd;
+                  fetchTileAndRender();
+                  fetchProjections();
+                } else if (isSynced && ax === plAxes.y) {
+                  view2D.y0 = newStart;
+                  view2D.y1 = newEnd;
+                  fetchTileAndRender();
+                  fetchProjections();
+                } else if (ax === plAxes.z) {
+                  fetchTileAndRender();
+                  fetchProjections();
+                } else {
+                  render1DSpectrum(ax);
+                }
+              }
+            }
+          }
+          drag1DStartPos[ax] = null;
+          drag1DCurrentPos[ax] = null;
+          render1DSpectrum(ax);
+        }
+      }
+    });
+
+    // --- Global GASPware Keydown Dispatcher ---
+    window.addEventListener('keydown', (e) => {
+      if (e.target && ['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) {
+        if (e.key === 'Escape') closeServerBrowser();
+        return;
+      }
+
+      const k = e.key.toLowerCase();
+      const isShortcut = ['arrowleft', 'arrowright', 'arrowdown', 'arrowup', 'e', 'f', 'a', 'q', '=', '+', 'v', 'g', 'c', '1', '2', '4', 'l', '?', 'h', 'escape', 'm', 'w', 'x', 'b', 'i', 'z', 'p', 'r', '[', ']', 'tab', '0', '3'].includes(k);
+      if (isShortcut) {
+        e.preventDefault();
+        unfocusControls();
+      }
+
+      const targetPanel = getFocusedPanel();
+
+      // Pan or Limit Markers based on panel focus
+      if (targetPanel.startsWith('1d-')) {
+        const axis = parseInt(targetPanel.split('-')[1], 10);
+        const speed = e.shiftKey ? 2.0 : 1.0;
+        if (e.key === 'ArrowLeft') pan1D(axis, -speed, 0);
+        else if (e.key === 'ArrowRight') pan1D(axis, speed, 0);
+        else if (e.key === 'ArrowDown') pan1D(axis, 0, -speed);
+        else if (e.key === 'ArrowUp') pan1D(axis, 0, speed);
+      } else {
+        // 2D Panel has focus: Arrows set limit markers (Shift+Arrows pan)
+        if (e.key === 'ArrowLeft') {
+          if (e.shiftKey) pan2D(-1, 0);
+          else { markers.left = cursor2D.x; render2D(); updateOverlayStatus(); }
+        } else if (e.key === 'ArrowRight') {
+          if (e.shiftKey) pan2D(1, 0);
+          else { markers.right = cursor2D.x; render2D(); updateOverlayStatus(); }
+        } else if (e.key === 'ArrowDown') {
+          if (e.shiftKey) pan2D(0, -1);
+          else { markers.down = cursor2D.y; render2D(); updateOverlayStatus(); }
+        } else if (e.key === 'ArrowUp') {
+          if (e.shiftKey) pan2D(0, 1);
+          else { markers.up = cursor2D.y; render2D(); updateOverlayStatus(); }
+        }
+      }
+
+      // Classic GASPware Commands
+      if (k === 'e') expandMarkers();
+      else if (k === 'f' || k === 'a') {
+        if (targetPanel.startsWith('1d-')) {
+          const ax = parseInt(targetPanel.split('-')[1], 10);
+          zoomFull1D(ax);
+        } else {
+          zoomFull();
+        }
+      }
+      else if (k === '0') {
+        if (targetPanel.startsWith('1d-')) {
+          const ax = parseInt(targetPanel.split('-')[1], 10);
+          zoomFull1D(ax);
+        } else {
+          zoomFull();
+        }
+      }
+      else if (k === 'm') toggleSidebar();
+      else if (k === 'q') quitViewer();
+      else if (e.key === '=' || e.key === '+') clearAllFits();
+      else if (k === 'w') handleGateKeyPress('w');
+      else if (k === 'x') handleGateKeyPress('x');
+      else if (k === 'b') handleFitBgKeyPress();
+      else if (k === 'i') handleIntegrateKeyPress();
+      else if (k === 'r') handleRegionKeyPress();
+      else if (k === 'z') {
+        if (bananaMode || bananaGateActive) clearBananaGate();
+        else clear1DGates(true);
+      }
+      else if (k === 'p') {
+        const activeAxis = targetPanel.startsWith('1d-') ? parseInt(targetPanel.split('-')[1], 10) : (hovered1DAxis !== null ? hovered1DAxis : 0);
+        searchPeaks1D(activeAxis);
+      }
+      else if (k === 'g') {
+        if (e.shiftKey) {
+          toggleBananaMode();
+        } else {
+          let activeAxis = targetPanel.startsWith('1d-') ? parseInt(targetPanel.split('-')[1], 10) : (hovered1DAxis !== null ? hovered1DAxis : null);
+          let activeCh = (activeAxis !== null) ? cursorChannel1D[activeAxis] : null;
+          if (activeAxis === null && isMouseOver2D) {
+            const plAxes = getPlaneAxes(activePlane);
+            activeAxis = plAxes.x;
+            activeCh = cursor2D.x;
+          }
+          if (activeAxis !== null && activeCh !== null) {
+            addManualPeakMarker(activeAxis, activeCh);
+          }
+        }
+      }
+      else if (k === 'v') {
+        if (isMouseOver2D) {
+          requestPeakFit2D(cursor2D.x, cursor2D.y);
+        } else {
+          let activeAxis = (hovered1DAxis !== null) ? hovered1DAxis : (targetPanel.startsWith('1d-') ? parseInt(targetPanel.split('-')[1], 10) : 0);
+          let activeCh = cursorChannel1D[activeAxis];
+          if (activeCh === null || isNaN(activeCh)) {
+            const rng = getVisible1DRange(activeAxis);
+            activeCh = Math.round((rng.start + rng.end) / 2);
+          }
+          if (activeCh !== null && !isNaN(activeCh)) {
+            requestPeakFit(activeAxis, activeCh);
+          }
+        }
+      }
+      else if (k === 'h') {
+        let activeAxis = targetPanel.startsWith('1d-') ? parseInt(targetPanel.split('-')[1], 10) : (hovered1DAxis !== null ? hovered1DAxis : 0);
+        fitAllPeaks1D(activeAxis);
+      }
+      else if (k === 'c') {
+        const sel = document.getElementById('cmapSelect');
+        if (sel) {
+          sel.selectedIndex = (sel.selectedIndex + 1) % sel.options.length;
+          updateColorLUT();
+          render2D();
+        }
+      }
+      else if (e.key === '1') {
+        scaleMode2D = 'linear';
+        updateScaleBadge2D();
+        render2D();
+      }
+      else if (e.key === '2') {
+        scaleMode2D = 'sqrt';
+        updateScaleBadge2D();
+        render2D();
+      }
+      else if (e.key === '4') {
+        scaleMode2D = 'log';
+        updateScaleBadge2D();
+        render2D();
+      }
+      else if (k === 'l') {
+        if (targetPanel.startsWith('1d-')) {
+          const ax = parseInt(targetPanel.split('-')[1], 10);
+          cycle1DScale(ax);
+        } else {
+          cycle2DScale();
+        }
+      }
+      else if (e.key === '3') {
+        cycle1DGridMode();
+      }
+      else if (e.key === 'Tab') {
+        const planes = ['0-1', '0-2', '1-2'];
+        let idx = planes.indexOf(activePlane);
+        setPlane(planes[(idx + 1) % planes.length]);
+      }
+      else if (e.key === '[' || e.code === 'BracketLeft') cycleMatrix(-1);
+      else if (e.key === ']' || e.code === 'BracketRight') cycleMatrix(1);
+      else if ((e.ctrlKey || e.metaKey) && k === 'o') openServerBrowser();
+      else if (e.key === '?') {
+        const hm = document.getElementById('helpModal');
+        if (hm) hm.style.display = hm.style.display === 'block' ? 'none' : 'block';
+      }
+      else if (e.key === 'Escape') {
+        const bm = document.getElementById('serverBrowserModal');
+        const hm = document.getElementById('helpModal');
+        const ic = document.getElementById('integrateCard1D');
+        if (bm && bm.style.display === 'flex') closeServerBrowser();
+        else if (hm && hm.style.display === 'block') hm.style.display = 'none';
+        else if (ic && ic.style.display === 'block') clearIntegration1D();
+        else if (bananaMode) toggleBananaMode();
+        else clear1DGates(true);
+      }
+    });
+  }
+
+  // --- App Initialization ---
+  async function init() {
+    updateColorLUT();
+    setupEvents();
+    resizeCanvases();
+    await fetchMetadata();
+  }
+
+  window.addEventListener('DOMContentLoaded', init);
+</script>
+</body>
+</html>

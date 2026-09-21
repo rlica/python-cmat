@@ -58,3 +58,15 @@ Each sub-block in the matrix is compressed independently according to its sparse
 ### 5. Mode 41: Bit-Shift-Map (BSM) Unary Run-Length Compression (`ccomp__3_decompress`)
 - Optimized for counting spectra with dense low-value clusters and sparse high-count spikes.
 - Encoded with a bit-shift map bitmap followed by unary run-length deltas.
+
+---
+
+## 3D `.cmat` Cube Container Specification
+
+3D `.cmat` matrices (e.g. $\gamma$-$\gamma$-$\text{Rings}$ or $\gamma$-$\gamma$-$\Delta t$ cubes) extend the IVF block architecture to 3-dimensional coordinate spaces:
+- **Geometry**: Defined by dimensions $(N_x, N_y, N_z)$, such as $(4096, 4096, 128)$.
+- **Storage Layout**: Concatenated sequence of 2D IVF sub-matrix planes along the 3rd axis, each containing its own independent IVF header and compressed block offset tables.
+- **Decompression & Memory-Mapped Caching (`CMAT3DReader`)**:
+  - Slices are decompressed sequentially into a contiguous binary cache file (`.cmat3d_cache/<filename>.dat`) with shape $(N_x, N_y, N_z)$ in `int32` format.
+  - Slicing and projections are executed directly via `numpy.memmap` pointers, enabling sub-millisecond orthogonal plane extraction and coincidence slicing without saturating system RAM.
+

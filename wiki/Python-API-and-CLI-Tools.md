@@ -110,3 +110,46 @@ python3 cmat2amat.py GeE-symm.cmat GeE_sparse.amat --format sparse
 | `--format` | Output structure: `dense` (default grid) or `sparse` (`x y counts`). |
 | `--roi xmin xmax ymin ymax` | Bounding box coordinates to export a sub-region rather than the whole matrix. |
 | `--verbose` | Output detailed decompression diagnostics and block statistics to stdout. |
+
+---
+
+## 3D Matrix Python API (`cmat3d.py`)
+
+`python-cmat` includes `CMAT3DReader` for handling 3D matrix cubes with memory-mapped array caching and multi-plane slicing.
+
+### Basic 3D API Example
+
+```python
+from cmat3d import CMAT3DReader
+
+# 1. Initialize reader and build/load memory-mapped cache
+reader3d = CMAT3DReader("GeE-Rings3D.cmat")
+print(f"3D Shape: {reader3d.shape}")       # (4096, 4096, 128)
+print(f"Total counts: {reader3d.total_counts:,}")
+
+# 2. Access 3D volume directly as NumPy array / memmap (int32)
+vol = reader3d.to_memmap()
+
+# 3. Extract 2D orthogonal plane projection
+# plane: '0-1' (Det 1 vs Det 2), '0-2' (Det 1 vs Rings), '1-2' (Det 2 vs Rings)
+plane_01 = reader3d.get_2d_plane("0-1")
+plane_01_sub = reader3d.get_2d_plane("0-1", x0=1000, x1=2000, y0=1000, y1=2000)
+
+# 4. Extract total 1D projection along any axis (0, 1, or 2)
+spec_det1 = reader3d.get_projection_1d(axis=0)
+
+# 5. Extract 1D coincidence cuts with background subtraction
+net_spec, bg_spec = reader3d.get_gate_1d(
+    target_axis=0,
+    w_gates={2: [[11, 11]]},        # Gate on Ring 11 (axis 2)
+    b_gates={2: [[1, 2], [20, 21]]} # Background rings
+)
+
+# 6. Extract 2D Banana Graphical Polygon Cut
+banana_cut = reader3d.get_banana_gate(
+    plane="0-2",
+    polygon=[[1000, 10], [1500, 12], [1480, 15], [980, 13]]
+)
+print("Banana cut net spectrum sum:", banana_cut["net_spec"].sum())
+```
+
