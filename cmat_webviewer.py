@@ -2021,6 +2021,157 @@ def print_gate_terminal_report(gate_res: dict, matrix_name: str):
     print(f"  • Counts: Gross={gate_res['gross_counts']:,.0f} | Bg={gate_res['bg_counts']:,.1f} | Net={gate_res['net_counts']:,.1f} ± {gate_res['net_err']:,.1f} cts\n", flush=True)
 
 
+def _polygon_area(pts: list) -> float:
+    """Compute 2D continuous geometric polygon area via Shoelace formula."""
+    if not pts or len(pts) < 3:
+        return 0.0
+    n = len(pts)
+    area = 0.0
+    for i in range(n):
+        j = (i + 1) % n
+        area += pts[i][0] * pts[j][1]
+        area -= pts[j][0] * pts[i][1]
+    return abs(area) / 2.0
+
+
+def _extract_banana_roi_2d(matrix: np.ndarray, raw_points: list):
+    """
+    Extracts discrete pixel count, continuous surface area, and total counts for a 2D polygon ROI on matrix.
+    Returns: (pixel_count, surface_area, total_counts, clean_pts)
+    """
+    if not raw_points or len(raw_points) < 3:
+        return 0, 0.0, 0, []
+
+    clean_pts = []
+    for p in raw_points:
+        if isinstance(p, dict):
+            clean_pts.append((float(p.get("x", p.get(0, 0))), float(p.get("y", p.get(1, 0)))))
+        elif isinstance(p, (list, tuple)) and len(p) >= 2:
+            clean_pts.append((float(p[0]), float(p[1])))
+
+    if len(clean_pts) < 3:
+        return 0, 0.0, 0, []
+
+    surface_area = _polygon_area(clean_pts)
+
+    dim_y, dim_x = matrix.shape
+    xs = [p[0] for p in clean_pts]
+    ys = [p[1] for p in clean_pts]
+    x_min = max(0, int(math.floor(min(xs))))
+    x_max = min(dim_x, int(math.ceil(max(xs))))
+    y_min = max(0, int(math.floor(min(ys))))
+    y_max = min(dim_y, int(math.ceil(max(ys))))
+
+    if x_max <= x_min or y_max <= y_min:
+        return 0, surface_area, 0, clean_pts
+
+    nx = x_max - x_min
+    ny = y_max - y_min
+
+    from matplotlib.path import Path as MplPath
+
+    grid_x, grid_y = np.meshgrid(np.arange(x_min, x_max) + 0.5, np.arange(y_min, y_max) + 0.5)
+    points_grid = np.column_stack((grid_x.ravel(), grid_y.ravel()))
+
+    poly_path = MplPath(clean_pts)
+    mask = poly_path.contains_points(points_grid).reshape(ny, nx)
+    pixel_count = int(np.sum(mask))
+
+    if pixel_count == 0:
+        return 0, surface_area, 0, clean_pts
+
+    sub = matrix[y_min:y_max, x_min:x_max]
+    counts = int(round(float(np.sum(sub * mask))))
+    return pixel_count, surface_area, counts, clean_pts
+
+
+def compute_2d_banana_roi(matrix: np.ndarray, polygon_peak: list = None, polygon_bg: list = None) -> dict:
+    """
+    Computes 2D Banana ROI area integration on matrix with optional area-normalized background subtraction.
+    """
+    has_peak = bool(polygon_peak and len(polygon_peak) >= 3)
+    has_bg_poly = bool(polygon_bg and len(polygon_bg) >= 3)
+
+    if not has_peak and not has_bg_poly:
+        return {
+            "success": False,
+            "error": "Polygon must contain at least 3 vertices.",
+            "pixel_count_peak": 0,
+            "pixel_count_bg": 0,
+            "area_peak": 0.0,
+            "area_bg": 0.0,
+            "counts_peak": 0,
+            "counts_bg": 0,
+            "scale": 0.0,
+            "has_bg": False,
+            "net_counts": 0.0,
+            "net_err": 0.0,
+        }
+
+    px_peak, area_peak, cts_peak, poly_peak = _extract_banana_roi_2d(matrix, polygon_peak or [])
+
+    has_bg = False
+    px_bg, area_bg, cts_bg, poly_bg = 0, 0.0, 0, []
+    scale = 0.0
+
+    if has_bg_poly:
+        px_bg, area_bg, cts_bg, poly_bg = _extract_banana_roi_2d(matrix, polygon_bg or [])
+        if px_bg > 0 or area_bg > 0:
+            has_bg = True
+            norm_area_peak = px_peak if px_peak > 0 else area_peak
+            norm_area_bg = px_bg if px_bg > 0 else area_bg
+            scale = (norm_area_peak / norm_area_bg) if norm_area_bg > 0 else 1.0
+
+    if has_bg:
+        net_counts = float(cts_peak - scale * cts_bg)
+        net_err = math.sqrt(max(0.0, float(cts_peak) + (scale ** 2) * float(cts_bg)))
+    else:
+        net_counts = float(cts_peak)
+        net_err = math.sqrt(max(0.0, float(cts_peak)))
+
+    return {
+        "success": True,
+        "pixel_count_peak": px_peak,
+        "pixel_count_bg": px_bg,
+        "area_peak": area_peak,
+        "area_bg": area_bg,
+        "counts_peak": cts_peak,
+        "counts_bg": cts_bg,
+        "scale": scale,
+        "has_bg": has_bg,
+        "net_counts": net_counts,
+        "net_err": net_err,
+        "total_counts": cts_peak,
+        "polygon_peak": poly_peak,
+        "polygon_bg": poly_bg,
+    }
+
+
+def print_banana_roi_terminal_report_2d(res: dict, matrix_name: str, matrix_shape: tuple):
+    px_peak = res.get("pixel_count_peak", 0)
+    cts_peak = res.get("counts_peak", 0)
+    area_peak = res.get("area_peak", float(px_peak))
+    poly_peak = res.get("polygon_peak", [])
+    has_bg = res.get("has_bg", False)
+
+    sh_y, sh_x = matrix_shape[:2]
+    print(f"\n[2D Banana ROI Area Integration] {matrix_name} ({sh_x}×{sh_y}):")
+    print(f"  • Peak Banana (W): {px_peak:,} px (area: {area_peak:,.1f} ch², {len(poly_peak)} vertices) | Counts: {cts_peak:,} cts")
+
+    if has_bg:
+        px_bg = res.get("pixel_count_bg", 0)
+        cts_bg = res.get("counts_bg", 0)
+        area_bg = res.get("area_bg", float(px_bg))
+        poly_bg = res.get("polygon_bg", [])
+        scale = res.get("scale", 0.0)
+        net_cts = res.get("net_counts", 0.0)
+        net_err = res.get("net_err", 0.0)
+        print(f"  • Bg Banana (B):   {px_bg:,} px (area: {area_bg:,.1f} ch², {len(poly_bg)} vertices) | Counts: {cts_bg:,} cts (Scale factor: {scale:.4f})")
+        print(f"  • Net Area Counts: {net_cts:,.1f} ± {net_err:,.1f} counts\n", flush=True)
+    else:
+        print(f"  • Total Counts:    {cts_peak:,} counts\n", flush=True)
+
+
 def ricker_wavelet(points: int, a: float) -> np.ndarray:
     """Analytical Ricker (Mexican Hat) wavelet for CWT convolution."""
     A = 2.0 / (np.sqrt(3.0 * a) * (np.pi ** 0.25))
@@ -4972,6 +5123,29 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             self.send_header("Content-type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps(gate_res).encode("utf-8"))
+
+        elif self.path.startswith("/api/banana_roi") or self.path.startswith("/api/banana_gate"):
+            from urllib.parse import urlparse, parse_qs
+            query = parse_qs(urlparse(self.path).query)
+            poly_peak_str = query.get("polygon_peak", query.get("polygon", ["[]"]))[0]
+            poly_bg_str = query.get("polygon_bg", ["[]"])[0]
+            try:
+                polygon_peak = json.loads(poly_peak_str)
+            except Exception:
+                polygon_peak = []
+            try:
+                polygon_bg = json.loads(poly_bg_str)
+            except Exception:
+                polygon_bg = []
+
+            res = compute_2d_banana_roi(self.matrix, polygon_peak=polygon_peak, polygon_bg=polygon_bg)
+            if res.get("success") and (res.get("pixel_count_peak", 0) > 0 or res.get("pixel_count_bg", 0) > 0):
+                print_banana_roi_terminal_report_2d(res, self.reader.filename.name, self.matrix.shape)
+
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(res).encode("utf-8"))
 
         elif self.path.startswith("/api/search_peaks"):
             from urllib.parse import urlparse, parse_qs

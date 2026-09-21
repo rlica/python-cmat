@@ -39,7 +39,15 @@ proj_det2 = reader.get_projection(axis=1)
 # Gate channels 500 to 520 on Det 1 -> returns coincidence spectrum on Det 2
 net_spec, bg_spec, raw_spec = reader.get_gate(500, 520, axis=0)
 
-# 6. Export directly to ASCII (.amat) format
+# 6. Extract 2D Banana Graphical Polygon ROI & Net Counts
+# Computes pixel mask, geometric area, raw counts, and normalized subtraction
+banana = reader.get_banana_roi(
+    polygon_peak=[[100, 100], [150, 120], [140, 160], [90, 140]],
+    polygon_bg=[[80, 80], [170, 100], [160, 180], [70, 160]]
+)
+print(f"Net Banana Area: {banana['net_counts']:,.1f} +/- {banana['net_err']:,.1f}")
+
+# 7. Export directly to ASCII (.amat) format
 reader.export_amat("GeE-symm.amat", format_type="dense")
 ```
 
@@ -74,6 +82,17 @@ Extracts a coincidence-gated 1D slice along the specified axis:
 - Slices between `gate_min` and `gate_max`.
 - If `bg_min` and `bg_max` are provided, performs normalized background subtraction scaled by channel window width.
 - Returns `(net_spectrum, bg_spectrum, raw_spectrum)`.
+
+#### `get_banana_roi(polygon_peak: list, polygon_bg: list = None) -> dict`
+Calculates discrete pixel containment, continuous geometric Shoelace area, raw counts, area-normalized scale factor, and net background-subtracted counts for arbitrary 2D polygon ROIs:
+- `polygon_peak`: List of `[x, y]` coordinate pairs defining the Peak polygon ROI.
+- `polygon_bg`: Optional list of `[x, y]` coordinate pairs defining the Background polygon ROI.
+- Returns dictionary containing:
+  - `peak`: Sub-dictionary with `area_geom`, `pixels`, `counts`, and `vertices`.
+  - `bg`: Sub-dictionary with background metrics (or `None`).
+  - `scale`: Area normalization factor ($\text{Area}_{\text{peak}} / \text{Area}_{\text{bg}}$).
+  - `net_counts`: Area-normalized net peak counts ($C_{\text{peak}} - \text{scale} \times C_{\text{bg}}$).
+  - `net_err`: Statistical uncertainty $\sqrt{C_{\text{peak}} + \text{scale}^2 \times C_{\text{bg}}}$.
 
 #### `export_amat(out_path: str | Path, format_type: str = "dense", roi: tuple = None)`
 Exports matrix counts to an ASCII `.amat` file:

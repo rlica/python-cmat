@@ -500,6 +500,26 @@ class CMATReader:
 
         return net_spectrum, bg_spectrum, raw_gate
 
+    def get_banana_roi(
+        self,
+        polygon_peak: list,
+        polygon_bg: Optional[list] = None,
+    ) -> Dict[str, Any]:
+        """
+        Compute 2D Banana ROI area integration and area-normalized background subtraction.
+
+        Args:
+            polygon_peak: List of (x, y) or [x, y] coordinates defining peak polygon ROI.
+            polygon_bg: Optional list of (x, y) coordinates defining background polygon ROI.
+
+        Returns:
+            Dict containing pixel_count_peak, pixel_count_bg, area_peak, area_bg,
+            counts_peak, counts_bg, scale, net_counts, and net_err.
+        """
+        mat = self.to_numpy()
+        from cmat_webviewer import compute_2d_banana_roi
+        return compute_2d_banana_roi(mat, polygon_peak=polygon_peak, polygon_bg=polygon_bg)
+
     def export_amat(
         self,
         output_file: Union[str, Path],

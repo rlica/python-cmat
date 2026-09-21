@@ -43,9 +43,9 @@ The `cmat_webviewer` GUI is designed for high-efficiency nuclear spectroscopy wi
 |---|---|---|---|
 | **Set Coincidence Peak Gate** | `W` or `w` | 1D Spectrum | Press once to set left limit ($W_{k,\min}$); press again to set right limit ($W_{k,\max}$). Slices the 2D matrix along the orthogonal axis. Multiple gates can be defined sequentially. |
 | **Set Coincidence Background Gate**| `X` or `x` | 1D Spectrum | Set left and right limits for background slices ($X_m$). Subtracted with channel-width normalization scale factor $\sum \Delta W / \sum \Delta X$. |
-| **Draw Peak Banana Gate (3D)** | `Shift + G` | 2D Matrix | Draw 2D peak polygon ROI (W, gold) on active plane; project counts onto 3rd axis. Close with `Enter` or click start. |
-| **Draw Bg Banana Gate (3D)** | `Shift + B` | 2D Matrix | Draw 2D background polygon ROI (B, magenta) on active plane; area-normalized subtraction from peak banana. Close with `Enter` or click start. |
-| **Clear Active Gates & Bananas** | `Z` or `z` | Global | Clear all active 1D coincidence gates and 2D Banana gates, restoring full projections. |
+| **Draw Peak Banana ROI (2D / 3D)** | `Shift + G` | 2D Matrix | Draw 2D peak polygon ROI (W, gold): in 2D computes area & net counts; in 3D projects counts onto 3rd axis. Close with `Enter` or click start. |
+| **Draw Bg Banana ROI (2D / 3D)** | `Shift + B` | 2D Matrix | Draw 2D background polygon ROI (B, magenta): area-normalized subtraction from peak banana in 2D and 3D. Close with `Enter` or click start. |
+| **Clear Active Gates & Bananas** | `Z` or `z` | Global | Clear all active 1D coincidence gates and 2D Banana gates/ROIs, restoring full projections. |
 
 ---
 

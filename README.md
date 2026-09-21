@@ -24,7 +24,7 @@
 - **Interactive 2D & 3D Web Viewers**: Blazing fast HTML5 canvas visualizers with pixel-matched decimation, memory-mapped 3D caching, subregion pre-slicing (48× acceleration), and multi-threaded request handling.
 - **Simultaneous 1D Projections**: Real-time stepped staircase histograms across all axes (Det 1, Det 2, and Rings / $\Delta t$) with synchronized crosshair tracking and calibrated energy readouts.
 - **1D & 2D Peak Fitting**: Fits Gaussian, RadWare / SAMPO exponential tail, and Hypermet EMG profiles with complete parameter covariance. Decomposes 2D coincidence peaks with Gamba & Morhác 4-component background analysis.
-- **Coincidence & Banana Gating**: Multi-gate peak ($W$) and background ($X$) slicing with automatic channel normalization, plus 2D polygonal Banana graphical ROIs (`Shift+G`) projected onto conjugate axes.
+- **Coincidence & Banana Gating**: Multi-gate peak ($W$) and background ($X$) slicing with automatic channel normalization, plus 2D polygonal Banana graphical ROIs (`Shift+G` Peak / `Shift+B` Bg) for 2D area determination and 3D coincidence projection cuts.
 - **Multi-Matrix Differential Analysis**: Instant cycling (`[` / `]`) across multiple matrices while locking zoom, gates, and auto-refitted peak parameters.
 - **Headless Spectroscopy Engine**: Automated macro scripts (`*.mac`), CLI one-liners (`-c`), and interactive REPL shell (`-i`).
 - **Publication-Ready Vector PDF Export**: Outputs vector PDF figures with Times New Roman typography, calibrated keV axes, fit curves, baselines, and labeled centroids.
@@ -117,6 +117,10 @@ reader = CMATReader("GeE-symm.cmat")
 matrix = reader.to_numpy()            # 2D NumPy array (int32)
 proj_x = reader.get_projection(axis=0) # Det 1 / X total projection
 net_spec, bg_spec, raw_spec = reader.get_gate(1168, 1178, axis=0) # Gated slice
+banana_roi = reader.get_banana_roi(
+    polygon_peak=[[100, 100], [150, 120], [140, 160], [90, 140]],
+    polygon_bg=[[80, 80], [170, 100], [160, 180], [70, 160]]
+) # 2D Banana ROI area determination & normalized subtraction
 ```
 
 #### 3D Matrix API (`cmat3d.py`)
@@ -144,9 +148,9 @@ net_spec, bg_spec = reader3d.get_gate_1d(target_axis=0, w_gates={2: [[11, 11]]})
 | **Fit All Peaks** | `H` | Fit all visible candidate peaks on Peak-Aware Continuum baseline |
 | **Clear Fits & Marks**| `=` or `+` | Clear all active persistent peak fits, curves, and centroid markers |
 | **Coincidence Gate** | `W` (Peak) / `X` (BG) | Set peak and background coincidence gate limits on 1D spectrum |
-| **Clear Gate** | `Z` | Clear active coincidence gate and restore full projection |
-| **Peak Banana ROI (3D)** | `Shift + G` | Draw arbitrary 2D peak polygon gate (W) to project onto 3rd axis |
-| **Bg Banana ROI (3D)** | `Shift + B` | Draw 2D background polygon gate (B); subtracted with area normalization |
+| **Clear Gate / Bananas**| `Z` | Clear active 1D coincidence gates and 2D Banana gates/ROIs |
+| **Peak Banana ROI** | `Shift + G` | Draw 2D peak polygon (W): manual area integration (2D) or 3D projection cut |
+| **Bg Banana ROI** | `Shift + B` | Draw 2D bg polygon (B): area-normalized subtraction in 2D and 3D |
 | **Plane Switch (3D)** | `Plane buttons` / Select | Switch orthogonal plane (`0-1`, `0-2`, `1-2`) |
 | **Cycle Scale** | `L` | Cycle scale of focused panel (2D: Log $\rightarrow$ Lin $\rightarrow$ Pwr; 1D: Lin $\leftrightarrow$ Log) |
 | **Colormap** | `C` | Cycle colormaps (Turbo, Viridis, Plasma, Inferno, Hot, Jet, Gray) |

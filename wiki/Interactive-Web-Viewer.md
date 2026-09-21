@@ -113,3 +113,29 @@ Click **`📂 Browse Server Matrices...`** in the header (or press **`Ctrl + O`*
 Click **`Print PDF`** on the 2D matrix footer or either 1D projection header:
 - Outputs standalone, vector PDFs rendered with classic publication typography (Times New Roman).
 - Embeds energy-calibrated axes, stepped histogram paths, all active continuous fit curves, background baselines, labeled centroid pointers, 2D FWHM confidence ellipses, and unobtrusive 3-line fit summary labels.
+
+### 8. 2D Banana ROIs & Area Determination (Peak & Background Subtraction)
+For irregular or curve-shaped features on the 2D coincidence matrix (e.g. bananas, Doppler-shifted diagonal ridges, or non-rectangular regions of interest), `cmat_webviewer` provides interactive polygonal ROI drawing with area-normalized background subtraction and terminal reporting:
+
+- **Draw Peak Banana (W)**: Press **`Shift + G`** (or click **Draw Peak [Shift+G]** in the 2D footer or sidebar). Click vertices on the 2D matrix canvas to trace the Peak ROI boundary (rendered in gold `#ffd600`). Close the polygon by clicking near the starting vertex or pressing **`Enter`**.
+- **Draw Background Banana (B)**: Press **`Shift + B`** (or click **Draw Bg [Shift+B]**). Click vertices on the 2D matrix canvas to trace the Background ROI boundary (rendered in magenta `#ff4081`). Close with **`Enter`** or by clicking near the start vertex.
+- **Area-Normalized Subtraction**:
+  - Exact discrete pixel containment ($N_{\text{px}}$) and continuous geometric Shoelace area ($A\ \text{ch}^2$) are calculated for both polygons.
+  - Scale factor: $\text{Scale} = \text{Area}_{\text{peak}} / \text{Area}_{\text{bg}}$.
+  - Net Area Counts:
+    $$\text{Net Counts} = C_{\text{peak}} - \text{Scale} \times C_{\text{bg}} \quad \pm \quad \sqrt{C_{\text{peak}} + \text{Scale}^2 \times C_{\text{bg}}}$$
+- **Real-Time Readout & Diagnostics**:
+  - A persistent top badge overlay on the 2D matrix and the sidebar card display live vertex counts, surface area ($\text{ch}^2$), discrete pixel count, raw counts, scale factor, and net background-subtracted counts.
+  - A formatted diagnostic summary is automatically printed to the terminal console whenever a banana ROI is closed or when switching between matrices:
+    ```text
+    ================================================================================
+    [2D Banana ROI Analysis] GeE-symm.cmat (4096 x 4096)
+    --------------------------------------------------------------------------------
+      • Peak Banana (W):  1,250 px (area: 1250.0 ch², 5 vertices) | Counts: 345,210 cts
+      • Bg Banana (B):    2,500 px (area: 2500.0 ch², 4 vertices) | Counts: 110,400 cts (Scale factor: 0.5000)
+    --------------------------------------------------------------------------------
+      => Net Area Counts: 290,010.0 ± 608.2 cts
+    ================================================================================
+    ```
+- **Clear Banana ROIs**: Press **`Z`** (or click **Clear Bananas**) to remove both peak and background polygons and reset the display.
+
