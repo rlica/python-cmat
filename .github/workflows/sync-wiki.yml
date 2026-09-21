@@ -1,0 +1,50 @@
+name: Sync Documentation to GitHub Wiki
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'wiki/**'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  sync-wiki:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Sync Markdown to GitHub Wiki
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          WIKI_REPO="https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.wiki.git"
+          TEMP_DIR="/tmp/wiki-sync"
+          
+          echo "Cloning wiki repository..."
+          git clone "${WIKI_REPO}" "${TEMP_DIR}" || {
+            echo "Wiki repo does not exist or first page needs to be created on GitHub."
+            exit 0
+          }
+          
+          echo "Copying markdown files from wiki/ directory..."
+          cp -v wiki/*.md "${TEMP_DIR}/"
+          
+          cd "${TEMP_DIR}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          
+          if git diff --cached --quiet; then
+            echo "Wiki is already up to date."
+          else
+            git commit -m "Auto-sync documentation from main branch $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+            git push origin HEAD
+            echo "GitHub Wiki successfully synchronized!"
+          fi
