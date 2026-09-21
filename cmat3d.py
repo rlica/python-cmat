@@ -95,15 +95,15 @@ class CMAT3DReader:
                 )
 
             self.matmode = self.cmt_hdr[1]  # 0=normal
-            # Axis 0 (Det 1 / X)
+            # Axis 0 (X)
             self.res1 = self.cmt_hdr[3]
             self.step1 = self.cmt_hdr[4]
             self.ndiv1 = self.cmt_hdr[5]
-            # Axis 1 (Det 2 / Y)
+            # Axis 1 (Y)
             self.res2 = self.cmt_hdr[6]
             self.step2 = self.cmt_hdr[7]
             self.ndiv2 = self.cmt_hdr[8]
-            # Axis 2 (Det 3 / Rings / Z)
+            # Axis 2 (Z)
             self.res3 = self.cmt_hdr[9]
             self.step3 = self.cmt_hdr[10]
             self.ndiv3 = self.cmt_hdr[11]
@@ -155,9 +155,9 @@ class CMAT3DReader:
     def get_projection(self, axis: int = 0) -> np.ndarray:
         """
         Get 1D total projection spectrum for specified axis:
-          axis 0: Det 1 / X (length res1)
-          axis 1: Det 2 / Y (length res2)
-          axis 2: Det 3 / Rings / Z (length res3)
+          axis 0: Axis 1 / X (length res1)
+          axis 1: Axis 2 / Y (length res2)
+          axis 2: Axis 3 / Z (length res3)
         """
         if axis not in (0, 1, 2):
             axis = 0
@@ -367,9 +367,9 @@ class CMAT3DReader:
         """
         Extract a 2D projection or gated plane (optionally sliced to subregion x0..x1, y0..y1).
         Planes:
-          "0-1": X = Axis 0 (Det 1), Y = Axis 1 (Det 2), 3rd = Axis 2 (Rings)
-          "0-2": X = Axis 0 (Det 1), Y = Axis 2 (Rings), 3rd = Axis 1 (Det 2)
-          "1-2": X = Axis 1 (Det 2), Y = Axis 2 (Rings), 3rd = Axis 0 (Det 1)
+          "0-1": X = Axis 0 (Axis 1 / X), Y = Axis 1 (Axis 2 / Y), 3rd = Axis 2 (Axis 3 / Z)
+          "0-2": X = Axis 0 (Axis 1 / X), Y = Axis 2 (Axis 3 / Z), 3rd = Axis 1 (Axis 2 / Y)
+          "1-2": X = Axis 1 (Axis 2 / Y), Y = Axis 2 (Axis 3 / Z), 3rd = Axis 0 (Axis 1 / X)
 
         If gate_3rd or gates_3rd is specified, sums only over the given 3rd axis range(s).
         Otherwise returns the full projection. Slicing subregion before summation accelerates
@@ -512,7 +512,7 @@ class CMAT3DReader:
             return spec0, spec1, spec2
 
         elif plane_norm == "0-2":
-            # X = Axis 0, Y = Axis 2, 3rd = Axis 1 (Det 2)
+            # X = Axis 0 (Axis 1 / X), Y = Axis 2 (Axis 3 / Z), 3rd = Axis 1 (Axis 2 / Y)
             rx0 = max(0, min(self.res1 - 1, x0))
             rx1 = max(rx0 + 1, min(self.res1, x1 if x1 is not None else self.res1))
             rz0 = max(0, min(self.res3 - 1, y0))
@@ -547,7 +547,7 @@ class CMAT3DReader:
             return spec0, spec1, spec2
 
         else:
-            # Plane 1-2: X = Axis 1 (Det 2), Y = Axis 2 (Rings), 3rd = Axis 0 (Det 1)
+            # Plane 1-2: X = Axis 1 (Axis 2 / Y), Y = Axis 2 (Axis 3 / Z), 3rd = Axis 0 (Axis 1 / X)
             ry0 = max(0, min(self.res2 - 1, x0))
             ry1 = max(ry0 + 1, min(self.res2, x1 if x1 is not None else self.res2))
             rz0 = max(0, min(self.res3 - 1, y0))
@@ -831,22 +831,105 @@ def compute_3d_gate(
         }
 
 
+def _polygon_area(pts: List[Tuple[float, float]]) -> float:
+    """Compute 2D continuous geometric polygon area via Shoelace formula."""
+    if len(pts) < 3:
+        return 0.0
+    n = len(pts)
+    area = 0.0
+    for i in range(n):
+        j = (i + 1) % n
+        area += pts[i][0] * pts[j][1]
+        area -= pts[j][0] * pts[i][1]
+    return abs(area) / 2.0
+
+
+def _extract_banana_spectrum(
+    reader: CMAT3DReader,
+    plane: str,
+    raw_points: List[Any],
+    dim_x: int,
+    dim_y: int,
+    target_res: int,
+) -> Tuple[np.ndarray, int, float, int]:
+    """
+    Extracts 1D projection spectrum, discrete pixel count, continuous surface area, and total counts for a 2D polygon.
+    Returns: (spec_1d, pixel_count, surface_area, total_counts)
+    """
+    if not raw_points or len(raw_points) < 3:
+        return np.zeros(target_res, dtype=np.float64), 0, 0.0, 0
+
+    clean_pts = []
+    for p in raw_points:
+        if isinstance(p, dict):
+            clean_pts.append((float(p.get("x", p.get(0, 0))), float(p.get("y", p.get(1, 0)))))
+        elif isinstance(p, (list, tuple)) and len(p) >= 2:
+            clean_pts.append((float(p[0]), float(p[1])))
+
+    if len(clean_pts) < 3:
+        return np.zeros(target_res, dtype=np.float64), 0, 0.0, 0
+
+    surface_area = _polygon_area(clean_pts)
+
+    xs = [p[0] for p in clean_pts]
+    ys = [p[1] for p in clean_pts]
+    x_min = max(0, int(math.floor(min(xs))))
+    x_max = min(dim_x, int(math.ceil(max(xs))))
+    y_min = max(0, int(math.floor(min(ys))))
+    y_max = min(dim_y, int(math.ceil(max(ys))))
+
+    if x_max <= x_min or y_max <= y_min:
+        return np.zeros(target_res, dtype=np.float64), 0, surface_area, 0
+
+    nx = x_max - x_min
+    ny = y_max - y_min
+
+    from matplotlib.path import Path as MplPath
+
+    grid_x, grid_y = np.meshgrid(np.arange(x_min, x_max) + 0.5, np.arange(y_min, y_max) + 0.5)
+    points_grid = np.column_stack((grid_x.ravel(), grid_y.ravel()))
+
+    poly_path = MplPath(clean_pts)
+    mask = poly_path.contains_points(points_grid).reshape(ny, nx)
+    pixel_count = int(np.sum(mask))
+
+    if pixel_count == 0:
+        return np.zeros(target_res, dtype=np.float64), 0, surface_area, 0
+
+    if plane == "0-1":
+        sub = reader.memmap_3d[:, y_min:y_max, x_min:x_max].astype(np.float64)
+        spec = np.sum(sub * mask[np.newaxis, :, :], axis=(1, 2), dtype=np.float64)
+    elif plane == "0-2":
+        sub = reader.memmap_3d[y_min:y_max, :, x_min:x_max].astype(np.float64)
+        spec = np.sum(sub * mask[:, np.newaxis, :], axis=(0, 2), dtype=np.float64)
+    else:  # plane == "1-2"
+        sub = reader.memmap_3d[y_min:y_max, x_min:x_max, :].astype(np.float64)
+        spec = np.sum(sub * mask[:, :, np.newaxis], axis=(0, 1), dtype=np.float64)
+
+    total_counts = int(round(float(np.sum(spec))))
+    return spec, pixel_count, surface_area, total_counts
+
+
 def compute_2d_banana_gate(
     reader: CMAT3DReader,
     plane: str,
-    polygon_points: List[List[float]],
+    polygon_peak: Optional[List[Any]] = None,
+    polygon_bg: Optional[List[Any]] = None,
+    polygon_points: Optional[List[Any]] = None,
 ) -> Dict[str, Any]:
     """
     Compute 1D coincidence spectrum on the remaining 3rd axis for a 2D banana (polygon) gate on `plane`.
+    Supports peak banana with optional background banana subtraction normalized by surface areas.
 
     plane: '0-1', '0-2', or '1-2'
-    polygon_points: list of [x, y] coordinates in the plane's display space:
-       '0-1': x=Axis 0 (0..res1), y=Axis 1 (0..res2), target=Axis 2 (len=res3)
-       '0-2': x=Axis 0 (0..res1), y=Axis 2 (0..res3), target=Axis 1 (len=res2)
-       '1-2': x=Axis 1 (0..res2), y=Axis 2 (0..res3), target=Axis 0 (len=res1)
+    polygon_peak / polygon_points: vertices for peak banana [x, y]
+    polygon_bg: optional vertices for background banana [x, y]
     """
     if reader.memmap_3d is None:
         reader._init_data_cache()
+
+    if polygon_peak is None and polygon_points is not None:
+        polygon_peak = polygon_points
 
     plane = str(plane).strip()
     if plane == "0-1":
@@ -864,7 +947,10 @@ def compute_2d_banana_gate(
     else:
         raise ValueError(f"Invalid plane '{plane}'. Must be '0-1', '0-2', or '1-2'.")
 
-    if not polygon_points or len(polygon_points) < 3:
+    has_peak = bool(polygon_peak and len(polygon_peak) >= 3)
+    has_bg_poly = bool(polygon_bg and len(polygon_bg) >= 3)
+
+    if not has_peak and not has_bg_poly:
         return {
             "success": False,
             "error": "Polygon must contain at least 3 vertices.",
@@ -879,97 +965,57 @@ def compute_2d_banana_gate(
 
     t0 = time.time()
 
-    try:
-        from matplotlib.path import Path as MplPath
-    except ImportError:
-        return {"success": False, "error": "matplotlib.path is required for polygon gating."}
+    spec_peak, px_peak, area_peak, cts_peak = _extract_banana_spectrum(
+        reader, plane, polygon_peak or [], dim_x, dim_y, target_res
+    )
 
-    clean_pts = []
-    for p in polygon_points:
-        if isinstance(p, dict):
-            clean_pts.append((float(p.get("x", p.get(0, 0))), float(p.get("y", p.get(1, 0)))))
-        elif isinstance(p, (list, tuple)):
-            clean_pts.append((float(p[0]), float(p[1])))
+    has_bg = False
+    spec_bg = np.zeros(target_res, dtype=np.float64)
+    px_bg = 0
+    area_bg = 0.0
+    cts_bg = 0
+    scale = 0.0
 
-    if not clean_pts:
-        return {
-            "success": True,
-            "plane": plane,
-            "target_axis": target_axis,
-            "net_spec": np.zeros(target_res, dtype=np.float64).tolist(),
-            "total_gated_counts": 0,
-            "pixel_count": 0,
-            "polygon": polygon_points,
-        }
+    if has_bg_poly:
+        spec_bg, px_bg, area_bg, cts_bg = _extract_banana_spectrum(
+            reader, plane, polygon_bg or [], dim_x, dim_y, target_res
+        )
+        if px_bg > 0 or area_bg > 0:
+            has_bg = True
+            norm_area_peak = px_peak if px_peak > 0 else area_peak
+            norm_area_bg = px_bg if px_bg > 0 else area_bg
+            scale = (norm_area_peak / norm_area_bg) if norm_area_bg > 0 else 1.0
 
-    xs = [p[0] for p in clean_pts]
-    ys = [p[1] for p in clean_pts]
+    if has_bg:
+        net_spec = spec_peak - scale * spec_bg
+    else:
+        net_spec = spec_peak
 
-    x_min = max(0, int(math.floor(min(xs))))
-    x_max = min(dim_x, int(math.ceil(max(xs))))
-    y_min = max(0, int(math.floor(min(ys))))
-    y_max = min(dim_y, int(math.ceil(max(ys))))
-
-    if x_max <= x_min or y_max <= y_min:
-        return {
-            "success": True,
-            "plane": plane,
-            "target_axis": target_axis,
-            "net_spec": np.zeros(target_res, dtype=np.float64).tolist(),
-            "total_gated_counts": 0,
-            "pixel_count": 0,
-            "polygon": polygon_points,
-        }
-
-    nx = x_max - x_min
-    ny = y_max - y_min
-
-    # Pixel centers within bounding box
-    grid_x, grid_y = np.meshgrid(np.arange(x_min, x_max) + 0.5, np.arange(y_min, y_max) + 0.5)
-    points_grid = np.column_stack((grid_x.ravel(), grid_y.ravel()))
-
-    poly_path = MplPath(clean_pts)
-    mask = poly_path.contains_points(points_grid).reshape(ny, nx)
-    pixel_count = int(np.sum(mask))
-
-    if pixel_count == 0:
-        return {
-            "success": True,
-            "plane": plane,
-            "target_axis": target_axis,
-            "net_spec": np.zeros(target_res, dtype=np.float64).tolist(),
-            "total_gated_counts": 0,
-            "pixel_count": 0,
-            "polygon": polygon_points,
-        }
-
-    # Slice sub-cube and multiply by mask
-    # shape_zyx is (res3, res2, res1) = (Z, Y, X)
-    if plane == "0-1":
-        # x is Axis 0, y is Axis 1, target is Axis 2
-        sub = reader.memmap_3d[:, y_min:y_max, x_min:x_max].astype(np.float64)
-        spec = np.sum(sub * mask[np.newaxis, :, :], axis=(1, 2), dtype=np.float64)
-    elif plane == "0-2":
-        # x is Axis 0, y is Axis 2, target is Axis 1
-        sub = reader.memmap_3d[y_min:y_max, :, x_min:x_max].astype(np.float64)
-        spec = np.sum(sub * mask[:, np.newaxis, :], axis=(0, 2), dtype=np.float64)
-    else:  # plane == "1-2"
-        # x is Axis 1, y is Axis 2, target is Axis 0
-        sub = reader.memmap_3d[y_min:y_max, x_min:x_max, :].astype(np.float64)
-        spec = np.sum(sub * mask[:, :, np.newaxis], axis=(0, 1), dtype=np.float64)
-
-    total_counts = int(round(float(np.sum(spec))))
+    net_counts = float(np.sum(net_spec))
     elapsed_ms = round((time.time() - t0) * 1000.0, 1)
 
     return {
         "success": True,
         "plane": plane,
         "target_axis": target_axis,
-        "net_spec": spec.tolist(),
-        "total_gated_counts": total_counts,
-        "total_counts": total_counts,
-        "pixel_count": pixel_count,
-        "polygon": polygon_points,
+        "net_spec": net_spec.tolist(),
+        "peak_spec": spec_peak.tolist() if px_peak > 0 else [],
+        "bg_spec": spec_bg.tolist() if has_bg else [],
+        "total_gated_counts": int(round(net_counts)),
+        "total_counts": int(round(net_counts)),
+        "net_counts": net_counts,
+        "pixel_count": px_peak,
+        "pixel_count_peak": px_peak,
+        "pixel_count_bg": px_bg,
+        "area_peak": area_peak,
+        "area_bg": area_bg,
+        "counts_peak": cts_peak,
+        "counts_bg": cts_bg,
+        "scale": scale,
+        "has_bg": has_bg,
+        "polygon": polygon_peak,
+        "polygon_peak": polygon_peak,
+        "polygon_bg": polygon_bg,
         "elapsed_ms": elapsed_ms,
     }
 

@@ -87,13 +87,25 @@ $$\text{Net Spec}(i) = \text{Raw Gate}(i) - \frac{\sum \text{Peak Gate Widths}}{
 
 - Press **`Z`** or click **Clear Gate** to reset active coincidence gates.
 
-### 2D Banana Gate Polygon Engine (`Shift + G`)
+### 2D Banana Gate Polygon Engine (`Shift + G` / `Shift + B`)
 For particle-gamma identification, ring discrimination, or kinematic curve gating:
-1. Press **`Shift + G`** or click **Draw Banana [Shift+G]** in the toolbar.
-2. Click consecutive points on the active 2D plane (e.g. `Plane 0-2` Det 1 vs Rings) to define the boundary vertices of an arbitrary polygon.
-3. Click near the starting vertex to close the polygon.
-4. The viewer automatically extracts all events lying within the 2D polygon using vectorized ray-casting point-in-polygon containment and projects the gated counts onto the conjugate 3rd axis.
-5. Click **Clear Banana** or press **`Z`** to remove the polygon gate.
+1. **Draw Peak Banana (W)**: Press **`Shift + G`** (or click **Draw Peak [Shift+G]**). Click points on the active 2D plane to define the Peak ROI polygon (rendered in gold `#ffd600`). Close the polygon by clicking near the starting vertex or pressing **`Enter`**.
+2. **Draw Background Banana (B)**: Press **`Shift + B`** (or click **Draw Bg [Shift+B]**). Click points on the 2D plane to define the Background ROI polygon (rendered in magenta `#ff4081`). Close the polygon by clicking near the starting vertex or pressing **`Enter`**.
+3. **Area-Normalized Subtraction**:
+   The viewer computes the continuous geometric surface area (in $\text{ch}^2$ via the Shoelace algorithm) and discrete rasterized pixel count ($\text{px}$) for both polygons. It normalizes background subtraction by the ratio of their surface areas:
+
+   $$\text{scale} = \frac{\text{Area}_{\text{peak}}}{\text{Area}_{\text{bg}}}$$
+   $$\text{Net Spec}(i) = \text{Spec}_{\text{peak}}(i) - \text{scale} \times \text{Spec}_{\text{bg}}(i)$$
+
+4. **Terminal Reporting**:
+   Applying a banana gate prints a detailed diagnostic report in the terminal listing surface areas (in pixels and $\text{ch}^2$), count totals inside each banana, the scale factor, and net counts:
+   ```text
+   [2D Banana Gate Cut] matrix.cmat -> Plane 0-1 => Axis 3 (Z):
+     • Peak Banana (W): 400 px (area: 400.0 ch², 4 vertices) | Counts: 228,000 cts
+     • Bg Banana (B):   200 px (area: 200.0 ch², 4 vertices) | Counts: 64,000 cts (Scale factor: 2.0000)
+     • Net Area Counts: 100,000.0 counts
+   ```
+5. **Clear Gate**: Click **Clear Bananas** or press **`Z`** to remove active banana gates.
 
 ---
 
@@ -169,8 +181,14 @@ net_spec, bg_spec = reader.get_gate_1d(
     b_gates={2: [[1, 2], [20, 21]]} # Background rings
 )
 
-# 6. 2D Banana Gate Polygon
-polygon_pts = [[1000, 10], [1500, 12], [1480, 15], [980, 13]] # [[x, y], ...]
-banana_res = reader.get_banana_gate(plane="0-2", polygon=polygon_pts)
-print(f"Banana cut counts: {banana_res['total_counts']:,}")
+# 6. 2D Banana Gate Polygon (Peak & Background Subtraction)
+poly_peak = [[1000, 10], [1500, 12], [1480, 15], [980, 13]] # [[x, y], ...]
+poly_bg   = [[900, 10], [950, 12], [940, 15], [890, 13]]
+banana_res = reader.get_banana_gate(
+    plane="0-2",
+    polygon_peak=poly_peak,
+    polygon_bg=poly_bg
+)
+print(f"Peak: {banana_res['pixel_count_peak']} px, Bg: {banana_res['pixel_count_bg']} px (scale: {banana_res['scale']:.4f})")
+print(f"Net Gated Counts: {banana_res['total_gated_counts']:,}")
 ```

@@ -145,7 +145,8 @@ net_spec, bg_spec = reader3d.get_gate_1d(target_axis=0, w_gates={2: [[11, 11]]})
 | **Clear Fits & Marks**| `=` or `+` | Clear all active persistent peak fits, curves, and centroid markers |
 | **Coincidence Gate** | `W` (Peak) / `X` (BG) | Set peak and background coincidence gate limits on 1D spectrum |
 | **Clear Gate** | `Z` | Clear active coincidence gate and restore full projection |
-| **Banana ROI Gate (3D)** | `Shift + G` | Draw arbitrary 2D polygon gate to project onto 3rd axis |
+| **Peak Banana ROI (3D)** | `Shift + G` | Draw arbitrary 2D peak polygon gate (W) to project onto 3rd axis |
+| **Bg Banana ROI (3D)** | `Shift + B` | Draw 2D background polygon gate (B); subtracted with area normalization |
 | **Plane Switch (3D)** | `Plane buttons` / Select | Switch orthogonal plane (`0-1`, `0-2`, `1-2`) |
 | **Cycle Scale** | `L` | Cycle scale of focused panel (2D: Log $\rightarrow$ Lin $\rightarrow$ Pwr; 1D: Lin $\leftrightarrow$ Log) |
 | **Colormap** | `C` | Cycle colormaps (Turbo, Viridis, Plasma, Inferno, Hot, Jet, Gray) |

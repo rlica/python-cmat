@@ -6,18 +6,18 @@ Dedicated to 3-dimensional coincidence matrices in GASPware/gsort .cmat format.
 Independent implementation safeguarding the mature 2D viewer.
 
 Features:
-  - Three Concurrent 1D Stepped-Staircase Histograms for Axis 0 (Det 1), Axis 1 (Det 2), and Axis 2 (Det 3 / Rings).
+  - Three Concurrent 1D Stepped-Staircase Histograms for Axis 1 (X), Axis 2 (Y), and Axis 3 (Z).
   - Selectable 2D Projection Plane:
-      * Plane 0-1: Det 1 (X) vs Det 2 (Y) [summed over Det 3 / Rings]
-      * Plane 0-2: Det 1 (X) vs Det 3 / Rings (Y) [summed over Det 2]
-      * Plane 1-2: Det 2 (X) vs Det 3 / Rings (Y) [summed over Det 1]
-  - 3rd Axis Gating / Slicing: Sum over all channels by default, or gate on specific rings / channels.
+      * Plane 0-1: Axis 1 (X) vs Axis 2 (Y) [summed over Axis 3 (Z)]
+      * Plane 0-2: Axis 1 (X) vs Axis 3 (Z) [summed over Axis 2 (Y)]
+      * Plane 1-2: Axis 2 (Y) vs Axis 3 (Z) [summed over Axis 1 (X)]
+  - 3rd Axis Gating / Slicing: Sum over all channels by default, or gate on specific channels / regions.
   - Multi-Axis Coincidence Gating: Single-gate and double-gate with background subtraction.
   - Instant memory-mapped access and pre-computed 2D projection caches.
   - Full GASPware navigation, 2D box zoom, limits (L/R/D/U), peak search, multi-peak fitting, integration, and publication PDF exports.
 
 Usage:
-  python3 cmat3d_webviewer.py GeE-Rings3D.cmat --port 8081
+  python3 cmat3d_webviewer.py matrix3d.cmat --port 8081
 """
 
 import os
@@ -139,7 +139,7 @@ def save_config_file(config_path: Path, current_settings: dict) -> None:
 
 
 def print_gate_terminal_report_3d(gate_res: dict, matrix_name: str, target_axis: int, gate_specs: dict):
-    axis_names = ["Det 1 (X)", "Det 2 (Y)", "Det 3 / Rings (Z)"]
+    axis_names = ["Axis 1 (X)", "Axis 2 (Y)", "Axis 3 (Z)"]
     dst_det = axis_names[target_axis]
     gated_axes = sorted(gate_specs.keys())
     if len(gated_axes) == 1:
@@ -162,10 +162,30 @@ def print_gate_terminal_report_3d(gate_res: dict, matrix_name: str, target_axis:
 
 
 def print_banana_gate_terminal_report_3d(res: dict, matrix_name: str):
-    axis_names = ["Det 1 (X)", "Det 2 (Y)", "Det 3 / Rings (Z)"]
+    axis_names = ["Axis 1 (X)", "Axis 2 (Y)", "Axis 3 (Z)"]
     dst_det = axis_names[res["target_axis"]]
-    print(f"\n[2D Banana Gate Cut] {matrix_name} -> Plane {res['plane']} ({len(res['polygon'])} vertices, {res['pixel_count']:,} pixels) => {dst_det}:")
-    print(f"  • Total Gated Counts: {res['total_gated_counts']:,} counts\n", flush=True)
+    plane = res.get("plane", "0-1")
+    has_bg = res.get("has_bg", False)
+
+    print(f"\n[2D Banana Gate Cut] {matrix_name} -> Plane {plane} => {dst_det}:")
+
+    px_peak = res.get("pixel_count_peak", res.get("pixel_count", 0))
+    cts_peak = res.get("counts_peak", res.get("total_counts", 0))
+    area_peak = res.get("area_peak", float(px_peak))
+    poly_peak = res.get("polygon_peak", res.get("polygon", []))
+
+    print(f"  • Peak Banana (W): {px_peak:,} px (area: {area_peak:,.1f} ch², {len(poly_peak)} vertices) | Counts: {cts_peak:,} cts")
+
+    if has_bg:
+        px_bg = res.get("pixel_count_bg", 0)
+        cts_bg = res.get("counts_bg", 0)
+        area_bg = res.get("area_bg", float(px_bg))
+        poly_bg = res.get("polygon_bg", [])
+        scale = res.get("scale", 0.0)
+        print(f"  • Bg Banana (B):   {px_bg:,} px (area: {area_bg:,.1f} ch², {len(poly_bg)} vertices) | Counts: {cts_bg:,} cts (Scale factor: {scale:.4f})")
+        print(f"  • Net Area Counts: {res.get('net_counts', 0):,.1f} counts\n", flush=True)
+    else:
+        print(f"  • Net Gated Counts:{res.get('total_gated_counts', 0):,} counts\n", flush=True)
 
 
 DEFAULT_CONFIG = {
@@ -389,10 +409,10 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
         plane = session.active_plane
 
         # Dimensions mapping for active plane
-        # 0-1: X=Axis 0 (Det 1), Y=Axis 1 (Det 2), 3rd=Axis 2 (Rings)
-        # 0-2: X=Axis 0 (Det 1), Y=Axis 2 (Rings), 3rd=Axis 1 (Det 2)
-        # 1-2: X=Axis 1 (Det 2), Y=Axis 2 (Rings), 3rd=Axis 0 (Det 1)
-        axis_names = ["Det 1 (X)", "Det 2 (Y)", "Det 3 / Rings (Z)"]
+        # 0-1: X=Axis 0 (Axis 1), Y=Axis 1 (Axis 2), 3rd=Axis 2 (Axis 3)
+        # 0-2: X=Axis 0 (Axis 1), Y=Axis 2 (Axis 3), 3rd=Axis 1 (Axis 2)
+        # 1-2: X=Axis 1 (Axis 2), Y=Axis 2 (Axis 3), 3rd=Axis 0 (Axis 1)
+        axis_names = ["Axis 1 (X)", "Axis 2 (Y)", "Axis 3 (Z)"]
         if plane == "0-1":
             ax_x, ax_y, ax_3rd = 0, 1, 2
             dim_x, dim_y = reader.res1, reader.res2
@@ -625,14 +645,19 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
                 return
 
             plane = query.get("plane", [session.active_plane])[0]
-            poly_str = query.get("polygon", ["[]"])[0]
+            poly_peak_str = query.get("polygon_peak", query.get("polygon", ["[]"]))[0]
+            poly_bg_str = query.get("polygon_bg", ["[]"])[0]
             try:
-                polygon = json.loads(poly_str)
+                polygon_peak = json.loads(poly_peak_str)
             except Exception:
-                polygon = []
+                polygon_peak = []
+            try:
+                polygon_bg = json.loads(poly_bg_str)
+            except Exception:
+                polygon_bg = []
 
-            res = compute_2d_banana_gate(reader, plane, polygon)
-            if res.get("success") and res.get("pixel_count", 0) > 0:
+            res = compute_2d_banana_gate(reader, plane, polygon_peak=polygon_peak, polygon_bg=polygon_bg)
+            if res.get("success") and (res.get("pixel_count_peak", 0) > 0 or res.get("pixel_count_bg", 0) > 0):
                 print_banana_gate_terminal_report_3d(res, m["filename"])
 
             self.send_response(200)
@@ -667,7 +692,7 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
                     if w_g or b_g:
                         gate_specs[ax] = {"w": w_g, "b": b_g}
 
-            axis_names = ["Det 1 (X)", "Det 2 (Y)", "Det 3 / Rings (Z)"]
+            axis_names = ["Axis 1 (X)", "Axis 2 (Y)", "Axis 3 (Z)"]
             if gate_specs:
                 gate_res = compute_3d_gate(reader, axis, gate_specs)
                 spec = np.array(gate_res["net_spec"], dtype=np.float64)
@@ -734,14 +759,14 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
             if gate_specs:
                 gate_res = compute_3d_gate(reader, axis, gate_specs)
                 spec = np.array(gate_res["net_spec"], dtype=np.float64)
-                det_name = f"Det {axis + 1} (Gated Coincidence)"
+                det_name = f"{axis_names[axis]} (Gated Coincidence)"
             else:
                 spec0, spec1, spec2 = reader.get_projections_for_region(
                     plane=plane, x0=x0, x1=x1, y0=y0, y1=y1, gate_3rd=gate_3rd
                 )
                 spec = spec0 if axis == 0 else (spec1 if axis == 1 else spec2)
                 spec = np.array(spec, dtype=np.float64)
-                det_name = f"Det {axis + 1} (Projection)"
+                det_name = f"{axis_names[axis]} (Projection)"
 
             axis_cal = session.get_cal(axis)
             is_cal = session.is_calibrated(axis)
@@ -840,7 +865,7 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
                 res["axis"] = axis
                 res["elapsed_ms"] = round((time.time() - t0) * 1000.0, 1)
                 if res.get("success"):
-                    det_name = f"Det {axis + 1}"
+                    det_name = axis_names[axis]
                     print_multi_fit_terminal_report(res, det_name, m["filename"], is_cal)
             except Exception as e:
                 res = {"success": False, "error": str(e), "axis": axis, "peaks": []}
@@ -903,7 +928,7 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
                 res["axis"] = axis
                 if res.get("success"):
                     session.integration_1d[axis] = res
-                    det_name = f"Det {axis + 1}"
+                    det_name = axis_names[axis]
                     print_integrate_terminal_report(res, det_name, m["filename"], is_cal)
 
             self.send_response(200)
@@ -982,7 +1007,7 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
             spec = spec0 if axis == 0 else (spec1 if axis == 1 else spec2)
             spec = np.array(spec, dtype=np.float64)
 
-            axis_names = ["Det 1 (X)", "Det 2 (Y)", "Det 3 / Rings (Z)"]
+            axis_names = ["Axis 1 (X)", "Axis 2 (Y)", "Axis 3 (Z)"]
             det_name = axis_names[axis]
             axis_cal = session.get_cal(axis)
 
@@ -1028,7 +1053,7 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
             y1 = max(y0 + 1, min(max_h, int(float(query.get("y1", [max_h])[0]))))
 
             mat_2d = reader.get_2d_plane(plane=plane, gate_3rd=session.gate_3rd)
-            axis_names = ["Det 1 (X)", "Det 2 (Y)", "Det 3 / Rings (Z)"]
+            axis_names = ["Axis 1 (X)", "Axis 2 (Y)", "Axis 3 (Z)"]
 
             pdf_bytes = generate_pdf_2d(
                 mat_2d,
@@ -1224,7 +1249,7 @@ def main():
         "--plane",
         type=str,
         default=None,
-        help="Default 2D plane to display: '0-1' (Det 1 vs Det 2), '0-2' (Det 1 vs Rings), or '1-2' (Det 2 vs Rings)",
+        help="Default 2D plane to display: '0-1' (Axis 1 vs Axis 2), '0-2' (Axis 1 vs Axis 3), or '1-2' (Axis 2 vs Axis 3)",
     )
     parser.add_argument(
         "--cal",
@@ -1235,31 +1260,31 @@ def main():
         help="Global calibration coefficients applied to all axes: a0 a1 [a2]",
     )
     parser.add_argument(
-        "--cal-0", "--cal-x",
+        "--cal-0", "--cal-x", "--cal-1",
         nargs="+",
         type=float,
         dest="cal_0",
         metavar="COEFF",
         default=None,
-        help="Axis 0 (Det 1 / X) calibration coefficients: a0 a1 [a2]",
+        help="Axis 1 (X) calibration coefficients: a0 a1 [a2]",
     )
     parser.add_argument(
-        "--cal-1", "--cal-y",
+        "--cal-1-axis", "--cal-y", "--cal-2",
         nargs="+",
         type=float,
         dest="cal_1",
         metavar="COEFF",
         default=None,
-        help="Axis 1 (Det 2 / Y) calibration coefficients: a0 a1 [a2]",
+        help="Axis 2 (Y) calibration coefficients: a0 a1 [a2]",
     )
     parser.add_argument(
-        "--cal-2", "--cal-z",
+        "--cal-2-axis", "--cal-z", "--cal-3",
         nargs="+",
         type=float,
         dest="cal_2",
         metavar="COEFF",
         default=None,
-        help="Axis 2 (Det 3 / Rings / Z) calibration coefficients: a0 a1 [a2]",
+        help="Axis 3 (Z) calibration coefficients: a0 a1 [a2]",
     )
     parser.add_argument(
         "-b", "--browser",
