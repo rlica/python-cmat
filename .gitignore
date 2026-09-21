@@ -7,11 +7,10 @@ __pycache__/
 .DS_Store
 Thumbs.db
 
-# Large generated exports & data files (keep sample 2D matrix GeE-symm.cmat)
+# Large generated exports & data files
 *.amat
 *.dat
 *.cmat
-!GeE-symm.cmat
 
 # Virtual environments
 .env

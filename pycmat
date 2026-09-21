@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+"""
+pycmat - Unified Launcher for GASPware/gsort .cmat Matrix Web Viewers
+
+Automatically inspects input .cmat file headers and launches either:
+  - cmat_webviewer.py   (for 2D gamma-gamma matrices)
+  - cmat3d_webviewer.py (for 3D gamma-gamma-ring / gamma-gamma-gamma matrices)
+
+All command-line arguments are seamlessly forwarded to the appropriate viewer.
+"""
+
+import os
+import sys
+import glob
+import struct
+from pathlib import Path
+from typing import Optional, Union
+
+
+def detect_cmat_ndim(filepath: Union[str, Path]) -> Optional[int]:
+    """
+    Quickly reads IVF and CMT headers from a .cmat file to determine its dimensionality (2 or 3).
+    Returns 2, 3, or None if invalid/unreadable.
+    """
+    p = Path(filepath)
+    if not p.is_file() or p.stat().st_size < 1024:
+        return None
+    try:
+        with open(p, "rb") as f:
+            ivf_bytes = f.read(512)
+            if len(ivf_bytes) < 512:
+                return None
+            ivf_hdr = struct.unpack("<128i", ivf_bytes)
+            nsegtot = ivf_hdr[1]
+            ndescr = ivf_hdr[10]
+            fdescr = ivf_hdr[11]
+            if fdescr <= 0 or ndescr <= 0 or nsegtot <= 0:
+                return None
+            f.seek((fdescr - 1) * 512)
+            descr_bytes = f.read(min(ndescr * 512, 16))
+            if len(descr_bytes) < 8:
+                return None
+            cmt_nrec, cmt_frec = struct.unpack_from("<2i", descr_bytes, 0)
+            if cmt_frec <= 0:
+                return None
+            f.seek((cmt_frec - 1) * 512)
+            cmt_bytes = f.read(512)
+            if len(cmt_bytes) < 512:
+                return None
+            cmt_hdr = struct.unpack("<128i", cmt_bytes)
+            ndim = cmt_hdr[0]
+            return ndim
+    except Exception:
+        return None
+
+
+def main():
+    script_dir = Path(__file__).resolve().parent
+    script_2d = script_dir / "cmat_webviewer.py"
+    script_3d = script_dir / "cmat3d_webviewer.py"
+
+    # Search sys.argv for .cmat files
+    target_ndim = None
+    first_cmat_file = None
+    invalid_cmat_file = None
+
+    for arg in sys.argv[1:]:
+        if not arg.startswith("-"):
+            matched = glob.glob(arg) if ("*" in arg or "?" in arg) else ([arg] if Path(arg).is_file() else [])
+            for m in matched:
+                if m.lower().endswith(".cmat"):
+                    ndim = detect_cmat_ndim(m)
+                    if ndim in (2, 3):
+                        target_ndim = ndim
+                        first_cmat_file = m
+                        break
+                    else:
+                        invalid_cmat_file = m
+            if target_ndim is not None:
+                break
+
+    has_positional_args = any(not a.startswith("-") for a in sys.argv[1:])
+
+    # If no positional arguments were provided, check cwd for existing matrices
+    if target_ndim is None and not has_positional_args:
+        cmat_files = sorted(glob.glob("*.cmat"))
+        for cf in cmat_files:
+            ndim = detect_cmat_ndim(cf)
+            if ndim in (2, 3):
+                target_ndim = ndim
+                break
+
+    # Select target viewer based on dimension
+    if target_ndim == 3:
+        target_script = script_3d
+        mode_desc = "3D"
+    else:
+        target_script = script_2d
+        mode_desc = "2D"
+
+    if first_cmat_file:
+        print(f"[*] pycmat: Detected {mode_desc} matrix ('{first_cmat_file}') -> Launching {target_script.name}...", flush=True)
+    elif invalid_cmat_file:
+        print(f"[!] pycmat: Note: Could not determine dimension for '{invalid_cmat_file}' (corrupted or unrecognized header) -> Defaulting to {target_script.name}...", flush=True)
+
+    # Replace current process with target viewer
+    args = [sys.executable, str(target_script)] + sys.argv[1:]
+    os.execv(sys.executable, args)
+
+
+if __name__ == "__main__":
+    main()

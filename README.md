@@ -69,19 +69,24 @@ On modern Linux distributions (e.g. Ubuntu 23.04+, Debian 12+), `pip` prevents i
 
 ### 2. Launch Interactive Web Viewers
 
-#### 2D Matrix Viewer (`cmat_webviewer.py`)
+#### Unified Launcher (`pycmat`)
+The `pycmat` script automatically inspects the input `.cmat` headers and routes to either the 2D or 3D viewer:
 ```bash
-# Open a single 2D matrix
-python cmat_webviewer.py /path/to/matrix.cmat
+# Open any 2D or 3D matrix (auto-detects dimensionality)
+./pycmat /path/to/matrix.cmat
 
-# Or open multiple 2D matrices for differential analysis
-python cmat_webviewer.py run01.cmat run02.cmat run03.cmat
+# Open multiple 2D matrices for differential analysis
+./pycmat run01.cmat run02.cmat run03.cmat
 ```
 
-#### 3D Matrix Viewer (`cmat3d_webviewer.py`)
+#### Dedicated Viewers
+You can also launch the dedicated viewers directly:
 ```bash
-# Open a 3D matrix cube (e.g. gamma-gamma-Rings)
-python cmat3d_webviewer.py /path/to/matrix3d.cmat
+# 2D Matrix Viewer (gamma-gamma)
+python3 cmat_webviewer.py /path/to/matrix2d.cmat
+
+# 3D Matrix Cube Viewer (gamma-gamma-Rings / gamma-gamma-time)
+python3 cmat3d_webviewer.py /path/to/matrix3d.cmat
 ```
 
 > [!TIP]

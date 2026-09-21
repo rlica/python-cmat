@@ -83,6 +83,27 @@ Exports matrix counts to an ASCII `.amat` file:
 
 ---
 
+## Unified Matrix Launcher (`pycmat`)
+
+`pycmat` is a standalone executable Python dispatcher that automatically inspects input `.cmat` file headers in $<0.1\text{ ms}$ to determine dimensionality (`ndim`), seamlessly forwarding all CLI flags and options to the appropriate viewer:
+- **2D Matrices (`ndim == 2`)**: Launches `cmat_webviewer.py`
+- **3D Matrices (`ndim == 3`)**: Launches `cmat3d_webviewer.py`
+
+### CLI Usage Examples
+
+```bash
+# Launch interactive viewer for any 2D or 3D matrix (auto-detected)
+./pycmat /path/to/matrix.cmat
+
+# Forward options such as custom port, calibration, or browser settings
+./pycmat run1.cmat --port 8085 --no-browser
+
+# Execute batch headless spectroscopy commands
+./pycmat GeE-symm.cmat -c "info; search 0"
+```
+
+---
+
 ## CLI Matrix Converter (`cmat2amat.py`)
 
 `cmat2amat.py` provides a convenient command-line interface for converting proprietary `.cmat` files into standard plain-text ASCII files compatible with ROOT, GNUplot, MATLAB, and spreadsheet software.
