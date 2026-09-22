@@ -521,10 +521,41 @@ class ENSDFSearchEngine:
                 if script_db.exists():
                     self.db_path = script_db
 
+        self._ensure_db_decompressed()
         self._conn = None
+
+    def _ensure_db_decompressed(self):
+        """If ensdf.db does not exist, check for ensdf.db.gz and decompress automatically in ~0.2s."""
+        if not self.db_path.exists() or self.db_path.stat().st_size < 1024 * 1024:
+            gz_candidates = [
+                self.db_path.with_name(self.db_path.name + ".gz"),
+                self.db_path.parent / (DEFAULT_DB_FILENAME + ".gz"),
+                Path.cwd() / (DEFAULT_DB_FILENAME + ".gz"),
+                Path(__file__).resolve().parent / (DEFAULT_DB_FILENAME + ".gz"),
+            ]
+            for gz in gz_candidates:
+                if gz.exists() and gz.stat().st_size > 1024:
+                    import gzip, shutil
+                    target_db = self.db_path if self.db_path.name.endswith(".db") else (Path(__file__).resolve().parent / DEFAULT_DB_FILENAME)
+                    tmp_target = target_db.with_suffix(".tmp")
+                    try:
+                        print(f"📦 Unpacking local ENSDF database from {gz.name}...", file=sys.stderr)
+                        with gzip.open(gz, "rb") as f_in:
+                            with open(tmp_target, "wb") as f_out:
+                                shutil.copyfileobj(f_in, f_out)
+                        tmp_target.replace(target_db)
+                        self.db_path = target_db
+                        print(f"✅ ENSDF database ready ({target_db.name}, {target_db.stat().st_size / (1024*1024):.1f} MB)", file=sys.stderr)
+                    except Exception as e:
+                        if tmp_target.exists():
+                            try: tmp_target.unlink()
+                            except Exception: pass
+                        print(f"⚠️ Warning: Auto-unpack of {gz.name} failed: {e}", file=sys.stderr)
+                    break
 
     def is_available(self) -> bool:
         """Check if local database is built and ready."""
+        self._ensure_db_decompressed()
         return self.db_path.exists() and self.db_path.stat().st_size > 1024 * 1024
 
     def get_connection(self) -> sqlite3.Connection:
