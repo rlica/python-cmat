@@ -84,6 +84,7 @@ You can also supply calibration coefficients at startup:
 | **`bg_1d`** | `<axis> <b0> <b1> [...]` or `clear` | Define or clear discrete 1D spectroscopy background windows for fitting and integration. |
 | **`integrate`** | `<axis> <r0> <r1> [--bg ..] [--poly 1\|2]` | Integrate peak area over region with linear or quadratic polynomial background subtraction. |
 | **`fit_2d`** | `<x> <y> [--roi N] [--verbose]` | True 2D coincidence peak fit (Gamba 4-component decomposition). |
+| **`fit_log`** | `[on\|off\|status] [file]` | Enable/disable appending 1D & 2D fit results to a fixed-width text file. |
 | **`clear_fits`** | `[1d\|2d\|all]` | Clear stored fit results from memory. |
 | **`pdf_1d`** | `<axis> <out.pdf> [--fit] [--title T]`| Export publication-grade vector PDF of 1D or gated spectrum. |
 | **`pdf_2d`** | `<out.pdf> [--x ..] [--y ..] [--fit]` | Export publication-grade vector PDF of 2D coincidence matrix. |

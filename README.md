@@ -24,6 +24,7 @@
 - **Interactive 2D & 3D Web Viewers**: Blazing fast HTML5 canvas visualizers with pixel-matched decimation, memory-mapped 3D caching, subregion pre-slicing (48× acceleration), and multi-threaded request handling.
 - **Simultaneous 1D Projections**: Real-time stepped staircase histograms across all axes (Det 1, Det 2, and Rings / $\Delta t$) with synchronized crosshair tracking and calibrated energy readouts.
 - **1D & 2D Peak Fitting**: Fits Gaussian, RadWare / SAMPO exponential tail, and Hypermet EMG profiles with complete parameter covariance. Decomposes 2D coincidence peaks with Gamba & Morhác 4-component background analysis.
+- **Fit Results File Logging**: Seamlessly appends 1D and 2D fit results to clean, fixed-width text logs (`fit_results_<timestamp>.txt`) with right-aligned formatting, accommodating 10+ digit counts and error values. Toggleable via UI button, CLI startup flag (`--fit-log`), or macro command (`fit_log`).
 - **Coincidence & Banana Gating**: Multi-gate peak ($W$) and background ($X$) slicing with automatic channel normalization, plus 2D polygonal Banana graphical ROIs (`Shift+G` Peak / `Shift+B` Bg) for 2D area determination and 3D coincidence projection cuts.
 - **Multi-Matrix Differential Analysis**: Instant cycling (`[` / `]`) across multiple matrices while locking zoom, gates, and auto-refitted peak parameters.
 - **Headless Spectroscopy Engine**: Automated macro scripts (`*.mac`), CLI one-liners (`-c`), and interactive REPL shell (`-i`).

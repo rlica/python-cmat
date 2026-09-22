@@ -161,3 +161,33 @@ Adjacent peaks separated by $\le 3.2 \times \text{FWHM}$ are grouped into multip
 Pressing `R` twice sets left and right region limits $[R_{\text{left}}, R_{\text{right}}]$. The continuum level is calculated by averaging 1 FWHM on either side:
 $$\bar{y}_{\text{left}} = \frac{1}{w} \sum_{c = R_{\text{left}} - w}^{R_{\text{left}} - 1} y[c], \quad \bar{y}_{\text{right}} = \frac{1}{w} \sum_{c = R_{\text{right}} + 1}^{R_{\text{right}} + w} y[c] \quad (w = \text{round}(\text{FWHM}))$$
 Pressing `V` inside the region fits all peaks within the boundary on top of this straight-line background.
+
+---
+
+## 7. Fit Results File Logging
+
+To streamline spectroscopic reporting and automate data export for external calibration programs, `python-cmat` supports real-time appending of all 1D and 2D peak fit results to a clean, fixed-width text log.
+
+### Fixed-Width Column Formatting
+To ensure clean vertical alignment across text editors and avoid tab misalignment for large peak counts (10+ digits with uncertainties), columns are right-aligned with fixed character widths:
+
+- **1D Fits**:
+  ```text
+  # 1D Fits:     Energy(err)               Net_Area(err)               FWHM(err)          Chi2    Peak_to_BG
+             1164.257(0.003)             339769.5(735.4)            3.060(0.006)        144.37          5.84
+               1164.76(0.00)             339769.5(735.4)              3.06(0.01)        144.37          5.84
+  ```
+  *(Energy and FWHM display in keV when calibrated or channels when uncalibrated).*
+
+- **2D Coincidence Fits (Gamba Decomposition)**:
+  ```text
+  # 2D Fits:    Energy1(err)                Energy2(err)               Net_Area(err)             Gamba_Area(err)              FWHM1(err)              FWHM2(err)          Chi2    Peak_to_BG
+             1164.215(0.052)            1345.264(99.304)                32.8(9123.4)                  25.6(16.1)            3.002(0.110)          0.636(119.698)          1.23          0.01
+               1164.71(0.05)              1345.76(99.30)                32.8(9123.4)                  25.6(16.1)              3.00(0.11)            0.64(119.70)          1.23          0.01
+  ```
+
+### Enabling & Controls
+- **Web Viewer GUI**: Click **`ON / OFF`** toggle in the sidebar *Peak Fitting* control group or set a custom filename.
+- **CLI Startup Flag**: `python3 cmat_webviewer.py --fit-log [filename] matrix.cmat`
+- **Headless Shell / Macro**: `fit_log on [filename]`, `fit_log off`, `fit_log status`
+- **Default Filename**: If no filename is specified, an automatic timestamped file (`fit_results_YYYYMMDD_HHMMSS.txt`) is generated to prevent overwriting previous analyses.

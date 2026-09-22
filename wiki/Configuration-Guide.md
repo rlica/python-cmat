@@ -59,6 +59,11 @@ roi_half_width_2d = 16
 # Fit results verbosity in terminal: compact, detailed
 fit_verbosity = compact
 
+# Fit Results File Logging (true/false) and optional output filename
+# (Leave empty for automatic timestamped file: fit_results_YYYYMMDD_HHMMSS.txt)
+fit_log = false
+fit_log_file = 
+
 # ------------------------------------------------------------------------------
 # 3. 2D Matrix Display & Colormaps
 # ------------------------------------------------------------------------------

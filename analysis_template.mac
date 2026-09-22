@@ -141,7 +141,22 @@ bg_1d 0 1140 1150 1185 1195
 #   integrate <axis> <r0> <r1> [--bg b0 b1 ...] [--poly 1|2]
 #
 # Computes Gross, Background, Net Area, Centroid (ch & keV), FWHM, and Peak/BG:
-integrate 0 1160 1180 --bg 1140 1150 --bg 1185 1195
+# ------------------------------------------------------------------------------
+# 5c. FIT RESULTS FILE LOGGING
+# ------------------------------------------------------------------------------
+# Enable appending 1D and 2D Gaussian fit results to a clean, fixed-width
+# blank-padded text file (one-liner per fitted peak with formatted uncertainties).
+#
+# Syntax:
+#   fit_log on [filename]                     # Enable logging (default: fit_results_<timestamp>.txt)
+#   fit_log off                               # Disable logging
+#   fit_log status                            # Check active logging status
+#
+# Example:
+#   fit_log on my_run_fits.txt
+#   fit_1d 0 1173.0
+#   fit_2d 1173.0 1332.0
+#   fit_log off
 
 
 # ------------------------------------------------------------------------------

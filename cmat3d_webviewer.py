@@ -65,6 +65,9 @@ from cmat_webviewer import (
     print_integrate_terminal_report,
     print_peaks_terminal_report,
     print_fit_2d_terminal_report,
+    append_fit_1d_result_to_file,
+    append_fit_2d_result_to_file,
+    get_default_fit_log_filename,
 )
 
 CONFIG_FILENAME = "python-cmat3d-config.txt"
@@ -106,6 +109,8 @@ fit_type = {cfg.get('fit_type', 'gaussian')}
 fwhm_mult_1d = {cfg.get('fwhm_mult_1d', 4.0)}
 roi_half_width_2d = {cfg.get('roi_half_width_2d', 16)}
 fit_verbosity = {cfg.get('fit_verbosity', 'compact')}
+fit_log = {"true" if cfg.get("fit_log") in (True, "true", "True", "1", 1) else "false"}
+fit_log_file = {cfg.get('fit_log_file', '')}
 
 # 2D Heatmap & Color Defaults
 colormap = {cfg.get('colormap', 'turbo')}
@@ -198,6 +203,8 @@ DEFAULT_CONFIG = {
     "fwhm_mult_1d": 4.0,
     "roi_half_width_2d": 16,
     "fit_verbosity": "compact",
+    "fit_log": False,
+    "fit_log_file": "",
     "colormap": "turbo",
     "scale_mode": "log",
     "vmax": 500,
@@ -265,8 +272,8 @@ def load_or_create_config(path: Path) -> dict:
                             cfg[k] = float(v)
                         except ValueError:
                             pass
-                    elif k == "open_browser":
-                        cfg[k] = v.lower() in ("true", "1", "yes")
+                    elif k in ("open_browser", "fit_log"):
+                        cfg[k] = v.lower() in ("true", "1", "yes", "on")
                     else:
                         cfg[k] = v
         print(f"[*] Loaded configuration from {path.name}")
@@ -306,6 +313,21 @@ class MatrixSession3D:
         }
         self.integration_1d: Dict[int, Optional[dict]] = {0: None, 1: None, 2: None}
         self.fit_2d = None
+        self.fit_log_enabled = bool(config.get("fit_log", False))
+        self.fit_log_filename = str(config.get("fit_log_file", "") or "")
+        if self.fit_log_enabled and not self.fit_log_filename:
+            self.fit_log_filename = get_default_fit_log_filename()
+
+    def set_fit_log(self, enabled: bool, filename: str = None) -> dict:
+        self.fit_log_enabled = bool(enabled)
+        if filename:
+            self.fit_log_filename = str(filename).strip()
+        elif self.fit_log_enabled and not self.fit_log_filename:
+            self.fit_log_filename = get_default_fit_log_filename()
+        return {
+            "enabled": self.fit_log_enabled,
+            "filename": self.fit_log_filename
+        }
 
     def add_matrix_file(self, path: Path, name: str = None, cal: dict = None) -> int:
         path = Path(path).resolve()
@@ -776,6 +798,8 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
                 )
                 res["axis"] = axis
                 print_fit_terminal_report(res, det_name, m["filename"], is_cal, verbosity="compact")
+                if res.get("success") and session.fit_log_enabled:
+                    append_fit_1d_result_to_file(session.fit_log_filename, res, is_cal)
             except Exception as e:
                 res = {"success": False, "error": str(e), "axis": axis}
                 print(f"[!] Peak fit error at channel {channel:.1f} on axis {axis}: {e}", file=sys.stderr)
@@ -867,6 +891,9 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
                 if res.get("success"):
                     det_name = axis_names[axis]
                     print_multi_fit_terminal_report(res, det_name, m["filename"], is_cal)
+                    if session.fit_log_enabled:
+                        for pk in res.get("peaks", []):
+                            append_fit_1d_result_to_file(session.fit_log_filename, pk, is_cal)
             except Exception as e:
                 res = {"success": False, "error": str(e), "axis": axis, "peaks": []}
                 print(f"[!] Multi-peak fit error on axis {axis}: {e}", file=sys.stderr)
@@ -981,6 +1008,8 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
                     total_counts=tot_counts,
                 )
                 print_fit_2d_terminal_report(res, m["filename"], (is_cal_x, is_cal_y), verbosity="compact")
+                if res.get("success") and session.fit_log_enabled:
+                    append_fit_2d_result_to_file(session.fit_log_filename, res, (is_cal_x, is_cal_y))
             except Exception as e:
                 res = {"success": False, "error": str(e), "is_2d": True}
                 print(f"[!] 2D peak fit error: {e}", file=sys.stderr)
@@ -1151,6 +1180,28 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"success": True, "cal": session.get_cal(axis)}).encode("utf-8"))
 
+        elif path == "/api/fit_log_status":
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({
+                "enabled": session.fit_log_enabled,
+                "filename": session.fit_log_filename
+            }).encode("utf-8"))
+
+        elif path == "/api/set_fit_log":
+            enabled_str = query.get("enabled", [""])[0].lower()
+            filename = query.get("filename", [""])[0].strip()
+            enabled = enabled_str in ("1", "true", "on", "yes")
+            if not enabled_str and filename:
+                enabled = session.fit_log_enabled
+            status = session.set_fit_log(enabled, filename=filename if filename else None)
+            print(f"[*] Fit logging {'ENABLED' if status['enabled'] else 'DISABLED'}: {status['filename']}", flush=True)
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(status).encode("utf-8"))
+
         else:
             self.send_error(404, "Not Found")
 
@@ -1287,6 +1338,14 @@ def main():
         help="Axis 3 (Z) calibration coefficients: a0 a1 [a2]",
     )
     parser.add_argument(
+        "--fit-log", "--log-fits",
+        nargs="?",
+        const=True,
+        default=None,
+        metavar="FILENAME",
+        help="Enable writing 1D/2D Gaussian fit results to a text file (default: fit_results_<timestamp>.txt)",
+    )
+    parser.add_argument(
         "-b", "--browser",
         type=str,
         default=None,
@@ -1303,6 +1362,12 @@ def main():
 
     session = MatrixSession3D(config)
     CMAT3DWebHandler.session = session
+
+    if args.fit_log is not None:
+        if isinstance(args.fit_log, str) and args.fit_log.strip():
+            session.set_fit_log(True, filename=args.fit_log.strip())
+        else:
+            session.set_fit_log(True)
 
     if args.cal is not None:
         c = parse_cal_coefficients(args.cal)

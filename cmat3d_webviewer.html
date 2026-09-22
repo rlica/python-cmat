@@ -772,6 +772,20 @@
       <input type="range" id="fwhmMultSlider1D" min="2" max="10" step="0.5" value="4.0" oninput="document.getElementById('fwhmMultLabel').innerText = this.value + '×'">
       <label>2D Fit ROI Half-Width <span class="range-val" id="roiWidthLabel">16 ch</span></label>
       <input type="range" id="roiWidthSlider2D" min="4" max="64" step="2" value="16" oninput="document.getElementById('roiWidthLabel').innerText = this.value + ' ch'">
+
+      <div style="margin-top: 8px; padding-top: 6px; border-top: 1px solid #333;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+          <label style="margin: 0; font-weight: 600; color: #4fc3f7;">Fit Results Logging</label>
+          <button id="btnToggleFitLog" class="secondary" style="padding: 2px 8px; font-size: 0.72rem; min-width: 60px;" title="Toggle appending fit results (fixed-width one-liner) to a text file">OFF</button>
+        </div>
+        <div style="display: flex; gap: 4px; align-items: center; margin-top: 4px;">
+          <input type="text" id="fitLogFilenameInput" placeholder="fit_results_*.txt" style="flex: 1; font-size: 0.72rem; padding: 3px 6px; background: #161b22; border: 1px solid #30363d; color: #e6edf3; border-radius: 4px;" title="Target text file for fit results">
+          <button id="btnSetFitLogFile" class="secondary" style="padding: 2px 6px; font-size: 0.70rem;" title="Update log filename">Set</button>
+        </div>
+        <small id="fitLogStatusText" style="color: #888; font-size: 0.65rem; display: block; margin-top: 3px; word-break: break-all;">
+          Logs 1D/2D fits as fixed-width one-liners.
+        </small>
+      </div>
     </div>
 
     <!-- 6. 1D Coincidence Gating -->
@@ -4120,10 +4134,80 @@
   }
   window.submitOpenMatrix = submitOpenMatrix;
 
+  async function fetchFitLogStatus() {
+    try {
+      const res = await fetch('/api/fit_log_status');
+      const data = await res.json();
+      updateFitLogUI(data.enabled, data.filename);
+    } catch (err) {
+      console.warn("Could not fetch fit log status:", err);
+    }
+  }
+
+  function updateFitLogUI(enabled, filename) {
+    const btn = document.getElementById('btnToggleFitLog');
+    const input = document.getElementById('fitLogFilenameInput');
+    const statusText = document.getElementById('fitLogStatusText');
+    if (btn) {
+      btn.innerText = enabled ? 'ON' : 'OFF';
+      btn.className = enabled ? 'primary' : 'secondary';
+      btn.style.background = enabled ? '#00e5ff' : '';
+      btn.style.color = enabled ? '#000' : '';
+      btn.style.fontWeight = enabled ? 'bold' : '';
+    }
+    if (input && filename !== undefined) {
+      input.value = filename || '';
+    }
+    if (statusText) {
+      if (enabled && filename) {
+        statusText.innerText = `Logging to: ${filename}`;
+        statusText.style.color = '#00e5ff';
+      } else if (enabled) {
+        statusText.innerText = `Logging active (auto-named file).`;
+        statusText.style.color = '#00e5ff';
+      } else {
+        statusText.innerText = `Logging disabled.`;
+        statusText.style.color = '#888';
+      }
+    }
+  }
+
+  async function toggleFitLog() {
+    const btn = document.getElementById('btnToggleFitLog');
+    const isCurrentlyOn = btn && btn.innerText.trim() === 'ON';
+    const nextState = !isCurrentlyOn;
+    const input = document.getElementById('fitLogFilenameInput');
+    const filename = input ? input.value.trim() : '';
+    try {
+      const url = `/api/set_fit_log?enabled=${nextState ? '1' : '0'}` + (filename ? `&filename=${encodeURIComponent(filename)}` : '');
+      const res = await fetch(url);
+      const data = await res.json();
+      updateFitLogUI(data.enabled, data.filename);
+    } catch (err) {
+      alert("Failed to toggle fit logging: " + err);
+    }
+  }
+
+  async function updateFitLogFilename() {
+    const input = document.getElementById('fitLogFilenameInput');
+    const filename = input ? input.value.trim() : '';
+    if (!filename) return;
+    try {
+      const url = `/api/set_fit_log?filename=${encodeURIComponent(filename)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      updateFitLogUI(data.enabled, data.filename);
+    } catch (err) {
+      alert("Failed to update fit log filename: " + err);
+    }
+  }
+
   async function saveConfig() {
     const payload = {
       default_plane: activePlane,
-      vmax: currentVmax
+      vmax: currentVmax,
+      fit_log: document.getElementById('btnToggleFitLog') ? (document.getElementById('btnToggleFitLog').innerText.trim() === 'ON') : false,
+      fit_log_file: document.getElementById('fitLogFilenameInput') ? document.getElementById('fitLogFilenameInput').value.trim() : ''
     };
     try {
       const res = await fetch('/api/save_config', {
@@ -4143,6 +4227,16 @@
   // --- Event Handlers Setup ---
   function setupEvents() {
     window.addEventListener('resize', resizeCanvases);
+
+    // Fit Logging
+    document.getElementById('btnToggleFitLog')?.addEventListener('click', toggleFitLog);
+    document.getElementById('btnSetFitLogFile')?.addEventListener('click', updateFitLogFilename);
+    const fitLogInput = document.getElementById('fitLogFilenameInput');
+    if (fitLogInput) {
+      fitLogInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') updateFitLogFilename();
+      });
+    }
 
     // Sidebar & Plane Buttons
     document.getElementById('btnToggleSidebar')?.addEventListener('click', toggleSidebar);
@@ -4699,6 +4793,7 @@
   async function init() {
     updateColorLUT();
     setupEvents();
+    fetchFitLogStatus();
     resizeCanvases();
     await fetchMetadata();
   }
