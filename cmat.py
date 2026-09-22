@@ -573,3 +573,236 @@ class CMATReader:
             else:
                 raise ValueError(f"Unknown format_type: {format_type}. Use 'dense' or 'sparse'.")
 
+
+def write_cmat(
+    output_file: Union[str, Path],
+    matrix: np.ndarray,
+    symmetric: Optional[bool] = None,
+    step1: int = 128,
+    step2: int = 128,
+) -> None:
+    """
+    Compress and write a 2D NumPy array to a GASPware/gsort compliant .cmat file.
+
+    Args:
+        output_file: Destination file path (.cmat).
+        matrix: 2D NumPy array with shape (res2, res1) where axis 0 is Y/Det2 and axis 1 is X/Det1.
+        symmetric: True for symmetric matrix (mode 1), False for normal (mode 0),
+                   None to auto-detect if shape is square and matrix == matrix.T.
+        step1: Sub-block width on X / Det 1 axis (default: 128).
+        step2: Sub-block height on Y / Det 2 axis (default: 128).
+    """
+    mat = np.asarray(matrix, dtype=np.int32)
+    if mat.ndim != 2:
+        raise ValueError(f"Expected 2D array, got shape {mat.shape}")
+
+    res2, res1 = mat.shape
+    if symmetric is None:
+        symmetric = (res1 == res2 and np.array_equal(mat, mat.T))
+
+    matmode = 1 if symmetric else 0
+
+    # Calculate grid divisions and pad if dimensions are not exact multiples of step
+    ndiv1 = (res1 + step1 - 1) // step1
+    ndiv2 = (res2 + step2 - 1) // step2
+    res1_padded = ndiv1 * step1
+    res2_padded = ndiv2 * step2
+
+    if res1_padded != res1 or res2_padded != res2:
+        pad_y = res2_padded - res2
+        pad_x = res1_padded - res1
+        mat = np.pad(mat, ((0, pad_y), (0, pad_x)), mode="constant")
+        res2, res1 = mat.shape
+
+    segsize = step1 * step2
+    nextra = 5
+
+    if symmetric:
+        nmatrix_segs = (ndiv2 * (ndiv2 + 1)) // 2
+    else:
+        nmatrix_segs = ndiv1 * ndiv2
+
+    nsegtot = nmatrix_segs + nextra
+
+    # Calculate descriptors count
+    # Each descriptor is 2 int32 (8 bytes)
+    descr_bytes_len = nsegtot * 8
+    ndescr = (descr_bytes_len + 511) // 512
+    fdescr = 2  # record 2
+
+    current_record = fdescr + ndescr
+
+    descriptors = [(0, 0)] * nsegtot
+    segment_data_blocks: Dict[int, bytes] = {}
+
+    def compress_block(block_flat: np.ndarray) -> Tuple[int, int, bytes]:
+        max_val = int(np.max(block_flat))
+        min_val = int(np.min(block_flat))
+        if max_val == 0 and min_val == 0:
+            return 0, 0, b""
+
+        # Check sparse mode 33 (if very sparse and within 16-bit word limits)
+        nz = np.flatnonzero(block_flat)
+        if len(nz) < len(block_flat) // 8 and max_val < 32767 and len(block_flat) <= 32768:
+            nz_count = len(nz)
+            out = bytearray()
+            out.extend(struct.pack("<h", nz_count))
+            out.extend(struct.pack("<h", int(nz[0])))
+            for i, idx in enumerate(nz):
+                cnt = int(block_flat[idx])
+                if cnt > 1:
+                    out.extend(struct.pack("<h", -(cnt - 1)))
+                    if i + 1 < nz_count:
+                        out.extend(struct.pack("<h", int(nz[i + 1])))
+                    else:
+                        out.extend(struct.pack("<h", 0))
+                else:
+                    if i + 1 < nz_count:
+                        out.extend(struct.pack("<h", int(nz[i + 1])))
+                    else:
+                        out.extend(struct.pack("<h", 0))
+            return 33, 0, bytes(out)
+
+        if min_val >= 0 and max_val <= 255:
+            return 8, 0, block_flat.astype(np.uint8).tobytes()
+        elif min_val >= 0 and max_val <= 65535:
+            return 16, 0, block_flat.astype("<u2").tobytes()
+        else:
+            return 32, 0, block_flat.astype("<i4").tobytes()
+
+    def add_raw_segment(seg_idx: int, data_bytes: bytes):
+        nonlocal current_record
+        if len(data_bytes) == 0:
+            descriptors[seg_idx] = (0, 0)
+            return
+        nrec = (len(data_bytes) + 511) // 512
+        padded = data_bytes + b"\x00" * (nrec * 512 - len(data_bytes))
+        frec = current_record
+        descriptors[seg_idx] = (nrec, frec)
+        segment_data_blocks[seg_idx] = padded
+        current_record += nrec
+
+    def add_compressed_segment(seg_idx: int, block_flat: np.ndarray):
+        cmode, cminval, pack = compress_block(block_flat)
+        if cmode == 0 and len(pack) == 0:
+            descriptors[seg_idx] = (0, 0)
+            return
+        hdr = struct.pack("<2i", cmode, cminval)
+        add_raw_segment(seg_idx, hdr + pack)
+
+    # Segment 0: CMT Header (1 record = 512 bytes)
+    cmt_hdr = [0] * 128
+    cmt_hdr[0] = 2          # ndim
+    cmt_hdr[1] = matmode    # matmode (0=normal, 1=symmetric)
+    cmt_hdr[2] = max(res1, res2)
+    cmt_hdr[3] = res1
+    cmt_hdr[4] = step1
+    cmt_hdr[5] = ndiv1
+    cmt_hdr[6] = res2
+    cmt_hdr[7] = step2
+    cmt_hdr[8] = ndiv2
+    cmt_hdr[123] = segsize
+    cmt_hdr[124] = nmatrix_segs
+    cmt_hdr[125] = nextra
+    cmt_hdr[126] = nsegtot
+    cmt_hdr[127] = 5        # cmt_version
+    add_raw_segment(0, struct.pack("<128i", *cmt_hdr))
+
+    # Segment 1: Reserved / Empty
+
+    # Segment 2: Projection on axis 0 (Det 1 / X)
+    if symmetric:
+        proj0 = np.sum(mat, axis=0) + np.diag(mat)
+    else:
+        proj0 = np.sum(mat, axis=0)
+    add_compressed_segment(2, proj0)
+
+    # Segment 3: Projection on axis 1 (Det 2 / Y)
+    if not symmetric:
+        proj1 = np.sum(mat, axis=1)
+        add_compressed_segment(3, proj1)
+
+    # Segment 4: Reserved / Empty
+
+    # Matrix sub-blocks (Segment 5 onwards)
+    if symmetric:
+        for s2 in range(ndiv2):
+            for s1 in range(s2 + 1):
+                iseg = s1 + (s2 * (s2 + 1)) // 2
+                seg_idx = iseg + nextra
+                x0 = s1 * step1
+                y0 = s2 * step2
+                block_2d = mat[y0:y0 + step2, x0:x0 + step1]
+                add_compressed_segment(seg_idx, block_2d.flatten())
+    else:
+        for s2 in range(ndiv2):
+            for s1 in range(ndiv1):
+                iseg = s1 + ndiv1 * s2
+                seg_idx = iseg + nextra
+                x0 = s1 * step1
+                y0 = s2 * step2
+                block_2d = mat[y0:y0 + step2, x0:x0 + step1]
+                add_compressed_segment(seg_idx, block_2d.flatten())
+
+    # Build IVF header
+    total_records = current_record - 1
+    ivf_hdr = [0] * 128
+    ivf_hdr[0] = 5          # ivf_version
+    ivf_hdr[1] = nsegtot    # nsegtot
+    ivf_hdr[2] = 4096       # drecbits (512 * 8)
+    ivf_hdr[4] = 1          # consistent
+    ivf_hdr[10] = ndescr    # ndescr
+    ivf_hdr[11] = fdescr    # fdescr
+    ivf_hdr[19] = descriptors[0][1]  # frec of seg 0
+    ivf_hdr[20] = total_records
+    ivf_hdr[127] = 5        # ivf_version
+
+    ivf_bytes = struct.pack("<128i", *ivf_hdr)
+
+    # Build descriptor table
+    descr_bytes = bytearray()
+    for nrec, frec in descriptors:
+        descr_bytes.extend(struct.pack("<2i", nrec, frec))
+    descr_bytes.extend(b"\x00" * (ndescr * 512 - len(descr_bytes)))
+
+    # Write out .cmat file
+    out_path = Path(output_file)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_path, "wb") as f:
+        f.write(ivf_bytes)
+        f.write(descr_bytes)
+        for seg_idx in range(nsegtot):
+            if seg_idx in segment_data_blocks:
+                f.write(segment_data_blocks[seg_idx])
+
+
+class CMATWriter:
+    """
+    Writer and compressor for GASPware/gsort 2D compressed matrices (.cmat).
+    """
+
+    def __init__(
+        self,
+        matrix: np.ndarray,
+        symmetric: Optional[bool] = None,
+        step1: int = 128,
+        step2: int = 128,
+    ):
+        self.matrix = np.asarray(matrix, dtype=np.int32)
+        if self.matrix.ndim != 2:
+            raise ValueError("Input matrix must be a 2D array.")
+        self.symmetric = symmetric
+        self.step1 = step1
+        self.step2 = step2
+
+    def save(self, output_file: Union[str, Path]) -> None:
+        """Write the matrix to the specified .cmat file."""
+        write_cmat(
+            output_file=output_file,
+            matrix=self.matrix,
+            symmetric=self.symmetric,
+            step1=self.step1,
+            step2=self.step2,
+        )
+
+

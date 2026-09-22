@@ -123,33 +123,66 @@ Exports matrix counts to an ASCII `.amat` file:
 
 ---
 
-## CLI Matrix Converter (`cmat2amat.py`)
+## CLI Matrix Converters (`cmat2amat.py` & `amat2cmat.py`)
 
-`cmat2amat.py` provides a convenient command-line interface for converting proprietary `.cmat` files into standard plain-text ASCII files compatible with ROOT, GNUplot, MATLAB, and spreadsheet software.
+`python-cmat` provides bidirectional conversion between proprietary binary `.cmat` files and standard plain-text ASCII (`.amat`, `.dat`, `.txt`, `.csv`) or NumPy (`.npy`) files.
 
-### CLI Usage Examples
+### 1. `cmat2amat.py` (.cmat $\rightarrow$ ASCII / NumPy)
+
+Converts `.cmat` files into dense 2D ASCII grids, sparse coordinate lists, or NumPy `.npy` arrays.
 
 ```bash
 # Convert entire matrix to a dense 2D ASCII grid:
-python3 cmat2amat.py GeE-symm.cmat GeE-symm.amat
+python3 cmat2amat.py GeE-symm.cmat -o GeE-symm.amat
 
 # Convert a specific Region of Interest (ROI):
-# Channels 0 to 200 on X, 0 to 200 on Y
-python3 cmat2amat.py GeE-symm.cmat GeE_roi.amat --roi 0 200 0 200
+python3 cmat2amat.py GeE-symm.cmat -o GeE_roi.amat --range-x 0 200 --range-y 0 200
 
 # Export as a sparse list of non-zero channels (x y counts):
-python3 cmat2amat.py GeE-symm.cmat GeE_sparse.amat --format sparse
+python3 cmat2amat.py GeE-symm.cmat -o GeE_sparse.amat --format sparse
+
+# Save decompressed array to NumPy binary format (.npy):
+python3 cmat2amat.py GeE-symm.cmat --npy
 ```
 
-### CLI Command Options
+### 2. `amat2cmat.py` (ASCII / NumPy $\rightarrow$ .cmat)
 
-| Argument | Description |
-|---|---|
-| `input_file` | Path to the source `.cmat` binary matrix file. |
-| `output_file` | Destination path for the generated ASCII `.amat` file. |
-| `--format` | Output structure: `dense` (default grid) or `sparse` (`x y counts`). |
-| `--roi xmin xmax ymin ymax` | Bounding box coordinates to export a sub-region rather than the whole matrix. |
-| `--verbose` | Output detailed decompression diagnostics and block statistics to stdout. |
+Inverse converter that takes any 2D ASCII grid, sparse triplet list (`x y counts`), or NumPy array, and compresses it into a GASPware-compliant `.cmat` binary file.
+
+```bash
+# Convert dense ASCII matrix to .cmat:
+python3 amat2cmat.py GeE-symm.amat -o GeE-symm_reconstructed.cmat
+
+# Convert sparse ASCII matrix with explicit shape:
+python3 amat2cmat.py GeE_sparse.amat -o GeE_sparse.cmat --shape 4096 4096
+
+# Convert NumPy binary array (.npy) to symmetric .cmat:
+python3 amat2cmat.py matrix.npy -o matrix.cmat --symmetric
+
+# Inspect ASCII matrix statistics without exporting:
+python3 amat2cmat.py GeE-symm.amat --info
+```
+
+### Programmatic Python Matrix Writer (`cmat.py`)
+
+You can also compress and save matrices directly from Python scripts:
+
+```python
+from cmat import write_cmat, CMATWriter
+import numpy as np
+
+# Create or load a 2D matrix
+matrix = np.random.poisson(lam=5, size=(4096, 4096)).astype(np.int32)
+# Symmetrize if desired
+matrix = (matrix + matrix.T) // 2
+
+# Method 1: Functional write_cmat
+write_cmat("simulated.cmat", matrix, symmetric=True, step1=128, step2=128)
+
+# Method 2: OOP CMATWriter
+writer = CMATWriter(matrix, symmetric=True)
+writer.save("simulated.cmat")
+```
 
 ---
 

@@ -117,14 +117,27 @@ python3 cmat3d_webviewer.py /path/to/matrix3d.cmat
 > echo 'export BROWSER=wslview' >> ~/.bashrc && source ~/.bashrc
 > ```
 
-### 3. Convert `.cmat` to ASCII (`cmat2amat.py`)
+### 3. ASCII & CMAT Converters (`cmat2amat.py` & `amat2cmat.py`)
 
+#### Convert `.cmat` to ASCII (`cmat2amat.py`)
 ```bash
 # Convert entire matrix to dense 2D ASCII grid:
-python3 cmat2amat.py matrix.cmat matrix.amat
+python3 cmat2amat.py matrix.cmat -o matrix.amat
 
 # Export sparse non-zero list: "x y counts"
-python3 cmat2amat.py matrix.cmat matrix_sparse.amat --format sparse
+python3 cmat2amat.py matrix.cmat -o matrix_sparse.amat --format sparse
+```
+
+#### Convert ASCII / NumPy to `.cmat` (`amat2cmat.py`)
+```bash
+# Convert dense ASCII matrix (.amat) to .cmat:
+python3 amat2cmat.py matrix.amat -o matrix.cmat
+
+# Convert sparse ASCII matrix (x y counts) with specified dimensions:
+python3 amat2cmat.py matrix_sparse.amat -o matrix.cmat --shape 4096 4096
+
+# Convert NumPy binary array (.npy) to symmetric .cmat:
+python3 amat2cmat.py matrix.npy -o matrix.cmat --symmetric
 ```
 
 ### 4. Automated ENSDF Isotope Identification (`ensdf_search.py`)
