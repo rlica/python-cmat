@@ -7,9 +7,12 @@
 
 **Python reader, decompressor, ASCII converter, and interactive Web visualizer for [GASPware](https://github.com/csteke/GASPware) 2D and 3D matrices in the `.cmat` format.**
 
-<p align="center">
-  <img width="1000" alt="python-cmat Web Viewer Interface" src="https://github.com/user-attachments/assets/460ab83c-cbfa-4ee8-9194-f57c58e5215e" />
-</p>
+<img width="1464" height="804" alt="Screenshot 2026-09-22 at 16 43 08" src="https://github.com/user-attachments/assets/200b73c4-79d1-4c6c-bdd2-b32ac973e0b0" />
+
+<img width="1467" height="805" alt="Screenshot 2026-09-22 at 16 44 04" src="https://github.com/user-attachments/assets/23010f23-08bf-42e5-ac0e-db569ad31141" />
+
+<img width="1107" height="829" alt="Screenshot 2026-09-22 at 16 42 38" src="https://github.com/user-attachments/assets/84062ec2-d50d-46ba-bc50-59aaf73473c4" />
+
 
 ---
 
