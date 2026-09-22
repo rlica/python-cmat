@@ -7,11 +7,26 @@
 
 **Python reader, decompressor, ASCII converter, and interactive Web visualizer for [GASPware](https://github.com/csteke/GASPware) 2D and 3D matrices in the `.cmat` format.**
 
-<img width="1464" height="804" alt="Screenshot 2026-09-22 at 16 43 08" src="https://github.com/user-attachments/assets/200b73c4-79d1-4c6c-bdd2-b32ac973e0b0" />
+<p align="center">
+  <img width="960" alt="2D Coincidence Matrix Web Viewer" src="https://github.com/user-attachments/assets/200b73c4-79d1-4c6c-bdd2-b32ac973e0b0" />
+  <br>
+  <em>Interactive 2D &gamma;-&gamma; coincidence matrix web viewer with real-time projections, coincidence slicing, and Gamba &amp; Morh&aacute;c 2D peak fitting.</em>
+</p>
 
-<img width="1467" height="805" alt="Screenshot 2026-09-22 at 16 44 04" src="https://github.com/user-attachments/assets/23010f23-08bf-42e5-ac0e-db569ad31141" />
-
-<img width="1107" height="829" alt="Screenshot 2026-09-22 at 16 42 38" src="https://github.com/user-attachments/assets/84062ec2-d50d-46ba-bc50-59aaf73473c4" />
+<table align="center" width="100%">
+  <tr>
+    <td align="center" width="50%" valign="top">
+      <strong>3D Matrix Cube Web Viewer</strong><br>
+      <img width="100%" alt="3D Matrix Cube Web Viewer" src="https://github.com/user-attachments/assets/23010f23-08bf-42e5-ac0e-db569ad31141" /><br>
+      <em>Multi-plane orthoslicing, 3D coincidence cuts, and 2D Banana ROIs.</em>
+    </td>
+    <td align="center" width="50%" valign="top">
+      <strong>ENSDF Automated Isotope Identification</strong><br>
+      <img width="100%" alt="ENSDF Automated Isotope Identification Pop-up" src="https://github.com/user-attachments/assets/84062ec2-d50d-46ba-bc50-59aaf73473c4" /><br>
+      <em>Physical 2D cascade matching, mass clustering, and file browser.</em>
+    </td>
+  </tr>
+</table>
 
 
 ---
@@ -188,6 +203,7 @@ For in-depth guides, mathematical formulations, configuration details, and file 
 |---|---|
 | 📖 **[Interactive Web Viewer](https://github.com/rlica/python-cmat/wiki/Interactive-Web-Viewer)** | 2D GUI architecture, dual projections, remote SSH access, WSL setup, and PDF export. |
 | 🧊 **[3D Matrix Analysis & Web Viewer](https://github.com/rlica/python-cmat/wiki/3D-Matrix-Analysis-and-Web-Viewer)** | 3D matrix cubes, memory-mapped caching, multi-plane orthoslicing, 3D gating, and Banana ROIs. |
+| 🔬 **[ENSDF Isotope Identification](https://github.com/rlica/python-cmat/wiki/ENSDF-Isotope-Identification)** | Offline ENSDF nuclear structure search, 2D cascade matching, mass clustering, and pop-up tool. |
 | ⌨️ **[Keyboard Shortcuts & Controls](https://github.com/rlica/python-cmat/wiki/Keyboard-Shortcuts-and-Navigation)** | Complete shortcut reference table and viewport navigation guide. |
 | 💻 **[Spectroscopy Commands & Macros](https://github.com/rlica/python-cmat/wiki/Spectroscopy-Commands-and-Macros)** | Headless execution (`-m`, `-c`, `-i`), calibration, 27-command reference, and macros. |
 | ⚙️ **[Configuration Guide](https://github.com/rlica/python-cmat/wiki/Configuration-Guide)** | `python-cmat-config.txt` settings, auto-discovery rules, and UI config saving. |
