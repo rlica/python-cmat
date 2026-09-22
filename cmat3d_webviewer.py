@@ -489,7 +489,7 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
         query = parse_qs(parsed.query)
 
         session = self.get_session()
-        m = session.get_active_matrix()
+        m = session.get_active_matrix() if session else None
         reader: Optional[CMAT3DReader] = m["reader"] if m else None
 
         if path == "/" or path.startswith("/index"):
@@ -1201,6 +1201,130 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
             self.send_header("Content-type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps(status).encode("utf-8"))
+
+        elif path == "/isotope_search" or path == "/isotope_id" or path.startswith("/isotope_search") or path.startswith("/isotope_id"):
+            popup_path = Path(__file__).resolve().parent / "ensdf_popup.html"
+            if not popup_path.exists():
+                self.send_error(404, "ensdf_popup.html not found")
+                return
+            with open(popup_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            self.send_response(200)
+            self.send_header("Content-type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(content.encode("utf-8"))
+
+        elif path.startswith("/api/ensdf/status"):
+            from ensdf_search import ENSDFSearchEngine
+            engine = ENSDFSearchEngine()
+            stats = engine.get_stats()
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(stats).encode("utf-8"))
+
+        elif path.startswith("/api/ensdf/files"):
+            import datetime
+            files = []
+            for p in sorted(Path(".").glob("fit_results*.txt"), key=lambda x: x.stat().st_mtime, reverse=True):
+                st = p.stat()
+                mtime_str = datetime.datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                files.append({
+                    "name": p.name,
+                    "path": str(p.resolve()),
+                    "size_bytes": st.st_size,
+                    "modified": mtime_str
+                })
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": True, "files": files}).encode("utf-8"))
+
+        elif path.startswith("/api/ensdf/identify"):
+            from ensdf_search import ENSDFSearchEngine, parse_human_duration
+            engine = ENSDFSearchEngine()
+
+            file_param = query.get("file", [""])[0].strip()
+            gamma_str = (query.get("gamma") or query.get("energy") or [""])[0].strip()
+            g1_str = (query.get("e1") or query.get("gamma1") or [""])[0].strip()
+            g2_str = (query.get("e2") or query.get("gamma2") or [""])[0].strip()
+            a_min_str = query.get("a_min", [""])[0].strip()
+            a_max_str = query.get("a_max", [""])[0].strip()
+            elems_str = (query.get("elements") or query.get("element") or [""])[0].strip()
+            min_t12_str = query.get("min_t12", [""])[0].strip()
+            max_t12_str = query.get("max_t12", [""])[0].strip()
+            tol_str = query.get("tol", ["1.5"])[0].strip()
+            ds_type = query.get("ds_type", ["all"])[0].strip()
+
+            a_min = int(a_min_str) if (a_min_str.isdigit() or (a_min_str.startswith("-") and a_min_str[1:].isdigit())) else None
+            a_max = int(a_max_str) if (a_max_str.isdigit() or (a_max_str.startswith("-") and a_max_str[1:].isdigit())) else None
+            elements = [e.strip() for e in re.split(r"[\s,]+", elems_str) if e.strip()] if elems_str else None
+            min_t12_s = parse_human_duration(min_t12_str)
+            max_t12_s = parse_human_duration(max_t12_str)
+            try:
+                tol = float(tol_str)
+            except ValueError:
+                tol = 1.5
+
+            res_data = {"success": True}
+            try:
+                if file_param:
+                    res_data["type"] = "file"
+                    rep = engine.identify_fit_results_file(
+                        file_param, tol=tol, a_min=a_min, a_max=a_max,
+                        elements=elements, min_t12_s=min_t12_s, max_t12_s=max_t12_s,
+                        dataset_type=ds_type
+                    )
+                    res_data["report"] = rep
+                    res_data["dominant_mass"] = rep.get("dominant_mass")
+                    res_data["parsimonious_isotopes"] = rep.get("parsimonious_isotopes", [])
+                    res_data["results_1d"] = rep.get("results_1d", [])
+                    res_data["results_2d"] = rep.get("results_2d", [])
+                elif g1_str and g2_str:
+                    e1 = float(g1_str)
+                    e2 = float(g2_str)
+                    res_data["type"] = "2d"
+                    res_data["e1"] = e1
+                    res_data["e2"] = e2
+                    candidates = engine.search_2d(
+                        e1, e2, tol1=tol, tol2=tol, a_min=a_min, a_max=a_max,
+                        elements=elements, min_t12_s=min_t12_s, max_t12_s=max_t12_s,
+                        dataset_type=ds_type
+                    )
+                    res_data["candidates"] = candidates
+                    res_data["results_2d"] = [{
+                        "fit": {"energy1": e1, "energy2": e2, "energy1_err": 0.1, "energy2_err": 0.1},
+                        "candidates": candidates,
+                        "best_match": candidates[0] if candidates else None
+                    }]
+                    res_data["results_1d"] = []
+                elif gamma_str:
+                    eg = float(gamma_str)
+                    res_data["type"] = "1d"
+                    res_data["energy"] = eg
+                    candidates = engine.search_1d(
+                        eg, tol=tol, a_min=a_min, a_max=a_max,
+                        elements=elements, min_t12_s=min_t12_s, max_t12_s=max_t12_s,
+                        dataset_type=ds_type
+                    )
+                    res_data["candidates"] = candidates
+                    res_data["results_1d"] = [{
+                        "fit": {"energy": eg, "area": 0, "energy_err": 0.1},
+                        "candidates": candidates,
+                        "best_match": candidates[0] if candidates else None
+                    }]
+                    res_data["results_2d"] = []
+                else:
+                    res_data["success"] = False
+                    res_data["error"] = "No search query provided. Specify 'file', 'gamma', or 'e1' & 'e2'."
+            except Exception as e:
+                res_data["success"] = False
+                res_data["error"] = str(e)
+
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(res_data).encode("utf-8"))
 
         else:
             self.send_error(404, "Not Found")

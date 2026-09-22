@@ -191,3 +191,7 @@ To ensure clean vertical alignment across text editors and avoid tab misalignmen
 - **CLI Startup Flag**: `python3 cmat_webviewer.py --fit-log [filename] matrix.cmat`
 - **Headless Shell / Macro**: `fit_log on [filename]`, `fit_log off`, `fit_log status`
 - **Default Filename**: If no filename is specified, an automatic timestamped file (`fit_results_YYYYMMDD_HHMMSS.txt`) is generated to prevent overwriting previous analyses.
+
+### Automated Isotope Identification
+Fit results logs can be automatically analyzed and matched against evaluated nuclear structure data to identify parent isotopes and 2D cascades using the [ENSDF Isotope Identification](ENSDF-Isotope-Identification) tool.
+

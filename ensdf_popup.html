@@ -1,0 +1,1440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>python-cmat - Automated ENSDF Isotope Identification</title>
+  <style>
+    :root {
+      --bg-dark: #090d13;
+      --panel-bg: #131b26;
+      --card-bg: #1a2332;
+      --border: #2b394f;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --accent-cyan: #00e5ff;
+      --accent-blue: #58a6ff;
+      --accent-green: #3fb950;
+      --accent-orange: #d29922;
+      --accent-red: #f85149;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg-dark);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 13px;
+      line-height: 1.45;
+      padding: 16px;
+      overflow-y: auto;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 14px;
+    }
+
+    .title-group h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--accent-cyan);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .title-group p {
+      font-size: 0.76rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      background: rgba(0, 229, 255, 0.12);
+      color: var(--accent-cyan);
+      border: 1px solid rgba(0, 229, 255, 0.3);
+    }
+
+    .badge-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      box-shadow: 0 0 6px var(--accent-green);
+    }
+
+    /* Grid Layout */
+    .controls-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 1.9fr;
+      gap: 14px;
+      margin-bottom: 16px;
+    }
+
+    @media (max-width: 860px) {
+      .controls-grid { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+    }
+
+    .card-title {
+      font-size: 0.82rem;
+      font-weight: 700;
+      color: var(--accent-blue);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .form-row {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 9px;
+      align-items: center;
+    }
+
+    .form-group {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+
+    label {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    input[type="text"], input[type="number"], select {
+      background: #0d131a;
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 4px;
+      padding: 5px 8px;
+      font-size: 0.78rem;
+      font-family: inherit;
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+
+    input[type="text"]:focus, input[type="number"]:focus, select:focus {
+      border-color: var(--accent-cyan);
+    }
+
+    button {
+      background: #233044;
+      color: var(--text);
+      border: 1px solid var(--border);
+      padding: 6px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 0.78rem;
+      font-weight: 600;
+      transition: all 0.15s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    button:hover {
+      background: #2e3f59;
+      border-color: var(--accent-blue);
+    }
+
+    button.btn-primary {
+      background: #00838f;
+      color: #fff;
+      border-color: #00acc1;
+    }
+
+    button.btn-primary:hover {
+      background: #00acc1;
+      box-shadow: 0 0 10px rgba(0, 229, 255, 0.4);
+    }
+
+    .preset-btns {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+
+    .btn-chip {
+      padding: 2px 7px;
+      font-size: 0.68rem;
+      background: #111720;
+      border: 1px solid #233044;
+      border-radius: 10px;
+    }
+
+    .btn-chip:hover {
+      background: #1c2738;
+      border-color: var(--accent-cyan);
+    }
+
+    /* Results section */
+    .results-container {
+      margin-top: 10px;
+    }
+
+    .section-header {
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: var(--accent-cyan);
+      margin-bottom: 8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.75rem;
+      margin-bottom: 14px;
+      background: #0d131a;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    th, td {
+      padding: 6px 10px;
+      text-align: left;
+      border-bottom: 1px solid #1a2332;
+    }
+
+    th {
+      background: #16202e;
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 0.68rem;
+      letter-spacing: 0.3px;
+    }
+
+    tr:hover td {
+      background: rgba(0, 229, 255, 0.04);
+    }
+
+    .score-cell {
+      font-weight: 700;
+      color: var(--accent-green);
+    }
+
+    .nuclide-cell {
+      font-weight: 700;
+      color: var(--accent-cyan);
+      font-size: 0.82rem;
+    }
+
+    .cascade-badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 0.67rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    .cascade-badge-direct {
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(52, 211, 153, 0.35);
+    }
+
+    .cascade-badge-seq {
+      background: rgba(245, 158, 11, 0.15);
+      color: #fbbf24;
+      border: 1px solid rgba(251, 191, 36, 0.35);
+    }
+
+    .cascade-badge-scheme {
+      background: rgba(59, 130, 246, 0.15);
+      color: #93c5fd;
+      border: 1px solid rgba(147, 197, 253, 0.35);
+    }
+
+    .rank-badge {
+      display: inline-block;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 0.65rem;
+      font-weight: 700;
+      font-family: monospace;
+      margin-right: 4px;
+    }
+
+    .rank-top {
+      background: rgba(255, 214, 0, 0.2);
+      color: #ffd600;
+      border: 1px solid rgba(255, 214, 0, 0.4);
+    }
+
+    .rank-sub {
+      background: rgba(148, 163, 184, 0.15);
+      color: #cbd5e1;
+      border: 1px solid rgba(148, 163, 184, 0.3);
+    }
+
+    .btn-toggle-cand {
+      background: #16202e;
+      border: 1px solid #334155;
+      color: #38bdf8;
+      font-size: 0.68rem;
+      padding: 2px 6px;
+      border-radius: 3px;
+      cursor: pointer;
+      margin-top: 3px;
+      display: inline-block;
+    }
+
+    .btn-toggle-cand:hover {
+      background: #1e293b;
+      border-color: #38bdf8;
+    }
+
+    .tab-header {
+      display: flex;
+      gap: 6px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 12px;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: none;
+      border-bottom: 2px solid transparent;
+      border-radius: 0;
+      color: var(--text-muted);
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 0.80rem;
+    }
+
+    .tab-btn.active {
+      color: var(--accent-cyan);
+      border-bottom-color: var(--accent-cyan);
+      font-weight: 700;
+    }
+
+    .status-msg {
+      font-size: 0.76rem;
+      color: var(--text-muted);
+      padding: 8px 12px;
+      background: #111720;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      margin-bottom: 10px;
+    }
+
+    /* Server File Browser Modal */
+    .browser-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.78);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      display: none;
+    }
+
+    .browser-modal {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: min(880px, 94vw);
+      height: min(640px, 86vh);
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(56, 189, 248, 0.25);
+      z-index: 1001;
+      display: none;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .browser-header {
+      padding: 12px 16px;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .browser-header h2 {
+      font-size: 0.95rem;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: #e6edf3;
+    }
+
+    .browser-nav-bar {
+      padding: 8px 14px;
+      background: #0b0f17;
+      border-bottom: 1px solid #21262d;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .browser-btn {
+      background: #21262d;
+      border: 1px solid #30363d;
+      color: #c9d1d9;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 0.74rem;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .browser-btn:hover:not(:disabled) {
+      background: #30363d;
+      color: #fff;
+    }
+
+    .browser-btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .browser-breadcrumbs {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      overflow-x: auto;
+      white-space: nowrap;
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 4px;
+      padding: 4px 8px;
+      font-family: monospace;
+      font-size: 0.74rem;
+      color: #8b949e;
+      scrollbar-width: none;
+    }
+
+    .breadcrumb-item {
+      color: #58a6ff;
+      cursor: pointer;
+      padding: 1px 4px;
+      border-radius: 2px;
+    }
+
+    .breadcrumb-item:hover {
+      background: rgba(88, 166, 255, 0.15);
+      text-decoration: underline;
+    }
+
+    .breadcrumb-sep {
+      color: #484f58;
+      margin: 0 2px;
+    }
+
+    .browser-filter-bar {
+      padding: 8px 14px;
+      background: #0b0f17;
+      border-bottom: 1px solid #21262d;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .browser-filter-input {
+      flex: 1;
+      background: #161b22;
+      border: 1px solid #30363d;
+      color: #e6edf3;
+      padding: 5px 10px;
+      border-radius: 4px;
+      font-size: 0.76rem;
+    }
+
+    .browser-table-wrap {
+      flex: 1;
+      overflow-y: auto;
+      background: #0b0f17;
+    }
+
+    .browser-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.76rem;
+    }
+
+    .browser-table th {
+      position: sticky;
+      top: 0;
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+      color: #8b949e;
+      text-align: left;
+      padding: 6px 12px;
+      font-weight: 600;
+      z-index: 2;
+    }
+
+    .browser-row {
+      cursor: pointer;
+      border-bottom: 1px solid #1e242c;
+      transition: background 0.1s ease;
+    }
+
+    .browser-row:hover {
+      background: rgba(56, 189, 248, 0.08);
+    }
+
+    .browser-row.selected {
+      background: rgba(56, 189, 248, 0.22) !important;
+    }
+
+    .browser-table td {
+      padding: 6px 12px;
+      color: #c9d1d9;
+    }
+
+    .browser-footer {
+      padding: 10px 14px;
+      background: #161b22;
+      border-top: 1px solid #30363d;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Server File Browser Modal Backdrop & Dialog -->
+  <div class="browser-modal-backdrop" id="browserBackdrop" onclick="closeServerBrowserModal()"></div>
+  <div class="browser-modal" id="serverBrowserModal">
+    <div class="browser-header">
+      <h2>
+        <span>📁 Server File Browser</span>
+        <span id="browserItemCount" class="badge" style="background:#161b22; color:#38bdf8; font-size:0.7rem; font-weight:normal;">-</span>
+      </h2>
+      <button type="button" class="btn-secondary" onclick="closeServerBrowserModal()" style="padding: 2px 8px; font-size: 0.85rem;" title="Close [Esc]">✕</button>
+    </div>
+
+    <div class="browser-nav-bar">
+      <button type="button" id="btnBrowserUp" class="browser-btn" onclick="if(browserState.parentPath) fetchBrowsePath(browserState.parentPath)" title="Go to Parent Directory">⬆ Up</button>
+      <button type="button" id="btnBrowserHome" class="browser-btn" onclick="fetchBrowsePath(browserState.homePath)" title="Go to Server Home Directory">🏠 Home</button>
+      <button type="button" id="btnBrowserCwd" class="browser-btn" onclick="fetchBrowsePath(browserState.cwdPath)" title="Go to Server Working Directory">📍 CWD</button>
+      <button type="button" id="btnBrowserRefresh" class="browser-btn" onclick="fetchBrowsePath(browserState.currentPath)" title="Refresh Directory">🔄</button>
+      <div class="browser-breadcrumbs" id="browserBreadcrumbs" title="Click path segment to navigate"></div>
+    </div>
+
+    <div class="browser-filter-bar">
+      <input type="text" id="browserFilterInput" class="browser-filter-input" placeholder="🔍 Search or filter files (e.g. fit_results, run, .txt)..." oninput="browserState.filterText = this.value; renderBrowserEntries();">
+      <label style="display: flex; align-items: center; gap: 5px; font-size: 0.76rem; color: #cbd5e1; cursor: pointer; user-select: none; white-space: nowrap;">
+        <input type="checkbox" id="chkBrowserFitOnly" checked style="accent-color: #00e5ff; cursor: pointer;" onchange="browserState.fitOnly = this.checked; renderBrowserEntries();">
+        <span>Fit logs / .txt only</span>
+      </label>
+    </div>
+
+    <div class="browser-table-wrap">
+      <table class="browser-table">
+        <thead>
+          <tr>
+            <th style="width: 58%;">Name</th>
+            <th style="width: 18%; text-align: right;">Size</th>
+            <th style="width: 24%; text-align: right;">Modified</th>
+          </tr>
+        </thead>
+        <tbody id="browserTableBody">
+          <tr><td colspan="3" style="text-align: center; color: #64748b; padding: 24px;">Loading server filesystem...</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="browser-footer">
+      <div style="font-size: 0.76rem; color: #94a3b8; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1;">
+        Selected: <span id="browserSelectedLabel" style="color: #ffd600; font-family: monospace; font-weight: bold;">None</span>
+      </div>
+      <div style="display: flex; gap: 8px;">
+        <button type="button" class="btn-secondary" onclick="closeServerBrowserModal()" style="padding: 5px 12px;">Cancel</button>
+        <button type="button" id="btnBrowserSelectSubmit" class="btn-primary" disabled style="padding: 5px 16px; background: #059669; border-color: #10b981; font-weight: bold;" onclick="confirmBrowserSelection()">Select File</button>
+      </div>
+    </div>
+  </div>
+
+  <header>
+    <div class="title-group">
+      <h1>🔬 ENSDF Nuclear Isotope Identification</h1>
+      <p>Offline nuclear decay cascade matching for 1D &amp; 2D gamma-ray peak fits</p>
+    </div>
+    <div id="dbBadge" class="badge">
+      <div class="badge-dot"></div>
+      <span id="dbStatusText">Checking ENSDF Database...</span>
+    </div>
+  </header>
+
+  <!-- Navigation Tabs -->
+  <div class="tab-header">
+    <button class="tab-btn active" id="tabBtnFile" onclick="switchTab('file')">📂 Fit Results Log File</button>
+    <button class="tab-btn" id="tabBtnManual" onclick="switchTab('manual')">🎯 Manual Energy Lookup (1D &amp; 2D)</button>
+  </div>
+
+  <div class="controls-grid">
+
+    <!-- Card 1: Input Selection -->
+    <div class="card">
+      <div class="card-title">
+        <span>Input Source</span>
+      </div>
+
+      <!-- Mode 1: Log file -->
+      <div id="panelFileMode">
+        <div class="form-group" style="margin-bottom: 10px;">
+          <label for="selectFitFile">Select Fit Results File</label>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <select id="selectFitFile" style="flex: 1;" onchange="updateSelectedFileLabel()"></select>
+            <button type="button" class="btn-secondary" onclick="openServerBrowserModal()" style="display: flex; align-items: center; gap: 4px; padding: 6px 12px; font-weight: 600; white-space: nowrap; background: #1e293b; border-color: #334155; color: #38bdf8;" title="Browse Server Filesystem to Pick Fit Results File">📂 Browse...</button>
+            <button type="button" class="btn-secondary" onclick="loadFitFilesList()" style="padding: 6px 10px;" title="Refresh CWD list">🔄</button>
+          </div>
+          <small id="selectedFilePathLabel" style="color: #64748b; font-size: 0.68rem; display: block; margin-top: 4px; word-break: break-all;"></small>
+        </div>
+        <button type="button" class="btn-primary" style="width: 100%; justify-content: center;" onclick="runFileIdentification()">
+          🚀 Run Full Identification
+        </button>
+      </div>
+
+      <!-- Mode 2: Manual energies -->
+      <div id="panelManualMode" style="display: none;">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="inputE1">Gamma 1 Energy (keV)</label>
+            <input type="number" id="inputE1" placeholder="e.g. 1173.2" step="0.1">
+          </div>
+          <div class="form-group">
+            <label for="inputE2">Gamma 2 (2D Coinc, optional)</label>
+            <input type="number" id="inputE2" placeholder="e.g. 1332.5" step="0.1">
+          </div>
+        </div>
+        <button type="button" class="btn-primary" style="width: 100%; justify-content: center; margin-top: 4px;" onclick="runManualSearch()">
+          🔍 Search Transitions
+        </button>
+      </div>
+    </div>
+
+    <!-- Card 2: Nuclear Constraints & Filters -->
+    <div class="card">
+      <div class="card-title">
+        <span>Search Constraints</span>
+        <span style="font-size: 0.68rem; color: var(--text-muted); font-weight: normal;">Optional filters</span>
+      </div>
+
+      <div class="form-row">
+        <!-- Mass A constraints -->
+        <div class="form-group">
+          <label for="inputAMin">Mass A Min</label>
+          <input type="number" id="inputAMin" placeholder="e.g. 50" min="1" max="295">
+        </div>
+        <div class="form-group">
+          <label for="inputAMax">Mass A Max</label>
+          <input type="number" id="inputAMax" placeholder="e.g. 70" min="1" max="295">
+        </div>
+
+        <!-- Elements filter -->
+        <div class="form-group">
+          <label for="inputElements">Elements / Z</label>
+          <input type="text" id="inputElements" placeholder="e.g. Ni Co Fe">
+        </div>
+
+        <!-- Tolerance -->
+        <div class="form-group" style="max-width: 90px;">
+          <label for="inputTol">Tol (±keV)</label>
+          <input type="number" id="inputTol" value="1.5" step="0.1" min="0.1" max="20.0">
+        </div>
+      </div>
+
+      <!-- Parent Half-Life constraints -->
+      <div class="form-row" style="margin-bottom: 4px;">
+        <div class="form-group">
+          <label for="inputMinT12">Parent T½ Min</label>
+          <div style="display: flex; gap: 4px;">
+            <input type="number" id="inputMinT12Val" placeholder="Min" step="any" style="flex: 1;">
+            <select id="selectMinT12Unit" style="width: 70px;">
+              <option value="s">s</option>
+              <option value="m">min</option>
+              <option value="h">hours</option>
+              <option value="d">days</option>
+              <option value="y">years</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="inputMaxT12">Parent T½ Max</label>
+          <div style="display: flex; gap: 4px;">
+            <input type="number" id="inputMaxT12Val" placeholder="Max" step="any" style="flex: 1;">
+            <select id="selectMaxT12Unit" style="width: 70px;">
+              <option value="s">s</option>
+              <option value="m">min</option>
+              <option value="h">hours</option>
+              <option value="d">days</option>
+              <option value="y" selected>years</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="selectDsType">Dataset Type</label>
+          <select id="selectDsType">
+            <option value="all" selected>All Datasets</option>
+            <option value="decay">Decay Schemes Only</option>
+            <option value="adopted">Adopted Levels Only</option>
+            <option value="reaction">Reactions / In-Beam</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Quick presets -->
+      <div class="preset-btns">
+        <span style="font-size: 0.68rem; color: var(--text-muted); line-height: 18px; margin-right: 4px;">Presets:</span>
+        <button type="button" class="btn-chip" onclick="applyPreset('all')">All</button>
+        <button type="button" class="btn-chip" onclick="applyPreset('radioactive')">Radioactive (&gt; 1 min)</button>
+        <button type="button" class="btn-chip" onclick="applyPreset('calibration')">Long-Lived Sources (&gt; 1 day)</button>
+        <button type="button" class="btn-chip" onclick="applyPreset('prompt')">Prompt / In-Beam</button>
+        <button type="button" class="btn-chip" onclick="clearFilters()">Reset Filters</button>
+      </div>
+
+    </div>
+  </div>
+
+  <div id="statusMessage" class="status-msg" style="display: none;"></div>
+
+  <!-- Results View Area -->
+  <div class="results-container">
+
+    <!-- 2D Coincidence Results Table -->
+    <div id="coincResultsSection" style="display: none;">
+      <div class="section-header">
+        <span>🔗 2D Coincidence Fits (<span id="countCoincMatches">0</span> fits identified)</span>
+        <button type="button" onclick="exportResultsText('2d')" style="padding: 2px 8px; font-size: 0.70rem;">Export 2D</button>
+      </div>
+      <table id="tableCoincResults">
+        <thead>
+          <tr>
+            <th>Fitted Pair (keV)</th>
+            <th>Candidate Nuclide</th>
+            <th>Parent &amp; T½</th>
+            <th>Cascade Topology</th>
+            <th>ENSDF E₁ &amp; E₂ (keV)</th>
+            <th>ΔE (keV)</th>
+            <th>Transition Levels</th>
+            <th>Confidence</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <!-- 1D Photopeak Results Table -->
+    <div id="singlesResultsSection" style="display: none;">
+      <div class="section-header">
+        <span>⚡ 1D Photopeak Fits (<span id="countSinglesMatches">0</span> peaks identified)</span>
+        <button type="button" onclick="exportResultsText('1d')" style="padding: 2px 8px; font-size: 0.70rem;">Export 1D</button>
+      </div>
+      <table id="tableSinglesResults">
+        <thead>
+          <tr>
+            <th>Fitted Peak (keV)</th>
+            <th>Net Area</th>
+            <th>Candidate Nuclide</th>
+            <th>Parent &amp; T½</th>
+            <th>Dataset</th>
+            <th>ENSDF Eγ (keV)</th>
+            <th>ΔE (keV)</th>
+            <th>Rel. Intensity</th>
+            <th>Level (Jπ)</th>
+            <th>Score</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <script>
+    let activeMode = 'file';
+    let lastResultsData = null;
+
+    async function init() {
+      await checkDbStatus();
+      await loadFitFilesList();
+    }
+
+    async function checkDbStatus() {
+      try {
+        const res = await fetch('/api/ensdf/status');
+        const data = await res.json();
+        const badge = document.getElementById('dbBadge');
+        const text = document.getElementById('dbStatusText');
+        if (data.available) {
+          text.innerText = `ENSDF DB: Ready (${data.nuclides.toLocaleString()} nuclides, ${data.gammas.toLocaleString()} gammas)`;
+          badge.style.borderColor = 'rgba(63, 185, 80, 0.4)';
+        } else {
+          text.innerText = "ENSDF DB: Not initialized";
+          badge.style.borderColor = 'rgba(248, 81, 73, 0.4)';
+          badge.querySelector('.badge-dot').style.background = 'var(--accent-red)';
+        }
+      } catch (e) {
+        console.warn("Could not fetch DB status:", e);
+      }
+    }
+
+    async function loadFitFilesList(preferredSelectPath = null) {
+      const sel = document.getElementById('selectFitFile');
+      const currentVal = preferredSelectPath || (sel ? sel.value : null);
+      try {
+        const res = await fetch('/api/ensdf/files');
+        const data = await res.json();
+        sel.innerHTML = '';
+        if (data.files && data.files.length > 0) {
+          data.files.forEach(f => {
+            const opt = document.createElement('option');
+            const fName = typeof f === 'object' ? f.name : f;
+            const fPath = typeof f === 'object' ? (f.path || f.name) : f;
+            const fSize = typeof f === 'object' && f.size_bytes ? ` (${formatFileSize(f.size_bytes)})` : '';
+            const fDate = typeof f === 'object' && f.modified ? ` • ${f.modified}` : '';
+            opt.value = fPath;
+            opt.innerText = `${fName}${fSize}${fDate}`;
+            if (currentVal && (opt.value === currentVal || fName === currentVal)) {
+              opt.selected = true;
+            }
+            sel.appendChild(opt);
+          });
+        } else {
+          const opt = document.createElement('option');
+          opt.value = '';
+          opt.innerText = "No fit_results_*.txt files found in working directory";
+          sel.appendChild(opt);
+        }
+        updateSelectedFileLabel();
+      } catch (e) {
+        console.warn("Could not load fit files list:", e);
+      }
+    }
+
+    function formatFileSize(bytes) {
+      if (!bytes || bytes <= 0) return '0 B';
+      const k = 1024;
+      const sizes = ['B', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return (bytes / Math.pow(k, i)).toFixed(1) + ' ' + sizes[i];
+    }
+
+    function updateSelectedFileLabel() {
+      const sel = document.getElementById('selectFitFile');
+      const lbl = document.getElementById('selectedFilePathLabel');
+      if (lbl) {
+        if (sel && sel.value) {
+          lbl.innerText = `Active file: ${sel.value}`;
+        } else {
+          lbl.innerText = '';
+        }
+      }
+    }
+
+    // =========================================================================
+    // Server File Browser Modal System
+    // =========================================================================
+    const browserState = {
+      currentPath: '',
+      parentPath: null,
+      isRoot: false,
+      homePath: '',
+      cwdPath: '',
+      entries: [],
+      selectedEntry: null,
+      filterText: '',
+      fitOnly: true,
+    };
+
+    function openServerBrowserModal() {
+      const backdrop = document.getElementById('browserBackdrop');
+      const modal = document.getElementById('serverBrowserModal');
+      if (backdrop) backdrop.style.display = 'block';
+      if (modal) modal.style.display = 'flex';
+      let lastPath = '';
+      try { lastPath = sessionStorage.getItem('cmat_popup_browser_path') || ''; } catch (e) {}
+      fetchBrowsePath(lastPath);
+    }
+
+    function closeServerBrowserModal() {
+      const backdrop = document.getElementById('browserBackdrop');
+      const modal = document.getElementById('serverBrowserModal');
+      if (backdrop) backdrop.style.display = 'none';
+      if (modal) modal.style.display = 'none';
+    }
+
+    async function fetchBrowsePath(pathStr) {
+      const tbody = document.getElementById('browserTableBody');
+      if (tbody) {
+        tbody.innerHTML = `<tr><td colspan="3" style="text-align: center; color: #64748b; padding: 24px;">Scanning server directory...</td></tr>`;
+      }
+      try {
+        const url = '/api/browse_fs' + (pathStr ? `?path=${encodeURIComponent(pathStr)}` : '');
+        const res = await fetch(url);
+        const data = await res.json();
+        if (!data.success) {
+          if (tbody) {
+            tbody.innerHTML = `<tr><td colspan="3" style="text-align: center; color: #ef4444; padding: 24px;">Error: ${data.error || 'Cannot open directory'}</td></tr>`;
+          }
+          return;
+        }
+        browserState.currentPath = data.current_path;
+        browserState.parentPath = data.parent_path;
+        browserState.isRoot = data.is_root;
+        browserState.homePath = data.home_path || '';
+        browserState.cwdPath = data.cwd_path || '';
+        browserState.entries = data.entries || [];
+        browserState.selectedEntry = null;
+        try { sessionStorage.setItem('cmat_popup_browser_path', data.current_path); } catch (e) {}
+
+        updateBrowserBreadcrumbs(data.breadcrumbs || []);
+        renderBrowserEntries();
+        updateBrowserNavButtons();
+        updateBrowserSelectedStatus();
+      } catch (err) {
+        if (tbody) {
+          tbody.innerHTML = `<tr><td colspan="3" style="text-align: center; color: #ef4444; padding: 24px;">Failed to connect to server filesystem</td></tr>`;
+        }
+      }
+    }
+
+    function updateBrowserBreadcrumbs(crumbs) {
+      const bc = document.getElementById('browserBreadcrumbs');
+      if (!bc) return;
+      bc.innerHTML = '';
+      if (!crumbs || crumbs.length === 0) {
+        bc.innerText = browserState.currentPath;
+        return;
+      }
+      crumbs.forEach((c, idx) => {
+        if (idx > 0) {
+          const sep = document.createElement('span');
+          sep.className = 'breadcrumb-sep';
+          sep.innerText = '/';
+          bc.appendChild(sep);
+        }
+        const item = document.createElement('span');
+        item.className = 'breadcrumb-item';
+        item.innerText = c.name;
+        item.title = c.path;
+        item.addEventListener('click', () => fetchBrowsePath(c.path));
+        bc.appendChild(item);
+      });
+      bc.scrollLeft = bc.scrollWidth;
+    }
+
+    function updateBrowserNavButtons() {
+      const btnUp = document.getElementById('btnBrowserUp');
+      if (btnUp) btnUp.disabled = Boolean(browserState.isRoot || !browserState.parentPath);
+    }
+
+    function getFilteredBrowserEntries() {
+      const q = browserState.filterText.toLowerCase().trim();
+      return browserState.entries.filter(e => {
+        if (e.is_dir) {
+          if (q && !e.name.toLowerCase().includes(q)) return false;
+          return true;
+        }
+        if (browserState.fitOnly) {
+          const isTxtOrFit = e.is_fit || e.is_txt || e.name.toLowerCase().endsWith('.txt');
+          if (!isTxtOrFit) return false;
+        }
+        if (q && !e.name.toLowerCase().includes(q)) return false;
+        return true;
+      });
+    }
+
+    function renderBrowserEntries() {
+      const tbody = document.getElementById('browserTableBody');
+      if (!tbody) return;
+      tbody.innerHTML = '';
+
+      const countBadge = document.getElementById('browserItemCount');
+      const filtered = getFilteredBrowserEntries();
+
+      let fitCount = 0;
+      filtered.forEach(e => {
+        if (!e.is_dir && (e.is_fit || e.name.toLowerCase().startsWith('fit_results') || e.name.toLowerCase().endsWith('.txt'))) fitCount++;
+      });
+      if (countBadge) {
+        countBadge.innerText = `${fitCount} txt/fit files (${filtered.length} items)`;
+      }
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="3" style="text-align: center; color: #64748b; padding: 24px;">No matching files or folders found</td></tr>`;
+        return;
+      }
+
+      // Sort: directories first, then fit_results files, then others
+      filtered.sort((a, b) => {
+        if (a.is_dir !== b.is_dir) return a.is_dir ? -1 : 1;
+        const aIsFit = a.is_fit || a.name.toLowerCase().startsWith('fit_results');
+        const bIsFit = b.is_fit || b.name.toLowerCase().startsWith('fit_results');
+        if (aIsFit !== bIsFit) return aIsFit ? -1 : 1;
+        return a.name.localeCompare(b.name);
+      });
+
+      filtered.forEach(e => {
+        const tr = document.createElement('tr');
+        tr.className = 'browser-row' + (browserState.selectedEntry && browserState.selectedEntry.path === e.path ? ' selected' : '');
+
+        let icon = '📄';
+        let nameColor = '#c9d1d9';
+        let badge = '';
+
+        if (e.is_dir) {
+          icon = '📁';
+          nameColor = '#58a6ff';
+        } else if (e.is_fit || e.name.toLowerCase().startsWith('fit_results')) {
+          icon = '🔬';
+          nameColor = '#38bdf8';
+          badge = '<span style="font-size: 0.65rem; background: rgba(56, 189, 248, 0.15); color: #38bdf8; border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 3px; padding: 1px 5px; margin-left: 6px;">FIT LOG</span>';
+        } else if (e.name.toLowerCase().endsWith('.txt')) {
+          icon = '📝';
+          nameColor = '#e2e8f0';
+        }
+
+        tr.innerHTML = `
+          <td>
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span>${icon}</span>
+              <span style="color: ${nameColor}; font-weight: ${e.is_dir || e.is_fit ? '600' : 'normal'}; word-break: break-all;">${e.name}</span>
+              ${badge}
+            </div>
+          </td>
+          <td style="text-align: right; color: #8b949e; font-family: monospace;">${e.is_dir ? '&lt;DIR&gt;' : (e.size_str || (e.size ? (e.size/1024).toFixed(1) + ' KB' : '0 B'))}</td>
+          <td style="text-align: right; color: #8b949e;">${e.mtime_str || '-'}</td>
+        `;
+
+        tr.addEventListener('click', () => {
+          browserState.selectedEntry = e;
+          renderBrowserEntries();
+          updateBrowserSelectedStatus();
+        });
+
+        tr.addEventListener('dblclick', () => {
+          if (e.is_dir) {
+            fetchBrowsePath(e.path);
+          } else {
+            confirmBrowserSelection(e);
+          }
+        });
+
+        tbody.appendChild(tr);
+      });
+    }
+
+    function updateBrowserSelectedStatus() {
+      const lbl = document.getElementById('browserSelectedLabel');
+      const btnOpen = document.getElementById('btnBrowserSelectSubmit');
+      const e = browserState.selectedEntry;
+      if (!e) {
+        if (lbl) lbl.innerText = 'None';
+        if (btnOpen) btnOpen.disabled = true;
+      } else {
+        if (lbl) lbl.innerText = `${e.name} (${e.is_dir ? 'Directory' : 'File'})`;
+        if (btnOpen) {
+          btnOpen.disabled = false;
+          btnOpen.innerText = e.is_dir ? 'Open Folder' : 'Select Fit File';
+          btnOpen.style.background = e.is_dir ? '#0284c7' : '#059669';
+        }
+      }
+    }
+
+    function confirmBrowserSelection(entryToSelect = null) {
+      const e = entryToSelect || browserState.selectedEntry;
+      if (!e) return;
+      if (e.is_dir) {
+        fetchBrowsePath(e.path);
+        return;
+      }
+      selectFitFileFromBrowser(e.path, e.name);
+    }
+
+    function selectFitFileFromBrowser(filePath, fileName) {
+      const sel = document.getElementById('selectFitFile');
+      let found = false;
+      for (let i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value === filePath || sel.options[i].value === fileName) {
+          sel.selectedIndex = i;
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        const opt = document.createElement('option');
+        opt.value = filePath;
+        opt.innerText = `📂 ${fileName} (${filePath})`;
+        sel.insertBefore(opt, sel.firstChild);
+        sel.selectedIndex = 0;
+      }
+      closeServerBrowserModal();
+      updateSelectedFileLabel();
+      runFileIdentification();
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        closeServerBrowserModal();
+      }
+    });
+
+    function switchTab(mode) {
+      activeMode = mode;
+      document.getElementById('tabBtnFile').className = 'tab-btn' + (mode === 'file' ? ' active' : '');
+      document.getElementById('tabBtnManual').className = 'tab-btn' + (mode === 'manual' ? ' active' : '');
+      document.getElementById('panelFileMode').style.display = (mode === 'file') ? 'block' : 'none';
+      document.getElementById('panelManualMode').style.display = (mode === 'manual') ? 'block' : 'none';
+    }
+
+    function getFilterParams() {
+      const p = new URLSearchParams();
+      const aMin = document.getElementById('inputAMin').value.trim();
+      const aMax = document.getElementById('inputAMax').value.trim();
+      const elems = document.getElementById('inputElements').value.trim();
+      const tol = document.getElementById('inputTol').value.trim();
+      const dsType = document.getElementById('selectDsType').value;
+
+      if (aMin) p.set('a_min', aMin);
+      if (aMax) p.set('a_max', aMax);
+      if (elems) p.set('elements', elems);
+      if (tol) p.set('tol', tol);
+      if (dsType && dsType !== 'all') p.set('ds_type', dsType);
+
+      // Half-life
+      const minVal = document.getElementById('inputMinT12Val').value.trim();
+      if (minVal) {
+        const u = document.getElementById('selectMinT12Unit').value;
+        p.set('min_t12', minVal + u);
+      }
+
+      const maxVal = document.getElementById('inputMaxT12Val').value.trim();
+      if (maxVal) {
+        const u = document.getElementById('selectMaxT12Unit').value;
+        p.set('max_t12', maxVal + u);
+      }
+
+      return p;
+    }
+
+    function applyPreset(preset) {
+      if (preset === 'all') {
+        document.getElementById('inputMinT12Val').value = '';
+        document.getElementById('inputMaxT12Val').value = '';
+        document.getElementById('selectDsType').value = 'all';
+      } else if (preset === 'radioactive') {
+        document.getElementById('inputMinT12Val').value = '1';
+        document.getElementById('selectMinT12Unit').value = 'm';
+        document.getElementById('inputMaxT12Val').value = '';
+        document.getElementById('selectDsType').value = 'decay';
+      } else if (preset === 'calibration') {
+        document.getElementById('inputMinT12Val').value = '1';
+        document.getElementById('selectMinT12Unit').value = 'd';
+        document.getElementById('inputMaxT12Val').value = '';
+        document.getElementById('selectDsType').value = 'decay';
+      } else if (preset === 'prompt') {
+        document.getElementById('inputMinT12Val').value = '';
+        document.getElementById('inputMaxT12Val').value = '';
+        document.getElementById('selectDsType').value = 'reaction';
+      }
+    }
+
+    function clearFilters() {
+      document.getElementById('inputAMin').value = '';
+      document.getElementById('inputAMax').value = '';
+      document.getElementById('inputElements').value = '';
+      document.getElementById('inputTol').value = '1.5';
+      document.getElementById('inputMinT12Val').value = '';
+      document.getElementById('inputMaxT12Val').value = '';
+      document.getElementById('selectDsType').value = 'all';
+    }
+
+    function showStatus(msg) {
+      const el = document.getElementById('statusMessage');
+      el.innerText = msg;
+      el.style.display = 'block';
+    }
+
+    async function runFileIdentification() {
+      const sel = document.getElementById('selectFitFile');
+      const filename = sel ? sel.value : '';
+      if (!filename || filename === '[object Object]') {
+        alert("Please select a valid fit results file first or click 'Browse...' to locate one.");
+        return;
+      }
+      showStatus(`Analyzing fit results file '${filename}' with local ENSDF database...`);
+      const params = getFilterParams();
+      params.set('file', filename);
+
+      try {
+        const res = await fetch(`/api/ensdf/identify?${params.toString()}`);
+        const data = await res.json();
+        if (!data.success) {
+          showStatus(`Error during identification: ${data.error || 'Identification failed'}`);
+          return;
+        }
+        lastResultsData = data;
+        renderResults(data);
+      } catch (err) {
+        showStatus(`Error during identification: ${err.message}`);
+      }
+    }
+
+    async function runManualSearch() {
+      const e1 = document.getElementById('inputE1').value.trim();
+      const e2 = document.getElementById('inputE2').value.trim();
+      if (!e1) {
+        alert("Please enter at least Gamma 1 energy.");
+        return;
+      }
+      showStatus(`Searching transitions for E1 = ${e1} keV ${e2 ? '& E2 = ' + e2 + ' keV' : ''}...`);
+      const params = getFilterParams();
+      params.set('gamma1', e1);
+      if (e2) params.set('gamma2', e2);
+
+      try {
+        const res = await fetch(`/api/ensdf/identify?${params.toString()}`);
+        const data = await res.json();
+        lastResultsData = data;
+        renderResults(data);
+      } catch (err) {
+        showStatus(`Error during manual search: ${err.message}`);
+      }
+    }
+
+    function getCascadeBadgeClass(typeStr) {
+      if (!typeStr) return 'cascade-badge';
+      if (typeStr.includes('Direct Cascade')) return 'cascade-badge cascade-badge-direct';
+      if (typeStr.includes('Sequential Cascade')) return 'cascade-badge cascade-badge-seq';
+      return 'cascade-badge cascade-badge-scheme';
+    }
+
+    function toggleCandidatesRow(rowId) {
+      const el = document.getElementById(rowId);
+      if (el) {
+        const isHidden = el.style.display === 'none';
+        el.style.display = isHidden ? 'table-row' : 'none';
+      }
+    }
+
+    function renderResults(data) {
+      const coincSec = document.getElementById('coincResultsSection');
+      const singSec = document.getElementById('singlesResultsSection');
+      const coincBody = document.querySelector('#tableCoincResults tbody');
+      const singBody = document.querySelector('#tableSinglesResults tbody');
+
+      coincBody.innerHTML = '';
+      singBody.innerHTML = '';
+
+      const report = (data && data.report) ? data.report : data;
+      const coincList = (report && report.results_2d) ? report.results_2d : (data && data.results_2d ? data.results_2d : []);
+      const singlesList = (report && report.results_1d) ? report.results_1d : (data && data.results_1d ? data.results_1d : []);
+
+      // Render 2D Coincidences
+      if (coincList.length > 0) {
+        coincSec.style.display = 'block';
+        document.getElementById('countCoincMatches').innerText = coincList.length;
+        coincList.forEach((item, idx) => {
+          const fit = item.fit;
+          const candidates = item.candidates || (item.best_match ? [item.best_match] : []);
+          const best = item.best_match || (candidates.length > 0 ? candidates[0] : null);
+          const tr = document.createElement('tr');
+          const subRowId = `cand_subrow_${idx}`;
+
+          if (best) {
+            const badgeClass = getCascadeBadgeClass(best.cascade_type);
+            const candToggle = candidates.length > 1 ? 
+              `<button type="button" class="btn-toggle-cand" onclick="toggleCandidatesRow('${subRowId}')">▼ Top ${candidates.length} Candidates</button>` : '';
+
+            tr.innerHTML = `
+              <td>
+                <strong>${fit.energy1.toFixed(1)} × ${fit.energy2.toFixed(1)}</strong>
+                ${candToggle ? `<br>${candToggle}` : ''}
+              </td>
+              <td class="nuclide-cell"><span class="rank-badge rank-top">#1</span>${best.nuclide}</td>
+              <td>${best.parent_nuclide}<br><small style="color: var(--text-muted);">${best.parent_halflife}</small></td>
+              <td><span class="${badgeClass}">${best.cascade_type}</span></td>
+              <td>${best.gamma1_energy.toFixed(2)} &amp; ${best.gamma2_energy.toFixed(2)}</td>
+              <td>${best.diff1 >= 0 ? '+' : ''}${best.diff1.toFixed(2)}, ${best.diff2 >= 0 ? '+' : ''}${best.diff2.toFixed(2)}</td>
+              <td>${best.level1_init.toFixed(0)}→${best.level1_final.toFixed(0)} (${best.level1_jpi || '?'})</td>
+              <td class="score-cell">${best.score}</td>
+            `;
+            coincBody.appendChild(tr);
+
+            // If multiple candidates, add expandable sub-row
+            if (candidates.length > 1) {
+              const subTr = document.createElement('tr');
+              subTr.id = subRowId;
+              subTr.style.display = 'none';
+              subTr.style.background = '#090d13';
+
+              let subHtml = `
+                <td colspan="8" style="padding: 8px 16px; background: rgba(15, 23, 42, 0.7); border-bottom: 2px solid #1e293b;">
+                  <div style="font-size: 0.72rem; font-weight: bold; color: #38bdf8; margin-bottom: 6px;">
+                    🎯 Top ${candidates.length} Candidate Isotopes for (${fit.energy1.toFixed(1)} × ${fit.energy2.toFixed(1)} keV):
+                  </div>
+                  <table style="width: 100%; font-size: 0.70rem; margin-bottom: 0; background: #0c1219; border: 1px solid #1e293b;">
+                    <thead>
+                      <tr style="background: #131b26;">
+                        <th style="width: 7%;">Rank</th>
+                        <th style="width: 12%;">Nuclide</th>
+                        <th style="width: 18%;">Parent &amp; T½</th>
+                        <th style="width: 28%;">Cascade Topology</th>
+                        <th style="width: 15%;">ENSDF E₁ &amp; E₂</th>
+                        <th style="width: 12%;">Levels</th>
+                        <th style="width: 8%;">Score</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+              `;
+
+              candidates.forEach((c, cIdx) => {
+                const cBadge = cIdx === 0 ? '<span class="rank-badge rank-top">#1 TOP</span>' : `<span class="rank-badge rank-sub">#${cIdx+1}</span>`;
+                const cClass = getCascadeBadgeClass(c.cascade_type);
+                subHtml += `
+                  <tr style="${cIdx === 0 ? 'background: rgba(56, 189, 248, 0.05);' : ''}">
+                    <td>${cBadge}</td>
+                    <td class="nuclide-cell" style="font-size: 0.76rem;">${c.nuclide}</td>
+                    <td>${c.parent_nuclide} <small style="color:#64748b;">(${c.parent_halflife})</small></td>
+                    <td><span class="${cClass}">${c.cascade_type}</span></td>
+                    <td>${c.gamma1_energy.toFixed(1)} &amp; ${c.gamma2_energy.toFixed(1)} <small style="color:#64748b;">(${c.diff1>=0?'+':''}${c.diff1.toFixed(1)}, ${c.diff2>=0?'+':''}${c.diff2.toFixed(1)})</small></td>
+                    <td>${c.level1_init.toFixed(0)}→${c.level1_final.toFixed(0)} &amp; ${c.level2_init.toFixed(0)}→${c.level2_final.toFixed(0)}</td>
+                    <td class="score-cell">${c.score}</td>
+                  </tr>
+                `;
+              });
+
+              subHtml += `
+                    </tbody>
+                  </table>
+                </td>
+              `;
+              subTr.innerHTML = subHtml;
+              coincBody.appendChild(subTr);
+            }
+
+          } else {
+            tr.innerHTML = `
+              <td><strong>${fit.energy1.toFixed(1)} × ${fit.energy2.toFixed(1)}</strong></td>
+              <td colspan="7" style="color: var(--text-muted); font-style: italic;">No candidate nuclide found within tolerance / constraints</td>
+            `;
+            coincBody.appendChild(tr);
+          }
+        });
+      } else {
+        coincSec.style.display = 'none';
+      }
+
+      // Render 1D Photopeaks
+      if (singlesList.length > 0) {
+        singSec.style.display = 'block';
+        document.getElementById('countSinglesMatches').innerText = singlesList.length;
+        singlesList.forEach(item => {
+          const fit = item.fit;
+          const best = item.best_match;
+          const tr = document.createElement('tr');
+          if (best) {
+            const relInt = best.intensity ? best.intensity.toFixed(1) : '-';
+            tr.innerHTML = `
+              <td><strong>${fit.energy.toFixed(2)}</strong></td>
+              <td>${fit.area ? fit.area.toFixed(1) : '-'}</td>
+              <td class="nuclide-cell">${best.nuclide}</td>
+              <td>${best.parent_nuclide}<br><small style="color: var(--text-muted);">${best.parent_halflife}</small></td>
+              <td style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${best.dataset}">${best.dataset}</td>
+              <td>${best.gamma_energy.toFixed(2)}</td>
+              <td>${best.energy_diff >= 0 ? '+' : ''}${best.energy_diff.toFixed(2)}</td>
+              <td>${relInt}</td>
+              <td>${best.initial_level.toFixed(0)} (${best.initial_jpi || '?'})</td>
+              <td class="score-cell">${best.score}</td>
+            `;
+          } else {
+            tr.innerHTML = `
+              <td><strong>${fit.energy.toFixed(2)}</strong></td>
+              <td>${fit.area ? fit.area.toFixed(1) : '-'}</td>
+              <td colspan="8" style="color: var(--text-muted); font-style: italic;">No transition found within tolerance / constraints</td>
+            `;
+          }
+          singBody.appendChild(tr);
+        });
+      } else {
+        singSec.style.display = 'none';
+      }
+
+      let summaryMsg = `✅ Identification finished: ${coincList.length} 2D coincidence fits and ${singlesList.length} 1D photopeaks processed.`;
+      if (report && report.dominant_mass) {
+        const isoList = report.parsimonious_isotopes && report.parsimonious_isotopes.length > 0 ? 
+          ` | 🎯 Minimal Isotope Set: [ ${report.parsimonious_isotopes.join(', ')} ]` : '';
+        summaryMsg += ` | ⚖️ Dominant Mass: A ≈ ${report.dominant_mass}${isoList}`;
+      }
+      showStatus(summaryMsg);
+    }
+
+    function exportResultsText(type) {
+      if (!lastResultsData) return;
+      const report = (lastResultsData && lastResultsData.report) ? lastResultsData.report : lastResultsData;
+      const res2d = (report && report.results_2d) ? report.results_2d : (lastResultsData && lastResultsData.results_2d ? lastResultsData.results_2d : []);
+      const res1d = (report && report.results_1d) ? report.results_1d : (lastResultsData && lastResultsData.results_1d ? lastResultsData.results_1d : []);
+
+      let text = `# python-cmat ENSDF Isotope Identification Export\n# Date: ${new Date().toISOString()}\n\n`;
+      if (type === '2d' && res2d.length > 0) {
+        text += "Fitted_E1\tFitted_E2\tNuclide\tParent\tHalfLife\tCascade\tE1_ENSDF\tE2_ENSDF\tScore\n";
+        res2d.forEach(i => {
+          const b = i.best_match;
+          if (b) text += `${i.fit.energy1}\t${i.fit.energy2}\t${b.nuclide}\t${b.parent_nuclide}\t${b.parent_halflife}\t${b.cascade_type}\t${b.gamma1_energy}\t${b.gamma2_energy}\t${b.score}\n`;
+        });
+      } else if (type === '1d' && res1d.length > 0) {
+        text += "Fitted_E\tArea\tNuclide\tParent\tHalfLife\tDataset\tE_ENSDF\tScore\n";
+        res1d.forEach(i => {
+          const b = i.best_match;
+          if (b) text += `${i.fit.energy}\t${i.fit.area}\t${b.nuclide}\t${b.parent_nuclide}\t${b.parent_halflife}\t${b.dataset}\t${b.gamma_energy}\t${b.score}\n`;
+        });
+      }
+
+      const blob = new Blob([text], { type: 'text/plain' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `isotope_identification_${type}_${Date.now()}.txt`;
+      a.click();
+    }
+
+    window.addEventListener('DOMContentLoaded', init);
+  </script>
+</body>
+</html>

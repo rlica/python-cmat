@@ -664,6 +664,7 @@
   <div class="matrix-select-wrap">
     <select id="matrixSelect" class="matrix-select" onchange="onSelectMatrix(this.value)" title="Active 3D Matrix ([ / ] to cycle)"></select>
     <button id="btnOpenFs" class="matrix-open-btn" onclick="openServerBrowser()">📂 Open</button>
+    <button id="btnHeaderOpenIsotopeID" class="matrix-open-btn" onclick="openIsotopeSearchPopup()" title="Automatic Isotope Identification [ENSDF] (Opens Pop-up Window)" style="background: #312e81; border-color: #4338ca; color: #a5b4fc; font-weight: 600;">🔬 Isotope ID</button>
   </div>
 
   <!-- Dynamic HUD -->
@@ -785,6 +786,11 @@
         <small id="fitLogStatusText" style="color: #888; font-size: 0.65rem; display: block; margin-top: 3px; word-break: break-all;">
           Logs 1D/2D fits as fixed-width one-liners.
         </small>
+        <div style="margin-top: 8px;">
+          <button id="btnOpenIsotopeID" class="primary" onclick="openIsotopeSearchPopup()" style="width: 100%; padding: 5px 8px; font-size: 0.76rem; background: linear-gradient(135deg, #0284c7, #6366f1); border: none; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); cursor: pointer;" title="Open Automatic Nuclear Isotope Identification Pop-up Window (ENSDF database)">
+            <span>🔬</span> Auto Isotope Identification...
+          </button>
+        </div>
       </div>
     </div>
 
@@ -4200,6 +4206,14 @@
     } catch (err) {
       alert("Failed to update fit log filename: " + err);
     }
+  }
+
+  function openIsotopeSearchPopup() {
+    const w = 1120;
+    const h = 850;
+    const left = Math.max(40, Math.floor((window.screen.width - w) / 2));
+    const top = Math.max(40, Math.floor((window.screen.height - h) / 2));
+    window.open('/isotope_search', 'CMAT_Isotope_Search', `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes`);
   }
 
   async function saveConfig() {

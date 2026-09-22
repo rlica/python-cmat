@@ -34,5 +34,10 @@ python-cmat3d-config.txt
 # Local IDE / Agent metadata
 .agents/
 
-
+# Local SQLite database & fit results
+*.db
+*.db-wal
+*.db-shm
+fit_results*.txt
+ensdf_*/
 

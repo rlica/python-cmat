@@ -23,6 +23,8 @@ Explore the full documentation topics below or navigate using the sidebar:
   Complete reference for all mouse gestures, hotkeys, gate limit definitions, peak fitting shortcuts, and viewport navigation.
 
 ### 🔬 Analysis & Scripting
+- **[ENSDF Automated Isotope Identification](ENSDF-Isotope-Identification)**
+  Offline Evaluated Nuclear Structure Data File (ENSDF) search engine, 2D prompt cascade matching, global mass-clustering parsimony, and interactive web pop-up file browser.
 - **[Spectroscopy Commands & Macros](Spectroscopy-Commands-and-Macros)**
   Comprehensive manual for the headless spectroscopy engine, command-line one-liners, interactive REPL shell, and automated batch macro scripts (`*.mac`).
 - **[Configuration Guide](Configuration-Guide)**

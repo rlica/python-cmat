@@ -25,6 +25,7 @@
 - **Simultaneous 1D Projections**: Real-time stepped staircase histograms across all axes (Det 1, Det 2, and Rings / $\Delta t$) with synchronized crosshair tracking and calibrated energy readouts.
 - **1D & 2D Peak Fitting**: Fits Gaussian, RadWare / SAMPO exponential tail, and Hypermet EMG profiles with complete parameter covariance. Decomposes 2D coincidence peaks with Gamba & Morhác 4-component background analysis.
 - **Fit Results File Logging**: Seamlessly appends 1D and 2D fit results to clean, fixed-width text logs (`fit_results_<timestamp>.txt`) with right-aligned formatting, accommodating 10+ digit counts and error values. Toggleable via UI button, CLI startup flag (`--fit-log`), or macro command (`fit_log`).
+- **ENSDF Automated Isotope Identification**: 100% offline, local SQLite-indexed nuclear structure search engine (`ensdf_search.py`) querying all 300+ ENSDF mass chains. Identifies 1D photopeaks and 2D coincidence cascades using physical transition topologies (direct prompt cascades, sequential intermediate transitions, high-excitation damping) and global mass-clustering with parsimonious minimum isotope set-cover. Accessible via web pop-up with interactive server file browser (`📂 Browse...`) or command-line.
 - **Coincidence & Banana Gating**: Multi-gate peak ($W$) and background ($X$) slicing with automatic channel normalization, plus 2D polygonal Banana graphical ROIs (`Shift+G` Peak / `Shift+B` Bg) for 2D area determination and 3D coincidence projection cuts.
 - **Multi-Matrix Differential Analysis**: Instant cycling (`[` / `]`) across multiple matrices while locking zoom, gates, and auto-refitted peak parameters.
 - **Headless Spectroscopy Engine**: Automated macro scripts (`*.mac`), CLI one-liners (`-c`), and interactive REPL shell (`-i`).
@@ -108,7 +109,20 @@ python3 cmat2amat.py matrix.cmat matrix.amat
 python3 cmat2amat.py matrix.cmat matrix_sparse.amat --format sparse
 ```
 
-### 4. Python Library API (`cmat.py` & `cmat3d.py`)
+### 4. Automated ENSDF Isotope Identification (`ensdf_search.py`)
+
+```bash
+# Automatically identify all 1D peaks and 2D coincidences in a fit log file:
+python3 ensdf_search.py fit_results_20260922_155405.txt --top 5
+
+# Identify a 2D coincidence cascade pair:
+python3 ensdf_search.py -c 1434.2 935.3 --tol 1.5
+
+# Identify a single 1D photopeak:
+python3 ensdf_search.py -g 1480.3 --tol 1.5
+```
+
+### 5. Python Library API (`cmat.py` & `cmat3d.py`)
 
 #### 2D Matrix API (`cmat.py`)
 ```python

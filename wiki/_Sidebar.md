@@ -12,6 +12,7 @@
 ---
 
 ### **User Guides**
+- **[ENSDF Isotope Identification](ENSDF-Isotope-Identification)**
 - **[Spectroscopy Commands & Macros](Spectroscopy-Commands-and-Macros)**
 - **[Configuration Guide](Configuration-Guide)**
 - **[Python API & CLI Tools](Python-API-and-CLI-Tools)**

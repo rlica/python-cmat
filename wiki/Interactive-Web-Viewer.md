@@ -139,3 +139,18 @@ For irregular or curve-shaped features on the 2D coincidence matrix (e.g. banana
     ```
 - **Clear Banana ROIs**: Press **`Z`** (or click **Clear Bananas**) to remove both peak and background polygons and reset the display.
 
+### 9. Fit Results Text File Logging
+- Toggleable via the **`📝 Log Fits: ON/OFF`** UI button in the viewer header, the `--fit-log` startup flag, or the `fit_log [on|off]` macro command.
+- Each 1D photopeak or 2D coincidence fit is cleanly appended as a single fixed-width, right-aligned row into `fit_results_<timestamp>.txt` in the server directory.
+- Accommodates 10+ digit area counts and error bars with perfect column alignment:
+  - **1D Fits**: `Energy(err)`, `Net_Area(err)`, `FWHM(err)`, `Chi2`, `Peak_to_BG`
+  - **2D Fits**: `Energy1(err)`, `Energy2(err)`, `Net_Area(err)`, `Gamba_Area(err)`, `FWHM1(err)`, `FWHM2(err)`, `Chi2`, `Peak_to_BG`
+
+### 10. Automated ENSDF Isotope Identification Pop-up
+Click **`🔬 Isotope Identification`** in the header to launch the standalone nuclear structure search window (`/ensdf_popup.html`):
+- **Server File Browser (`📂 Browse...`)**: Interactively search and select any `fit_results_*.txt` log file on the server.
+- **Top 5 Candidate Isotopes**: For each 2D coincidence fit, displays the top physical cascade matches with colored badges (`Direct Cascade (Prompt Coincidence)`, `Sequential Cascade`, `Same Level Scheme`) and expandable sub-tables.
+- **Global Parsimony & Mass-Clustering**: Automatically clusters isotopes by dominant reaction/decay mass ($\bar{A}$) and finds the minimal set of isotopes explaining all 1D and 2D features.
+- See [ENSDF Isotope Identification](ENSDF-Isotope-Identification) for full theory and algorithms.
+
+

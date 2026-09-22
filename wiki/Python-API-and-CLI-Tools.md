@@ -193,3 +193,49 @@ banana_cut = reader3d.get_banana_gate(
 print("Banana cut net spectrum sum:", banana_cut["net_spec"].sum())
 ```
 
+---
+
+## ENSDF Isotope Identification API & CLI (`ensdf_search.py`)
+
+`python-cmat` includes `ENSDFSearchEngine` for automated offline isotope identification of 1D photopeaks and 2D coincidence cascades using physical cascade topologies and global mass-clustering parsimony.
+
+### Command-Line Interface
+
+```bash
+# Identify full fit results log file:
+python3 ensdf_search.py fit_results_20260922_155405.txt --top 5
+
+# Manual 2D coincidence search:
+python3 ensdf_search.py -c 1434.2 935.3 --tol 1.5 --top 5
+
+# Manual 1D single-energy search:
+python3 ensdf_search.py -g 1480.3 --tol 1.5
+
+# Database status & statistics:
+python3 ensdf_search.py --status
+```
+
+### Python API Usage
+
+```python
+from ensdf_search import ENSDFSearchEngine
+
+engine = ENSDFSearchEngine()
+
+# Identify entire fit results file with global parsimonious set cover
+report = engine.identify_fit_results_file(
+    "fit_results_20260922_155405.txt",
+    tol=1.5,
+    top_candidates=5
+)
+
+print(f"Dominant Mass Center: A ≈ {report['dominant_mass']}")
+print(f"Minimal Isotope Set: {report['parsimonious_isotopes']}")
+
+for res in report["results_2d"]:
+    fit = res["fit"]
+    best = res["best_match"]
+    print(f"2D Fit {fit['energy1']} x {fit['energy2']} keV -> {best['nuclide']} (Score: {best['score']}, {best['cascade_type']})")
+```
+
+
