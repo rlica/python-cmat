@@ -42,6 +42,7 @@
 - **Interactive 2D & 3D Web Viewers**: Blazing fast HTML5 canvas visualizers with pixel-matched decimation, memory-mapped 3D caching, subregion pre-slicing (48× acceleration), and multi-threaded request handling.
 - **Simultaneous 1D Projections**: Real-time stepped staircase histograms across all axes (Det 1, Det 2, and Rings / $\Delta t$) with synchronized crosshair tracking and calibrated energy readouts.
 - **1D & 2D Peak Fitting**: Fits Gaussian, RadWare / SAMPO exponential tail, and Hypermet EMG profiles with complete parameter covariance. Decomposes 2D coincidence peaks with Gamba & Morhác 4-component background analysis.
+- **Automatic 2D Coincidence Peak Search**: 4-stage hybrid 2D peak search engine (`P` in 2D) combining 1D CWT projection seeding, local Gamba 4-component decomposition, false Compton scattering ridge & cross-talk filtering, and 2D non-maximum suppression (NMS) with collision-free zoom-adaptive label rendering.
 - **Fit Results File Logging**: Seamlessly appends 1D and 2D fit results to clean, fixed-width text logs (`fit_results_<timestamp>.txt`) with right-aligned formatting, accommodating 10+ digit counts and error values. Toggleable via UI button, CLI startup flag (`--fit-log`), or macro command (`fit_log`).
 - **ENSDF Automated Isotope Identification**: 100% offline, local SQLite-indexed nuclear structure search engine (`ensdf_search.py`) querying all 300+ ENSDF mass chains. Identifies 1D photopeaks and 2D coincidence cascades using physical transition topologies (direct prompt cascades, sequential intermediate transitions, high-excitation damping) and global mass-clustering with parsimonious minimum isotope set-cover. Accessible via web pop-up with interactive server file browser (`📂 Browse...`) or command-line.
 - **Coincidence & Banana Gating**: Multi-gate peak ($W$) and background ($X$) slicing with automatic channel normalization, plus 2D polygonal Banana graphical ROIs (`Shift+G` Peak / `Shift+B` Bg) for 2D area determination and 3D coincidence projection cuts.
@@ -190,7 +191,7 @@ net_spec, bg_spec = reader3d.get_gate_1d(target_axis=0, w_gates={2: [[11, 11]]})
 | **Full Zoom Out** | `Double Click` (2D / 1D) | Reset view to full matrix (2D) or full spectrum (1D) |
 | **1D Peak Fit** | `Ctrl + Click` (1D) or `V` | Fit 1D photopeak or multiplet (Gaussian / RadWare / Hypermet) |
 | **2D Coincidence Fit**| `Ctrl + Click` (2D) or `V` | True 2D coincidence peak fit with Gamba background decomposition |
-| **Peak Search** | `P` | Automatically detect candidate peaks in focused 1D spectrum |
+| **Peak Search** | `P` | Automatically detect peaks (2D Coincidences in 2D Matrix / 1D Photopeaks in 1D Spectrum) |
 | **Fit All Peaks** | `H` | Fit all visible candidate peaks on Peak-Aware Continuum baseline |
 | **Clear Fits & Marks**| `=` or `+` | Clear all active persistent peak fits, curves, and centroid markers |
 | **Coincidence Gate** | `W` (Peak) / `X` (BG) | Set peak and background coincidence gate limits on 1D spectrum |

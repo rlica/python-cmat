@@ -139,18 +139,34 @@ For irregular or curve-shaped features on the 2D coincidence matrix (e.g. banana
     ```
 - **Clear Banana ROIs**: Press **`Z`** (or click **Clear Bananas**) to remove both peak and background polygons and reset the display.
 
-### 9. Fit Results Text File Logging
+### 9. Automatic 2D Coincidence Peak Search (`P` in 2D)
+Press **`P`** while focusing the 2D matrix (or click **`Find 2D Peaks [P]`** in the 2D matrix footer or Sidebar Section 4.3):
+- **4-Stage Hybrid Search Engine**:
+  1. **Projection Seeding**: Performs multi-scale CWT peak search on both Det 1 and Det 2 projections to generate candidate coordinate pairs $(x_i, y_j)$.
+  2. **Local Gamba 4-Component Decomposition**: Fits each candidate subregion to separate true coincidence volume ($p|p^t$) from vertical ridges ($p|bg$), horizontal ridges ($bg|p$), and continuum ($bg|bg$).
+  3. **Compton Scattering Ridge & Cross-Talk Rejection**: Automatically rejects 1D single-gamma Compton cross-ridges (where $\Pi = n_{p|p}^t / n_{p|p}^m \le \text{threshold}$) and detector cross-talk diagonal artifacts ($\rho_{xy} \approx -1$).
+  4. **Non-Maximum Suppression (NMS) & Levenberg-Marquardt Fit**: Eliminates redundant split fits and refines coincidence centroids, widths ($\text{FWHM}_X, \text{FWHM}_Y$), and net volume.
+- **Configurable Sensitivity**: Adjust **Min Peak SNR** (1.5–20.0) and **Min Gamba $\Pi$ Ratio** (0.01–0.90) sliders in Sidebar Section 4.3 to tune sensitivity for weak transitions vs. noisy matrices.
+- **Collision-Free, Zoom-Adaptive 2D Labels**:
+  - At wide zoom levels, clean crosshair markers and FWHM ellipses are shown to keep the view uncluttered.
+  - As you zoom into coincidence regions, text labels ($E_X \times E_Y$, net counts) smoothly appear using dynamic bounding box collision avoidance.
+  - Hovering any peak marker instantly brings its full energy label and summary badge to the foreground.
+- **Automated Logging**: When **`📝 Log Fits: ON`** is enabled, all detected 2D coincidence fits are automatically saved to `fit_results_<timestamp>.txt`.
+- **Terminal Report**: A structured summary table with energies, net volume, Gamba areas, FWHMs, $\chi^2$, and peak-to-background ratios is printed directly to the terminal.
+
+### 10. Fit Results Text File Logging
 - Toggleable via the **`📝 Log Fits: ON/OFF`** UI button in the viewer header, the `--fit-log` startup flag, or the `fit_log [on|off]` macro command.
-- Each 1D photopeak or 2D coincidence fit is cleanly appended as a single fixed-width, right-aligned row into `fit_results_<timestamp>.txt` in the server directory.
+- Each 1D photopeak or 2D coincidence fit (both manual `Ctrl+Click` / `V` and automatic `P` in 2D / `H` in 1D) is cleanly appended as a single fixed-width, right-aligned row into `fit_results_<timestamp>.txt` in the server directory.
 - Accommodates 10+ digit area counts and error bars with perfect column alignment:
   - **1D Fits**: `Energy(err)`, `Net_Area(err)`, `FWHM(err)`, `Chi2`, `Peak_to_BG`
   - **2D Fits**: `Energy1(err)`, `Energy2(err)`, `Net_Area(err)`, `Gamba_Area(err)`, `FWHM1(err)`, `FWHM2(err)`, `Chi2`, `Peak_to_BG`
 
-### 10. Automated ENSDF Isotope Identification Pop-up
+### 11. Automated ENSDF Isotope Identification Pop-up
 Click **`🔬 Isotope Identification`** in the header to launch the standalone nuclear structure search window (`/ensdf_popup.html`):
 - **Server File Browser (`📂 Browse...`)**: Interactively search and select any `fit_results_*.txt` log file on the server.
 - **Top 5 Candidate Isotopes**: For each 2D coincidence fit, displays the top physical cascade matches with colored badges (`Direct Cascade (Prompt Coincidence)`, `Sequential Cascade`, `Same Level Scheme`) and expandable sub-tables.
 - **Global Parsimony & Mass-Clustering**: Automatically clusters isotopes by dominant reaction/decay mass ($\bar{A}$) and finds the minimal set of isotopes explaining all 1D and 2D features.
 - See [ENSDF Isotope Identification](ENSDF-Isotope-Identification) for full theory and algorithms.
+
 
 

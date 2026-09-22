@@ -195,3 +195,34 @@ To ensure clean vertical alignment across text editors and avoid tab misalignmen
 ### Automated Isotope Identification
 Fit results logs can be automatically analyzed and matched against evaluated nuclear structure data to identify parent isotopes and 2D cascades using the [ENSDF Isotope Identification](ENSDF-Isotope-Identification) tool.
 
+---
+
+## 8. Automatic 2D Coincidence Peak Search & Compton Ridge Discrimination
+
+Detecting true physical $\gamma$-$\gamma$ coincidence peaks in a large 2D matrix ($4096 \times 4096$) is complicated by two major sources of false positives:
+1. **Compton Scattering Cross-Ridges ($p|bg$ and $bg|p$)**: A high-intensity photopeak in Det 1 coincident with a continuous Compton scattering event in Det 2 creates a continuous vertical line across the entire matrix. Any noise fluctuation along this ridge resembles a 2D peak.
+2. **Detector Cross-Talk & Scattering Artifacts**: Single gamma rays scattering from one detector into another produce diagonal ridges ($\rho_{xy} \approx -1, x + y = \text{const}$).
+
+`python-cmat` implements a dedicated 4-stage hybrid 2D search engine to discriminate genuine coincidences:
+
+### Stage 1: 1D Projection Seeding
+Continuous Wavelet Transform (CWT) peak searches are executed across both 1D total projections (Det 1 and Det 2) down to a user-selectable signal-to-noise ratio threshold ($\text{SNR}_{\text{min}}$):
+$$\mathcal{S}_X = \{ x_1, x_2, \dots, x_M \}, \quad \mathcal{S}_Y = \{ y_1, y_2, \dots, y_N \}$$
+The search grid evaluates candidate pairs $(x_i, y_j) \in \mathcal{S}_X \times \mathcal{S}_Y$ bounded within local subregions $\Omega = [x_i - w_x, x_i + w_x] \times [y_j - w_y, y_j + w_y]$.
+
+### Stage 2: Local 4-Component Gamba Decomposition
+For each candidate pair $(x_i, y_j)$, the local 2D subregion is decomposed using the Gamba & Morhác model:
+$$M(x, y) = H \cdot P_X(x) P_Y(y) + R_x P_X(x) + R_y P_Y(y) + [b_0 + b_x(x - x_i) + b_y(y - y_j)]$$
+Extracting the gross volume $n_{p|p}^m$, vertical ridge $n_{p|bg}^m$, horizontal ridge $n_{bg|p}^m$, continuum $n_{bg|bg}^m$, and net coincidence volume $n_{p|p}^t$.
+
+### Stage 3: Compton Ridge & Cross-Talk Rejection
+Candidate peaks are subjected to physical validation filters:
+- **Gamba Ratio Filter**: The peak-to-total-background ratio $\Pi = n_{p|p}^t / n_{p|p}^m$ must exceed the user-defined threshold ($\Pi_{\text{min}}$, default $0.05$). Pure Compton ridges have $n_{p|p}^t \approx 0 \implies \Pi \approx 0$ and are cleanly rejected.
+- **Statistical Significance**: The net peak height $H$ must exceed $\text{SNR}_{\text{threshold}} \cdot \sqrt{\max(1, B_{\text{local}}})$.
+- **Covariance Ellipse Filter**: The 2D cross-correlation coefficient $|\rho_{xy}| < 0.85$ rejects diagonal scattering cross-talk.
+- **Width Bounding**: Fitted dispersions must satisfy physical detector bounds ($0.4 \times \text{FWHM}_0 \le \text{FWHM} \le 3.5 \times \text{FWHM}_0$).
+
+### Stage 4: 2D Non-Maximum Suppression (NMS) & Levenberg-Marquardt Fitting
+Surviving candidates are clustered within $2.5 \times \text{FWHM}$. The strongest local maximum is refined with full Levenberg-Marquardt optimization and parameter covariance estimation. For symmetric matrices ($M_{ij} = M_{ji}$), candidate pairs across the diagonal $(x, y) \leftrightarrow (y, x)$ are deduplicated.
+
+

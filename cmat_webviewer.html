@@ -879,6 +879,28 @@
       <button id="btnSidebarClearPeaks" class="fit-btn-close" style="display: none; width: 100%; margin-top: 5px;">Clear Found Peaks &amp; Fits [=]</button>
     </div>
 
+    <!-- 4.3 2D Coincidence Peak Search -->
+    <div class="control-group">
+      <h3 style="color: #ff4081;">2D Coincidence Peak Search</h3>
+      <div style="font-size: 0.72rem; color: #aaa; margin-bottom: 6px; line-height: 1.35;">
+        Hover on 2D matrix &amp; press <span style="color: #ff4081; font-weight: bold;">[P]</span> to automatically detect coincidence peaks with Compton ridge &amp; scatter rejection.
+      </div>
+      <label>Coincidence Significance (Z) <span class="range-val" id="peakSearch2dSnrLabel">4.5σ</span></label>
+      <input type="range" id="peakSearch2dSnrSlider" min="2.0" max="12.0" step="0.5" value="4.5">
+      <label style="margin-top: 6px;">Peak-to-Ridge Filter (P/R) <span class="range-val" id="peakSearch2dPtrLabel">0.25</span></label>
+      <input type="range" id="peakSearch2dPtrSlider" min="0.05" max="1.5" step="0.05" value="0.25">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 6px;">
+        <label for="peakSearch2dExcludeDiag" style="margin: 0; font-size: 0.75rem; color: #ddd; cursor: pointer;">Exclude Diagonal (E1 = E2)</label>
+        <input type="checkbox" id="peakSearch2dExcludeDiag" checked style="cursor: pointer;">
+      </div>
+      <div style="margin-top: 8px;">
+        <button id="btnFindPeaks2D" class="primary" style="width: 100%; padding: 6px 10px; font-size: 0.78rem; background: linear-gradient(135deg, #c2185b, #7b1fa2); border: 1px solid #e91e63; font-weight: 600; cursor: pointer;" onclick="searchPeaks2D()" title="Automatically detect 2D coincidence photopeaks and reject Compton scattering [P on 2D]">Find 2D Coincidences [P]</button>
+      </div>
+      <div style="margin-top: 4px;">
+        <button id="btnClearFits2D" class="secondary" style="width: 100%; padding: 4px 8px; font-size: 0.72rem; display: none;" onclick="clearFit2D()" title="Clear all active 2D coincidence peak fits [=]">Clear 2D Fits [=]</button>
+      </div>
+    </div>
+
     <!-- 5. Defaults & Configuration -->
     <div class="control-group">
       <h3 style="color: #80cbc4;">Configuration</h3>
@@ -912,6 +934,7 @@
       <div class="panel-2d-footer">
         <span id="overlayStatus">Limits: [L: - | R: - | D: - | U: -] &nbsp;•&nbsp; 'E' Expand &nbsp;•&nbsp; 'F' Full View</span>
         <div style="display: flex; gap: 6px; align-items: center;">
+          <button id="btnFindPeaks2DFooter" class="secondary" style="color:#ff4081; border-color:#f50057; padding:2px 7px; font-size:0.75rem;" onclick="searchPeaks2D()" title="Automatically detect 2D coincidence photopeaks and reject Compton scattering [P on 2D]">Find 2D Peaks [P]</button>
           <button id="btnBananaPeak2D" class="secondary" style="color:#ffd600; border-color:#fbc02d; padding:2px 7px; font-size:0.75rem;" onclick="toggleBananaMode('peak')" title="Draw Peak Banana ROI [Shift+G]">Peak Banana</button>
           <button id="btnBananaBg2D" class="secondary" style="color:#ff4081; border-color:#f50057; padding:2px 7px; font-size:0.75rem;" onclick="toggleBananaMode('bg')" title="Draw Background Banana ROI [Shift+B]">Bg Banana</button>
           <button id="btnScaleToggle2D" class="scale-toggle-btn" title="Cycle 2D Scale Mode: Logarithmic → Linear → Power [L]">LOG</button>
@@ -1086,7 +1109,7 @@
     <tr><td>I / i</td><td>Integrate peak over Region ('R') subtracting background ('B' or boundary slope)</td></tr>
     <tr><td>V / v</td><td>Fit peak (1D or 2D) at cursor; keeps multiple fits on display and labels centroids</td></tr>
     <tr><td>H / h</td><td>Fit all visible peaks on focused 1D display (Peak-Aware Background)</td></tr>
-    <tr><td>P / p</td><td>Automatic 1D Peak Search on focused spectrum (CWT method)</td></tr>
+    <tr><td>P / p</td><td>Automatic Peak Search: 2D Coincidences on 2D Matrix (Compton-filtered), or 1D Photopeaks on focused 1D spectrum</td></tr>
     <tr><td>G / g</td><td>Add / remove manual peak marker at cursor (on Det 1 or Det 2)</td></tr>
     <tr><td>= (Equals) / +</td><td>Clear all active peak fits (1D &amp; 2D), peak labels, and integrations</td></tr>
     <tr><td>Arrows in 1D (←, →)</td><td>Pan 1D spectrum channels left / right (Shift + Arrow for 2× fast pan)</td></tr>
@@ -2551,6 +2574,8 @@
     ctx2d.clearRect(0, 0, canvas2d.width, canvas2d.height);
     ctx2d.setTransform(dpr, 0, 0, dpr, 0, 0);
     const pr = getPlotRect2D();
+    const spanX = Math.max(1, view.x1 - view.x0);
+    const spanY = Math.max(1, view.y1 - view.y0);
 
     // 1. Draw Density Heatmap
     if (currentTileData && tileW > 0 && tileH > 0) {
@@ -2753,20 +2778,37 @@
 
     // 5. Draw 2D Coincidence Peak Fit Indicators & FWHM Ellipses (Persistent Multi-Fits)
     const fits2DList = (activeFits2D && activeFits2D.length > 0) ? activeFits2D : (activeFit2D && activeFit2D.success ? [activeFit2D] : []);
+
+    // Filter to peaks currently within or near the visible viewport
+    const visibleFits2D = [];
     for (const f2d of fits2DList) {
       if (!f2d || !f2d.success) continue;
-      const ptC = chToPx2D(f2d.centroid_x_ch, f2d.centroid_y_ch);
+      const cx = f2d.centroid_x_ch;
+      const cy = f2d.centroid_y_ch;
+      if (cx >= view.x0 - 5 && cx <= view.x1 + 5 && cy >= view.y0 - 5 && cy <= view.y1 + 5) {
+        const ptC = chToPx2D(cx, cy);
+        const isHovered = (cursorChannel && cursorChannel.x !== null && cursorChannel.y !== null &&
+                           Math.hypot(cx - cursorChannel.x, cy - cursorChannel.y) < Math.max(3.0, (f2d.fwhm_x_ch || 4.0)));
+        visibleFits2D.push({ f2d, ptC, isHovered });
+      }
+    }
+
+    // Part A: Always Draw 2D Peak Geometry (ROI box, FWHM Ellipse, Centroid Crosshair)
+    for (const item of visibleFits2D) {
+      const { f2d, ptC, isHovered } = item;
       const ptL = chToPx2D(f2d.roi_x_min, f2d.roi_y_max + 1);
       const ptR = chToPx2D(f2d.roi_x_max + 1, f2d.roi_y_min);
 
-      // A. ROI box
-      ctx2d.fillStyle = 'rgba(255, 214, 0, 0.08)';
-      ctx2d.fillRect(Math.min(ptL.x, ptR.x), Math.min(ptL.y, ptR.y), Math.abs(ptR.x - ptL.x), Math.abs(ptR.y - ptL.y));
-      ctx2d.strokeStyle = 'rgba(255, 214, 0, 0.6)';
-      ctx2d.lineWidth = 1;
-      ctx2d.setLineDash([4, 4]);
-      ctx2d.strokeRect(Math.min(ptL.x, ptR.x), Math.min(ptL.y, ptR.y), Math.abs(ptR.x - ptL.x), Math.abs(ptR.y - ptL.y));
-      ctx2d.setLineDash([]);
+      // A. ROI box (when zoomed in or hovered)
+      if (spanX <= 800 || isHovered) {
+        ctx2d.fillStyle = isHovered ? 'rgba(255, 214, 0, 0.15)' : 'rgba(255, 214, 0, 0.08)';
+        ctx2d.fillRect(Math.min(ptL.x, ptR.x), Math.min(ptL.y, ptR.y), Math.abs(ptR.x - ptL.x), Math.abs(ptR.y - ptL.y));
+        ctx2d.strokeStyle = isHovered ? 'rgba(255, 214, 0, 0.9)' : 'rgba(255, 214, 0, 0.5)';
+        ctx2d.lineWidth = 1;
+        ctx2d.setLineDash([4, 4]);
+        ctx2d.strokeRect(Math.min(ptL.x, ptR.x), Math.min(ptL.y, ptR.y), Math.abs(ptR.x - ptL.x), Math.abs(ptR.y - ptL.y));
+        ctx2d.setLineDash([]);
+      }
 
       // B. FWHM Ellipse
       const ptXRadius = chToPx2D(f2d.centroid_x_ch + (f2d.fwhm_x_ch / 2), f2d.centroid_y_ch);
@@ -2775,69 +2817,105 @@
       const radY = Math.abs(ptYRadius.y - ptC.y);
 
       ctx2d.beginPath();
-      ctx2d.ellipse(ptC.x, ptC.y, Math.max(2, radX), Math.max(2, radY), 0, 0, 2 * Math.PI);
-      ctx2d.strokeStyle = '#ffd600';
-      ctx2d.lineWidth = 2.0;
+      ctx2d.ellipse(ptC.x, ptC.y, Math.max(3, radX), Math.max(3, radY), 0, 0, 2 * Math.PI);
+      ctx2d.strokeStyle = isHovered ? '#ffffff' : '#ffd600';
+      ctx2d.lineWidth = isHovered ? 2.5 : (spanX > 1200 ? 1.4 : 2.0);
       ctx2d.stroke();
 
       // C. Crosshair at Centroid
-      ctx2d.strokeStyle = '#ff007f';
-      ctx2d.lineWidth = 1.6;
+      ctx2d.strokeStyle = isHovered ? '#ffffff' : '#ff007f';
+      ctx2d.lineWidth = isHovered ? 2.0 : 1.6;
       ctx2d.beginPath();
-      ctx2d.moveTo(ptC.x - 8, ptC.y); ctx2d.lineTo(ptC.x + 8, ptC.y);
-      ctx2d.moveTo(ptC.x, ptC.y - 8); ctx2d.lineTo(ptC.x, ptC.y + 8);
+      const arm = (spanX > 1500) ? 5 : 8;
+      ctx2d.moveTo(ptC.x - arm, ptC.y); ctx2d.lineTo(ptC.x + arm, ptC.y);
+      ctx2d.moveTo(ptC.x, ptC.y - arm); ctx2d.lineTo(ptC.x, ptC.y + arm);
       ctx2d.stroke();
+    }
 
-      // D. 3-line unobtrusive text label with Centroid & Volume (75% font size, no surrounding rectangle)
-      const isCalX = isAxisCalibrated(0);
-      const isCalY = isAxisCalibrated(1);
-      const xStr = isCalX ? `${Number(f2d.centroid_x_e).toFixed(1)} keV` : `${Number(f2d.centroid_x_ch).toFixed(1)} ch`;
-      const yStr = isCalY ? `${Number(f2d.centroid_y_e).toFixed(1)} keV` : `${Number(f2d.centroid_y_ch).toFixed(1)} ch`;
+    // Part B: Smart Collision-Free 2D Text Labels (like 1D histogram)
+    const sortedFits2D = [...visibleFits2D].sort((a, b) => {
+      if (a.isHovered !== b.isHovered) return a.isHovered ? -1 : 1;
+      const volA = Number(a.f2d.volume || a.f2d.vol_est || 0);
+      const volB = Number(b.f2d.volume || b.f2d.vol_est || 0);
+      return volB - volA;
+    });
+
+    const placedLabelBoxes2D = [];
+    const labels2DToDraw = [];
+
+    // When zoomed out very far (spanX > 1200), only show hovered label or if <= 4 peaks
+    const allowLabels = (spanX <= 1200) || (visibleFits2D.length <= 4);
+
+    for (const item of sortedFits2D) {
+      const { f2d, ptC, isHovered } = item;
+      const xStr = isCalX ? `${Number(f2d.centroid_x_e).toFixed(1)}` : `${Number(f2d.centroid_x_ch).toFixed(1)}`;
+      const yStr = isCalY ? `${Number(f2d.centroid_y_e).toFixed(1)}` : `${Number(f2d.centroid_y_ch).toFixed(1)}`;
+      const unit = (isCalX && isCalY) ? 'keV' : 'ch';
       const vNum = (typeof f2d.volume === 'number') ? f2d.volume : parseFloat(f2d.volume || 0);
       const volStr = vNum.toLocaleString(undefined, { maximumFractionDigits: 1 });
 
-      const lineX = `X: ${xStr}`;
-      const lineY = `Y: ${yStr}`;
+      const lineCoords = `(${xStr}, ${yStr}) ${unit}`;
       const lineVol = `Vol: ${volStr}`;
 
-      ctx2d.font = 'bold 13.5px system-ui, -apple-system, sans-serif';
-      const wX = ctx2d.measureText(lineX).width;
-      const wY = ctx2d.measureText(lineY).width;
-      const wVol = ctx2d.measureText(lineVol).width;
-      const maxW = Math.max(wX, wY, wVol);
-
-      const lineH = 16;
-      const totalH = lineH * 3;
+      ctx2d.font = 'bold 12px system-ui, -apple-system, sans-serif';
+      const wC = ctx2d.measureText(lineCoords).width;
+      const wV = ctx2d.measureText(lineVol).width;
+      const maxW = Math.max(wC, wV);
+      const lineH = 15;
+      const totalH = lineH * 2;
 
       let bX = ptC.x + 8;
-      if (bX + maxW > canvas2d.width - 8) {
-        bX = Math.max(8, ptC.x - maxW - 8);
+      if (bX + maxW > pr.x + pr.w - 6) {
+        bX = Math.max(pr.x + 6, ptC.x - maxW - 8);
+      }
+      let bY = ptC.y - 8;
+      if (bY < pr.y + 16) {
+        bY = ptC.y + 16;
+      }
+      if (bY + lineH > pr.y + pr.h - 6) {
+        bY = Math.max(pr.y + 16, pr.y + pr.h - totalH - 6);
       }
 
-      let bY = ptC.y - 12;
-      if (bY < 18) {
-        bY = ptC.y + 18;
-      }
-      if (bY + lineH * 2 > canvas2d.height - 8) {
-        bY = Math.max(18, canvas2d.height - lineH * 2 - 8);
+      const boxLeft = bX - 3;
+      const boxRight = bX + maxW + 3;
+      const boxTop = bY - 12;
+      const boxBottom = bY + totalH;
+
+      // Check collision with already placed labels (6px margin)
+      let collides = false;
+      for (const box of placedLabelBoxes2D) {
+        if (!(boxRight + 6 < box.left || boxLeft - 6 > box.right || boxBottom + 6 < box.top || boxTop - 6 > box.bottom)) {
+          collides = true;
+          break;
+        }
       }
 
+      if ((allowLabels && !collides) || isHovered) {
+        if (!isHovered) {
+          placedLabelBoxes2D.push({ left: boxLeft, right: boxRight, top: boxTop, bottom: boxBottom });
+        }
+        labels2DToDraw.push({ f2d, bX, bY, lineCoords, lineVol, lineH, isHovered });
+      }
+    }
+
+    // Render non-colliding and hovered labels
+    for (const lbl of labels2DToDraw) {
+      const { bX, bY, lineCoords, lineVol, lineH, isHovered } = lbl;
       ctx2d.save();
+      ctx2d.font = 'bold 12px system-ui, -apple-system, sans-serif';
       ctx2d.textAlign = 'left';
       ctx2d.textBaseline = 'alphabetic';
-
-      // Crisp dark outline for contrast across any colormap without drawing a rectangle
       ctx2d.lineJoin = 'round';
-      ctx2d.lineWidth = 3;
-      ctx2d.strokeStyle = 'rgba(0, 0, 0, 0.9)';
-      ctx2d.strokeText(lineX, bX, bY);
-      ctx2d.strokeText(lineY, bX, bY + lineH);
-      ctx2d.strokeText(lineVol, bX, bY + lineH * 2);
+      ctx2d.lineWidth = 3.0;
+      ctx2d.strokeStyle = 'rgba(0, 0, 0, 0.92)';
 
-      ctx2d.fillStyle = '#ffd600';
-      ctx2d.fillText(lineX, bX, bY);
-      ctx2d.fillText(lineY, bX, bY + lineH);
-      ctx2d.fillText(lineVol, bX, bY + lineH * 2);
+      ctx2d.strokeText(lineCoords, bX, bY);
+      ctx2d.strokeText(lineVol, bX, bY + lineH);
+
+      ctx2d.fillStyle = isHovered ? '#ffffff' : '#ffd600';
+      ctx2d.fillText(lineCoords, bX, bY);
+      ctx2d.fillStyle = isHovered ? '#81c784' : '#ffb74d';
+      ctx2d.fillText(lineVol, bX, bY + lineH);
       ctx2d.restore();
     }
 
@@ -3134,6 +3212,84 @@
     }
   }
 
+  async function searchPeaks2D() {
+    if (isSearchingPeaks) return;
+    isSearchingPeaks = true;
+
+    const btnSide = document.getElementById('btnFindPeaks2D');
+    const btnFoot = document.getElementById('btnFindPeaks2DFooter');
+    const origTextSide = btnSide ? btnSide.innerText : 'Find 2D Coincidences [P]';
+    const origTextFoot = btnFoot ? btnFoot.innerText : 'Find 2D Peaks [P]';
+    if (btnSide) btnSide.innerText = 'Searching 2D...';
+    if (btnFoot) btnFoot.innerText = 'Searching 2D...';
+
+    const rangeMode = document.getElementById('peakSearchRangeSelect') ? document.getElementById('peakSearchRangeSelect').value : 'visible';
+    const minSnr = document.getElementById('peakSearch2dSnrSlider') ? document.getElementById('peakSearch2dSnrSlider').value : '4.5';
+    const minPtr = document.getElementById('peakSearch2dPtrSlider') ? document.getElementById('peakSearch2dPtrSlider').value : '0.25';
+    const excludeDiag = document.getElementById('peakSearch2dExcludeDiag') ? (document.getElementById('peakSearch2dExcludeDiag').checked ? '1' : '0') : '1';
+    const fwhmEst = document.getElementById('peakSearchFwhmSlider') ? document.getElementById('peakSearchFwhmSlider').value : '4.0';
+    const fitType = getActiveFitType();
+
+    const maxX = (metadata && metadata.shape) ? metadata.shape[0] : 4096;
+    const maxY = (metadata && metadata.shape) ? metadata.shape[1] : 4096;
+    const x0 = Math.floor(Math.max(0, view.x0));
+    const x1 = Math.ceil(Math.min(maxX, view.x1));
+    const y0 = Math.floor(Math.max(0, view.y0));
+    const y1 = Math.ceil(Math.min(maxY, view.y1));
+
+    let url = `/api/search_peaks_2d?min_snr=${minSnr}&min_peak_to_ridge=${minPtr}&exclude_diag=${excludeDiag}&fwhm_est=${fwhmEst}&fit_type=${fitType}&range=${rangeMode}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}`;
+
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.success) {
+        if (!activeFits2D) activeFits2D = [];
+        const chMinX = (rangeMode === 'visible') ? x0 : 0;
+        const chMaxX = (rangeMode === 'visible') ? x1 : maxX;
+        const chMinY = (rangeMode === 'visible') ? y0 : 0;
+        const chMaxY = (rangeMode === 'visible') ? y1 : maxY;
+
+        const outsideFits2D = (rangeMode === 'visible')
+          ? activeFits2D.filter(f => f.centroid_x_ch < chMinX || f.centroid_x_ch > chMaxX || f.centroid_y_ch < chMinY || f.centroid_y_ch > chMaxY)
+          : [];
+
+        activeFits2D = [...outsideFits2D, ...(data.peaks || [])];
+
+        for (const p of (data.peaks || [])) {
+          if (p.centroid_x_ch !== undefined) {
+            const mX = { channel: p.centroid_x_ch, energy: p.centroid_x_e, counts: p.volume, fwhm: p.fwhm_x_ch, area: p.volume, fitted: true, fitted2D: true };
+            if (!foundPeaks1D[0].some(ex => Math.abs(ex.channel - p.centroid_x_ch) < 1.0)) {
+              foundPeaks1D[0].push(mX);
+            }
+          }
+          if (p.centroid_y_ch !== undefined) {
+            const mY = { channel: p.centroid_y_ch, energy: p.centroid_y_e, counts: p.volume, fwhm: p.fwhm_y_ch, area: p.volume, fitted: true, fitted2D: true };
+            if (!foundPeaks1D[1].some(ey => Math.abs(ey.channel - p.centroid_y_ch) < 1.0)) {
+              foundPeaks1D[1].push(mY);
+            }
+          }
+        }
+        foundPeaks1D[0].sort((a, b) => a.channel - b.channel);
+        foundPeaks1D[1].sort((a, b) => a.channel - b.channel);
+        updateFoundPeaksUI(0);
+        updateFoundPeaksUI(1);
+
+        render2D();
+        renderBoth1DSpectra();
+
+        document.getElementById('hudCoords').innerText = `2D Coincidence Search: Detected ${data.count} coincidence peaks in ${data.elapsed_ms} ms (Z ≥ ${minSnr}σ | Active 2D Fits: ${activeFits2D.length})`;
+      } else {
+        console.warn("2D Coincidence search failed:", data.error);
+      }
+    } catch (err) {
+      console.error("2D coincidence peak search request error:", err);
+    } finally {
+      isSearchingPeaks = false;
+      if (btnSide) btnSide.innerText = origTextSide;
+      if (btnFoot) btnFoot.innerText = origTextFoot;
+    }
+  }
+
   function clearFoundPeaks(axis) {
     if (axis === null || axis === undefined) {
       foundPeaks1D[0] = [];
@@ -3162,13 +3318,21 @@
       }
     }
     const sideClear = document.getElementById('btnSidebarClearPeaks');
+    const sideClear2D = document.getElementById('btnClearFits2D');
+    const hasFits2D = Boolean(activeFits2D && activeFits2D.length > 0);
+    if (sideClear2D) {
+      sideClear2D.style.display = hasFits2D ? 'block' : 'none';
+      if (hasFits2D) sideClear2D.innerText = `Clear ${activeFits2D.length} 2D Fits [=]`;
+    }
     if (sideClear) {
       const tot = (foundPeaks1D[0] || []).length + (foundPeaks1D[1] || []).length;
       const hasMulti = (activeMultiFit1D[0] !== null || activeMultiFit1D[1] !== null);
       const hasFits1D = Boolean(activeFits1D && ((activeFits1D[0] && activeFits1D[0].length > 0) || (activeFits1D[1] && activeFits1D[1].length > 0)));
-      const hasFits2D = Boolean(activeFits2D && activeFits2D.length > 0);
       sideClear.style.display = (tot > 0 || hasMulti || hasFits1D || hasFits2D) ? 'block' : 'none';
-      if (tot > 0) sideClear.innerText = `Clear ${tot} Found Peaks & Fits [=]`;
+      if (tot > 0 || hasFits2D) {
+        const extra = hasFits2D ? ` (${activeFits2D.length} in 2D)` : '';
+        sideClear.innerText = `Clear ${tot} Found Peaks & Fits${extra} [=]`;
+      }
     }
   }
 
@@ -6111,6 +6275,22 @@
       });
     }
 
+    const snr2dSlider = document.getElementById('peakSearch2dSnrSlider');
+    if (snr2dSlider) {
+      snr2dSlider.addEventListener('input', (e) => {
+        const lbl = document.getElementById('peakSearch2dSnrLabel');
+        if (lbl) lbl.innerText = `${parseFloat(e.target.value).toFixed(1)}σ`;
+      });
+    }
+
+    const ptr2dSlider = document.getElementById('peakSearch2dPtrSlider');
+    if (ptr2dSlider) {
+      ptr2dSlider.addEventListener('input', (e) => {
+        const lbl = document.getElementById('peakSearch2dPtrLabel');
+        if (lbl) lbl.innerText = parseFloat(e.target.value).toFixed(2);
+      });
+    }
+
     const btnHelp = document.getElementById('btnHelp');
     if (btnHelp) btnHelp.addEventListener('click', () => { document.getElementById('helpModal').style.display = 'block'; });
 
@@ -6246,8 +6426,12 @@
         }
       }
       else if (e.key === 'p' || e.key === 'P') {
-        const activeAxis = (targetPanel === '1d-1') ? 1 : 0;
-        searchPeaks1D(activeAxis);
+        if (targetPanel === '2d' || (isMouseOver2D && !targetPanel.startsWith('1d-'))) {
+          searchPeaks2D();
+        } else {
+          const activeAxis = (targetPanel === '1d-1') ? 1 : 0;
+          searchPeaks1D(activeAxis);
+        }
       }
       else if (e.key === 'g' || e.key === 'G') {
         if (e.shiftKey) {

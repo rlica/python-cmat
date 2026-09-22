@@ -546,11 +546,21 @@ def append_fit_1d_result_to_file(res: dict, cal=None, is_cal=None, filepath: str
 
 
 def append_fit_2d_result_to_file(res: dict, cal_x=None, cal_y=None, is_cal=None, filepath: str = None) -> bool:
-    """Append 2D coincidence peak fit result to text file."""
+    """Append 2D coincidence peak fit result (or list of fitted peaks) to text file."""
     if not filepath or not res or not res.get("success", True):
         return False
-    line = format_fit_2d_oneliner(res, cal_x=cal_x, cal_y=cal_y, is_cal=is_cal)
-    return append_fit_result_line(filepath, line)
+    if "peaks" in res and isinstance(res["peaks"], list):
+        success = True
+        for p in res["peaks"]:
+            if not p.get("success", True):
+                continue
+            line = format_fit_2d_oneliner(p, cal_x=cal_x, cal_y=cal_y, is_cal=is_cal)
+            if not append_fit_result_line(filepath, line):
+                success = False
+        return success
+    else:
+        line = format_fit_2d_oneliner(res, cal_x=cal_x, cal_y=cal_y, is_cal=is_cal)
+        return append_fit_result_line(filepath, line)
 
 
 def fit_gaussian_peak(x, y, x_center, fit_type="gaussian", fwhm_mult=4.0, cal=[0.0, 1.0, 0.0], roi_half_width=None):
@@ -2647,6 +2657,290 @@ def print_peaks_terminal_report(peaks_res: dict, det_name: str, matrix_name: str
 
     if count > 20:
         print(f"  ... and {count - 20} more peaks (displayed in Web Viewer).\n", flush=True)
+    else:
+        print("", flush=True)
+
+
+def find_coincidence_peaks_2d(
+    matrix: np.ndarray,
+    x0: int = 0,
+    x1: int = None,
+    y0: int = 0,
+    y1: int = None,
+    fwhm_est: float = 4.0,
+    min_snr: float = 4.5,
+    min_peak_to_ridge: float = 0.25,
+    exclude_diagonal: bool = True,
+    diag_width: float = None,
+    fit_type: str = "gaussian",
+    cal_x: list = None,
+    cal_y: list = None,
+    is_symmetric: bool = False,
+    refine_fits: bool = True,
+    max_peaks: int = 150,
+) -> dict:
+    """
+    Automatic 2D Gamma-Gamma Coincidence Peak Search with Compton Scattering Rejection.
+    
+    4-Stage Hybrid Pipeline:
+      1. 1D Projection Seed Generation: Finds candidate photopeaks along X and Y projections
+         using continuous wavelet transforms (CWT) with relaxed significance.
+      2. Localized Gamba Decomposition: Estimates 4 components (bg|bg continuum, p|bg ridge,
+         bg|p ridge, p|p coincidence excess) over a local ROI.
+      3. False Compton & Kinematic Scattering Rejection:
+         - Rejects 1D Compton ridges where peak height is dominated by 1D stripes (H_2D / (Rx + Ry) < min_peak_to_ridge).
+         - Rejects inter-detector Compton scattering / cross-talk lines (E1 + E2 = const) via covariance tensor tilt (rho_xy ~ -1).
+         - Rejects diagonal self-coincidence line (|E1 - E2| < k * FWHM).
+      4. 2D Non-Maximum Suppression (NMS) & Levenberg-Marquardt Fit Refinement.
+    """
+    t0 = time.perf_counter()
+    mat = np.asarray(matrix, dtype=np.float64)
+    H_mat, W_mat = mat.shape
+
+    x_start = max(0, min(W_mat - 1, int(x0)))
+    x_end = min(W_mat, max(x_start + 1, int(x1 if x1 is not None else W_mat)))
+    y_start = max(0, min(H_mat - 1, int(y0)))
+    y_end = min(H_mat, max(y_start + 1, int(y1 if y1 is not None else H_mat)))
+
+    if (x_end - x_start < 5) or (y_end - y_start < 5):
+        return {
+            "success": True,
+            "x0": x_start, "x1": x_end, "y0": y_start, "y1": y_end,
+            "peaks": [], "count": 0, "elapsed_ms": 0.0
+        }
+
+    # Step 1: 1D projection seeds across region
+    proj_x = np.sum(mat[y_start:y_end, :], axis=0, dtype=np.float64)
+    proj_y = np.sum(mat[:, x_start:x_end], axis=1, dtype=np.float64)
+
+    # Relaxed 1D search to catch weaker coincidence cascade lines
+    res_x = find_peaks_1d(proj_x, ch_min=x_start, ch_max=x_end, method="cwt", min_snr=3.0, fwhm_est=fwhm_est, cal=cal_x)
+    res_y = find_peaks_1d(proj_y, ch_min=y_start, ch_max=y_end, method="cwt", min_snr=3.0, fwhm_est=fwhm_est, cal=cal_y)
+
+    x_peaks = res_x.get("peaks", [])
+    y_peaks = res_y.get("peaks", [])
+
+    if is_symmetric:
+        all_ch = sorted(list(set([p["channel"] for p in x_peaks] + [p["channel"] for p in y_peaks])))
+        x_peaks = [{"channel": ch} for ch in all_ch if x_start <= ch <= x_end]
+        y_peaks = [{"channel": ch} for ch in all_ch if y_start <= ch <= y_end]
+
+    d_diag = diag_width if diag_width is not None else max(3.0, fwhm_est * 1.2)
+    roi_w = max(5, int(round(fwhm_est * 2.2)))
+
+    candidates = []
+
+    # Step 2: Screen 2D candidate grid
+    for px in x_peaks:
+        cx = float(px["channel"])
+        ix = int(round(cx))
+        if ix < roi_w or ix >= W_mat - roi_w:
+            continue
+
+        for py in y_peaks:
+            cy = float(py["channel"])
+            iy = int(round(cy))
+            if iy < roi_w or iy >= H_mat - roi_w:
+                continue
+
+            # Symmetric deduplication: (x >= y)
+            if is_symmetric and cx < cy - 0.5:
+                continue
+
+            # Diagonal exclusion (self-coincidence / pileup)
+            if exclude_diagonal and abs(cx - cy) < d_diag:
+                continue
+
+            # Extract local submatrix
+            roi = mat[iy - roi_w : iy + roi_w + 1, ix - roi_w : ix + roi_w + 1]
+            ny, nx = roi.shape
+            if ny < 5 or nx < 5:
+                continue
+
+            # 4-Corner baseline estimation (bg|bg continuum)
+            cw = max(1, min(2, roi_w // 2))
+            c_bg = [
+                roi[:cw, :cw], roi[:cw, -cw:],
+                roi[-cw:, :cw], roi[-cw:, -cw:]
+            ]
+            b0_est = max(0.0, float(np.mean([np.mean(c) for c in c_bg])))
+
+            # Border profiles for ridges
+            border_top_bot = (roi[0, :] + roi[-1, :]) / 2.0
+            rx_est = max(0.0, float(np.max(border_top_bot) - b0_est))
+
+            border_left_right = (roi[:, 0] + roi[:, -1]) / 2.0
+            ry_est = max(0.0, float(np.max(border_left_right) - b0_est))
+
+            # Peak height above continuum and ridges
+            apex_3x3 = float(np.mean(roi[roi_w-1:roi_w+2, roi_w-1:roi_w+2]))
+            h_est = max(0.0, apex_3x3 - b0_est - rx_est - ry_est)
+
+            # 2D excess volume within 2*sigma circle
+            rad = max(2, int(round(fwhm_est * 0.9)))
+            y_idx, x_idx = np.ogrid[-roi_w:roi_w+1, -roi_w:roi_w+1]
+            dist_sq = x_idx**2 + y_idx**2
+            circle_mask = (dist_sq <= rad**2)
+            n_circ = np.sum(circle_mask)
+
+            circ_raw = np.sum(roi[circle_mask])
+            circ_bg = n_circ * (b0_est + 0.5 * (rx_est + ry_est))
+            net_vol = max(0.0, circ_raw - circ_bg)
+
+            # Poisson statistical variance
+            var_vol = circ_raw + (n_circ**2 / (4.0 * (cw**2))) * b0_est + 1.0
+            snr_z = net_vol / math.sqrt(max(1.0, var_vol))
+
+            # Peak to ridge ratio
+            ridge_sum = rx_est + ry_est
+            p_to_r = h_est / max(1.0, ridge_sum) if ridge_sum > 0.0 else (h_est / max(1.0, b0_est))
+
+            if snr_z < min_snr or net_vol < 10.0:
+                continue
+
+            if ridge_sum > 0.0 and p_to_r < min_peak_to_ridge:
+                continue
+
+            # Step 3: Kinematic Scattering / Cross-talk covariance test
+            excess = np.maximum(0.0, roi - (b0_est + rx_est * (border_top_bot > b0_est) + ry_est * (border_left_right > b0_est)[:, None]))
+            sum_ex = np.sum(excess)
+            if sum_ex > 10.0:
+                dx = x_idx - 0.0
+                dy = y_idx - 0.0
+                sig_xx = np.sum(excess * (dx**2)) / sum_ex
+                sig_yy = np.sum(excess * (dy**2)) / sum_ex
+                sig_xy = np.sum(excess * (dx * dy)) / sum_ex
+                denom = math.sqrt(max(1e-6, sig_xx * sig_yy))
+                rho_xy = sig_xy / denom if denom > 0.0 else 0.0
+            else:
+                rho_xy = 0.0
+
+            # Discard inter-detector diagonal scattering (where dE1 = -dE2 -> rho_xy ~ -1.0)
+            if rho_xy < -0.65 and snr_z < 8.0:
+                continue
+
+            candidates.append({
+                "ch_x": cx,
+                "ch_y": cy,
+                "snr": float(snr_z),
+                "vol_est": float(net_vol),
+                "p_to_r": float(p_to_r),
+                "rho_xy": float(rho_xy),
+                "h_est": float(h_est),
+                "b0_est": float(b0_est),
+                "rx_est": float(rx_est),
+                "ry_est": float(ry_est),
+            })
+
+    # Sort candidates by SNR descending
+    candidates.sort(key=lambda c: c["snr"], reverse=True)
+
+    # Step 4: 2D Non-Maximum Suppression (NMS)
+    suppress_radius = max(2.5, fwhm_est * 0.8)
+    kept_candidates = []
+    for c in candidates:
+        is_suppressed = False
+        for k in kept_candidates:
+            dist = math.hypot(c["ch_x"] - k["ch_x"], c["ch_y"] - k["ch_y"])
+            if dist < suppress_radius:
+                is_suppressed = True
+                break
+        if not is_suppressed:
+            kept_candidates.append(c)
+            if len(kept_candidates) >= max_peaks:
+                break
+
+    # Step 5: Full 2D Fit Refinement
+    fitted_peaks = []
+    tot_counts = float(np.sum(proj_x))
+    fit_hw = max(10, int(round(fwhm_est * 3.0)))
+
+    for c in kept_candidates:
+        cx_init = c["ch_x"]
+        cy_init = c["ch_y"]
+        if refine_fits:
+            try:
+                fres = _fit_2d_gaussian_single_roi(
+                    mat, cx_init, cy_init, fit_type=fit_type, cal_x=cal_x, cal_y=cal_y,
+                    roi_half_width=fit_hw, proj_x=proj_x, proj_y=proj_y, total_counts=tot_counts
+                )
+                if fres.get("success"):
+                    fres["snr"] = round(c["snr"], 1)
+                    fres["rho_xy"] = round(c["rho_xy"], 3)
+                    fres["p_to_r"] = round(c["p_to_r"], 2)
+                    fitted_peaks.append(fres)
+                    continue
+            except Exception:
+                pass
+
+        # Fallback to candidate estimation if full LM fit fails
+        e_x = cal_x[0] + cal_x[1]*cx_init + (cal_x[2]*(cx_init**2) if len(cal_x)>2 else 0) if cal_x else cx_init
+        e_y = cal_y[0] + cal_y[1]*cy_init + (cal_y[2]*(cy_init**2) if len(cal_y)>2 else 0) if cal_y else cy_init
+        fitted_peaks.append({
+            "success": True,
+            "centroid_x_ch": round(cx_init, 2),
+            "centroid_y_ch": round(cy_init, 2),
+            "centroid_x_e": round(e_x, 2),
+            "centroid_y_e": round(e_y, 2),
+            "volume": round(c["vol_est"], 1),
+            "fwhm_x_ch": round(fwhm_est, 2),
+            "fwhm_y_ch": round(fwhm_est, 2),
+            "snr": round(c["snr"], 1),
+            "p_to_r": round(c["p_to_r"], 2),
+            "rho_xy": round(c["rho_xy"], 3),
+            "is_2d": True
+        })
+
+    elapsed_ms = (time.perf_counter() - t0) * 1000.0
+    return {
+        "success": True,
+        "x0": x_start, "x1": x_end, "y0": y_start, "y1": y_end,
+        "peaks": fitted_peaks,
+        "count": len(fitted_peaks),
+        "elapsed_ms": round(elapsed_ms, 2)
+    }
+
+
+def print_coincidence_peaks_2d_terminal_report(peaks_res: dict, matrix_name: str, is_cal: tuple):
+    """Print aligned tabular summary of found 2D coincidence peaks to the terminal."""
+    peaks = peaks_res.get("peaks", [])
+    count = len(peaks)
+    elapsed = peaks_res.get("elapsed_ms", 0.0)
+    x_range = f"[{peaks_res.get('x0', 0)}..{peaks_res.get('x1', 4095)}]"
+    y_range = f"[{peaks_res.get('y0', 0)}..{peaks_res.get('y1', 4095)}]"
+
+    if isinstance(is_cal, (list, tuple)):
+        is_cal_x, is_cal_y = bool(is_cal[0]), bool(is_cal[1])
+    else:
+        is_cal_x, is_cal_y = bool(is_cal), bool(is_cal)
+
+    unit_x = "keV" if is_cal_x else "ch"
+    unit_y = "keV" if is_cal_y else "ch"
+
+    print(f"\n[2D Coincidence Peak Search] {matrix_name} (X: {x_range}, Y: {y_range}):", flush=True)
+    if count == 0:
+        print(f"  No 2D coincidence peaks detected above SNR threshold in {elapsed:.1f} ms.\n", flush=True)
+        return
+
+    print(f"  Detected {count} coincidence photopeaks in {elapsed:.1f} ms:", flush=True)
+    header_x = f"Det 1 ({unit_x})"
+    header_y = f"Det 2 ({unit_y})"
+    print(f"  {'#':<4} {header_x:<16} {header_y:<16} {'Volume (cts)':<14} {'SNR (Z)':<10} {'FWHM 1':<10} {'FWHM 2':<10} {'P/Ridge':<9}", flush=True)
+    print(f"  {'-'*4} {'-'*16} {'-'*16} {'-'*14} {'-'*10} {'-'*10} {'-'*10} {'-'*9}", flush=True)
+
+    top_peaks = sorted(peaks, key=lambda p: p.get("volume", p.get("vol_est", 0)), reverse=True)[:30]
+    for idx, p in enumerate(top_peaks, 1):
+        x_val = p.get("centroid_x_e") if is_cal_x else p.get("centroid_x_ch")
+        y_val = p.get("centroid_y_e") if is_cal_y else p.get("centroid_y_ch")
+        fx = p.get("fwhm_x_e") if is_cal_x else p.get("fwhm_x_ch", 4.0)
+        fy = p.get("fwhm_y_e") if is_cal_y else p.get("fwhm_y_ch", 4.0)
+        vol = p.get("volume", p.get("vol_est", 0.0))
+        snr = p.get("snr", 0.0)
+        ptr = p.get("p_to_r", p.get("peak_to_bg", 0.0))
+        print(f"  {idx:<4} {x_val:<16.2f} {y_val:<16.2f} {vol:<14.1f} {snr:<10.1f} {fx:<10.2f} {fy:<10.2f} {ptr:<9.2f}", flush=True)
+
+    if count > 30:
+        print(f"  ... and {count - 30} more 2D coincidence peaks (displayed in Web Viewer).\n", flush=True)
     else:
         print("", flush=True)
 
@@ -5498,6 +5792,51 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             res = compute_2d_banana_roi(self.matrix, polygon_peak=polygon_peak, polygon_bg=polygon_bg)
             if res.get("success") and (res.get("pixel_count_peak", 0) > 0 or res.get("pixel_count_bg", 0) > 0):
                 print_banana_roi_terminal_report_2d(res, self.reader.filename.name, self.matrix.shape)
+
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(res).encode("utf-8"))
+
+        elif self.path.startswith("/api/search_peaks_2d"):
+            from urllib.parse import urlparse, parse_qs
+            query = parse_qs(urlparse(self.path).query)
+            min_snr = float(query.get("min_snr", [4.5])[0])
+            fwhm_est = float(query.get("fwhm_est", [4.0])[0])
+            fit_type = query.get("fit_type", ["gaussian"])[0].lower()
+            min_peak_to_ridge = float(query.get("min_peak_to_ridge", [0.25])[0])
+            exclude_diag = query.get("exclude_diag", ["1"])[0].lower() in ("1", "true", "yes", "on")
+            range_mode = query.get("range", ["visible"])[0].lower()
+
+            if range_mode == "visible":
+                x0 = max(0, min(self.matrix.shape[1] - 1, int(float(query.get("x0", [0])[0]))))
+                x1 = max(x0 + 1, min(self.matrix.shape[1], int(float(query.get("x1", [self.matrix.shape[1]])[0]))))
+                y0 = max(0, min(self.matrix.shape[0] - 1, int(float(query.get("y0", [0])[0]))))
+                y1 = max(y0 + 1, min(self.matrix.shape[0], int(float(query.get("y1", [self.matrix.shape[0]])[0]))))
+            else:
+                x0, x1 = 0, self.matrix.shape[1]
+                y0, y1 = 0, self.matrix.shape[0]
+
+            session = self.get_session()
+            cal_x = session.get_cal(0)
+            cal_y = session.get_cal(1)
+            is_cal_x = session.is_calibrated(0)
+            is_cal_y = session.is_calibrated(1)
+            is_symm = bool(self.reader and self.reader.is_symmetric)
+
+            try:
+                res = find_coincidence_peaks_2d(
+                    self.matrix, x0=x0, x1=x1, y0=y0, y1=y1,
+                    fwhm_est=fwhm_est, min_snr=min_snr, min_peak_to_ridge=min_peak_to_ridge,
+                    exclude_diagonal=exclude_diag, fit_type=fit_type,
+                    cal_x=cal_x, cal_y=cal_y, is_symmetric=is_symm, refine_fits=True
+                )
+                print_coincidence_peaks_2d_terminal_report(res, self.reader.filename.name, (is_cal_x, is_cal_y))
+                if res.get("success") and session.fit_log_enabled and len(res.get("peaks", [])) > 0:
+                    append_fit_2d_result_to_file(res, cal_x=cal_x, cal_y=cal_y, is_cal=(is_cal_x, is_cal_y), filepath=session.fit_log_filename)
+            except Exception as e:
+                res = {"success": False, "error": str(e), "peaks": [], "count": 0}
+                print(f"[!] 2D coincidence peak search error: {e}", file=sys.stderr)
 
             self.send_response(200)
             self.send_header("Content-type", "application/json")
