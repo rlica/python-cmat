@@ -10,20 +10,18 @@
 <p align="center">
   <img width="960" alt="2D Coincidence Matrix Web Viewer" src="https://github.com/user-attachments/assets/200b73c4-79d1-4c6c-bdd2-b32ac973e0b0" />
   <br>
-  <em>Interactive 2D &gamma;-&gamma; coincidence matrix web viewer with real-time projections, coincidence slicing, and Gamba &amp; Morh&aacute;c 2D peak fitting.</em>
+  <em>Interactive 2D &gamma;-&gamma; coincidence matrix web viewer with real-time projections, coincidence slicing, 1D and 2D peak fitting.</em>
 </p>
 
 <table align="center" width="100%">
   <tr>
     <td align="center" width="50%" valign="top">
-      <strong>3D Matrix Cube Web Viewer</strong><br>
       <img width="100%" alt="3D Matrix Cube Web Viewer" src="https://github.com/user-attachments/assets/23010f23-08bf-42e5-ac0e-db569ad31141" /><br>
-      <em>Multi-plane orthoslicing, 3D coincidence cuts, and 2D Banana ROIs.</em>
+      <em>3D Matrix Cube Web Viewer</em>
     </td>
     <td align="center" width="50%" valign="top">
-      <strong>ENSDF Automated Isotope Identification</strong><br>
       <img width="100%" alt="ENSDF Automated Isotope Identification Pop-up" src="https://github.com/user-attachments/assets/84062ec2-d50d-46ba-bc50-59aaf73473c4" /><br>
-      <em>Physical 2D cascade matching, mass clustering, and file browser.</em>
+      <em>ENSDF Automated Isotope Identification</em>
     </td>
   </tr>
 </table>
