@@ -271,4 +271,87 @@ for res in report["results_2d"]:
     print(f"2D Fit {fit['energy1']} x {fit['energy2']} keV -> {best['nuclide']} (Score: {best['score']}, {best['cascade_type']})")
 ```
 
+---
 
+## Nuclear Half-Life & Lifetime Fitting Tool (`halflife.py`)
+
+`halflife.py` is an analytical nuclear lifetime fitting engine based on `halflife.c` for analyzing time-difference spectra (TAC, TDC, digital CFD timestamp differences) exported from `cmat_webviewer.py` and `cmat3d_webviewer.py`.
+
+It supports both an interactive terminal REPL (matching the classic menu-driven workflow) and a fully scriptable command-line interface.
+
+### Command-Line Interface (CLI)
+
+```bash
+# 1. Interactive terminal menu REPL (classic halflife.c experience):
+python3 halflife.py -i spectrum.dat
+
+# 2. Scriptable automated fitting with initial parameters:
+python3 halflife.py spectrum.dat --t12 19.5 --fwhm 15.2 --centroid 482.0 --bg 10.0 --range 450 750
+
+# 3. Fit and export ASCII .fit file and publication vector PDF:
+python3 halflife.py spectrum.dat --t12 20.0 --fwhm 15.0 --range 450 750 --out fit_result.fit --pdf fit_plot.pdf
+
+# 4. Perform chi-square profile scan over background:
+python3 halflife.py spectrum.dat --scan-bg 0.0 50.0 50
+
+# 5. Compress spectrum by factor of 2 and zero-suppress:
+python3 halflife.py spectrum.dat --compress 2 --zero-suppress --t12 10.0 --range 200 600
+```
+
+#### CLI Options Reference
+
+| Argument | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `input_file` | `str` | *None* | Path to input ASCII spectrum (`.dat`, `.txt`, `.csv`) |
+| `-i`, `--interactive` | `flag` | `False` | Launch interactive terminal REPL menu |
+| `--t12` | `float` | Auto | Initial half-life estimate in channels ($>0$ for right tail, $<0$ for left tail, $0$ for prompt) |
+| `--fix-t12` | `flag` | `False` | Fix half-life during fit (e.g. to fit pure prompt IRF) |
+| `--fwhm` | `float` | Auto | Initial prompt time resolution FWHM ($0$ for pure exponential) |
+| `--fix-fwhm` | `flag` | `False` | Fix FWHM during fit |
+| `--centroid` | `float` | Auto | Initial prompt centroid / peak position |
+| `--fix-centroid` | `flag` | `False` | Fix centroid during fit |
+| `--bg` | `float` | Auto | Initial constant background baseline |
+| `--fix-bg` | `flag` | `False` | Fix background during fit |
+| `--range` | `int int` | `[min, max]` | Fit range window bounds in channels |
+| `--compress` | `int` | `1` | Rebin / compress spectrum channels by factor $N$ |
+| `--zero-suppress` | `flag` | `False` | Suppress non-positive counts during Poisson weighting |
+| `--scan-bg` | `float float int` | Auto | Background $\chi^2$ profile scan `[min max steps]` |
+| `--out` | `str` | *None* | Save fit parameters, covariance, and model curve to `.fit` |
+| `--pdf` | `str` | *None* | Export publication-quality vector PDF plot |
+
+---
+
+### Python API Usage
+
+```python
+from halflife import HalfLifeFitter
+
+# 1. Load spectrum from file or NumPy arrays
+# Supports 1, 2, 3, or 4 column ASCII exports
+fitter = HalfLifeFitter.from_file("LaE-TAC.cmat_Det2_Y_Gated_1437_2458.dat")
+
+# 2. Configure initial parameters & free/fixed flags
+fitter.set_parameters(
+    t12=20.0, fix_t12=False,
+    fwhm=15.0, fix_fwhm=False,
+    centroid=482.0, fix_centroid=False,
+    bg=10.0, fix_bg=False,
+    fit_min=450, fit_max=750
+)
+
+# 3. Perform Levenberg-Marquardt / TRF non-linear fit
+res = fitter.fit()
+
+print(f"Half-life: {res.t12:.4f} +/- {res.t12_err:.4f} ch")
+print(f"FWHM:      {res.fwhm:.4f} +/- {res.fwhm_err:.4f} ch")
+print(f"Centroid:  {res.centroid:.4f} +/- {res.centroid_err:.4f} ch")
+print(f"Chi2/NDF:  {res.chi2_ndf:.3f} (NDF={res.ndf})")
+
+# 4. Perform background chi-square exploration scan
+scan = fitter.scan_background(bg_min=0.0, bg_max=40.0, num_steps=40)
+print(f"Best background from scan: {scan['best_bg']:.2f}")
+
+# 5. Export results
+fitter.export_fit_file("output.fit")
+fitter.export_pdf("output.pdf", title="138La Nuclear Lifetime Fit")
+```

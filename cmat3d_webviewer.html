@@ -665,6 +665,7 @@
     <select id="matrixSelect" class="matrix-select" onchange="onSelectMatrix(this.value)" title="Active 3D Matrix ([ / ] to cycle)"></select>
     <button id="btnOpenFs" class="matrix-open-btn" onclick="openServerBrowser()">📂 Open</button>
     <button id="btnHeaderOpenIsotopeID" class="matrix-open-btn" onclick="openIsotopeSearchPopup()" title="Automatic Isotope Identification [ENSDF] (Opens Pop-up Window)" style="background: #312e81; border-color: #4338ca; color: #a5b4fc; font-weight: 600;">🔬 Isotope ID</button>
+    <button id="btnHeaderOpenHalfLife" class="matrix-open-btn" onclick="openHalfLifePopup()" title="Nuclear Lifetime & Half-Life Fitting [halflife.py] (Opens Pop-up Window)" style="background: #064e3b; border-color: #059669; color: #6ee7b7; font-weight: 600;">⏱️ Half-Life Fit</button>
   </div>
 
   <!-- Dynamic HUD -->
@@ -786,9 +787,12 @@
         <small id="fitLogStatusText" style="color: #888; font-size: 0.65rem; display: block; margin-top: 3px; word-break: break-all;">
           Logs 1D/2D fits as fixed-width one-liners.
         </small>
-        <div style="margin-top: 8px;">
-          <button id="btnOpenIsotopeID" class="primary" onclick="openIsotopeSearchPopup()" style="width: 100%; padding: 5px 8px; font-size: 0.76rem; background: linear-gradient(135deg, #0284c7, #6366f1); border: none; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); cursor: pointer;" title="Open Automatic Nuclear Isotope Identification Pop-up Window (ENSDF database)">
-            <span>🔬</span> Auto Isotope Identification...
+        <div style="margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+          <button id="btnOpenIsotopeID" class="primary" onclick="openIsotopeSearchPopup()" style="padding: 5px 6px; font-size: 0.74rem; background: linear-gradient(135deg, #0284c7, #6366f1); border: none; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); cursor: pointer;" title="Open Automatic Nuclear Isotope Identification Pop-up Window (ENSDF database)">
+            <span>🔬</span> Isotope ID
+          </button>
+          <button id="btnOpenHalfLifeID" class="primary" onclick="openHalfLifePopup()" style="padding: 5px 6px; font-size: 0.74rem; background: linear-gradient(135deg, #059669, #0d9488); border: none; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); cursor: pointer;" title="Open Nuclear Lifetime & Half-Life Fitting Pop-up Window (halflife.py)">
+            <span>⏱️</span> Half-Life Fit
           </button>
         </div>
       </div>
@@ -3977,10 +3981,12 @@
       else if (bananaGateActive && bananaGateResult) tag = 'banana_gate';
       else if (gates1D[0].w.length > 0 || gates1D[1].w.length > 0 || gates1D[2].w.length > 0) tag = 'gated';
 
-      let lines = [`# Exported spectrum for ${mName} - ${axNames[axis]} (${tag})\n# Ch\tEnergy(keV)\tCounts\n`];
+      let lines = [`# Exported spectrum for ${mName} - ${axNames[axis]} (${tag})\n# Ch\tEnergy(keV)\tCounts\tError\n`];
       for (let ch = 0; ch < spec.length; ch++) {
         const en = cal[0] + cal[1] * (ch + 0.5) + cal[2] * Math.pow(ch + 0.5, 2);
-        lines.push(`${ch}\t${en.toFixed(3)}\t${spec[ch]}\n`);
+        const val = spec[ch] || 0;
+        const err = Math.sqrt(Math.max(val, 1.0));
+        lines.push(`${ch}\t${en.toFixed(3)}\t${val}\t${err.toFixed(2)}\n`);
       }
       const blob = new Blob(lines, { type: 'text/plain;charset=utf-8' });
       const url = URL.createObjectURL(blob);
@@ -4320,6 +4326,14 @@
     const left = Math.max(40, Math.floor((window.screen.width - w) / 2));
     const top = Math.max(40, Math.floor((window.screen.height - h) / 2));
     window.open('/isotope_search', 'CMAT_Isotope_Search', `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes`);
+  }
+
+  function openHalfLifePopup() {
+    const w = 1200;
+    const h = 860;
+    const left = Math.max(40, Math.floor((window.screen.width - w) / 2));
+    const top = Math.max(40, Math.floor((window.screen.height - h) / 2));
+    window.open('/halflife_popup.html', 'CMAT_HalfLife_Fitter', `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes`);
   }
 
   async function saveConfig() {

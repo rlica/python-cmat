@@ -240,4 +240,50 @@ Candidate peaks are subjected to physical validation filters:
 ### Stage 4: 2D Non-Maximum Suppression (NMS) & Levenberg-Marquardt Fitting
 Surviving candidates are clustered within $2.5 \times \text{FWHM}$. The strongest local maximum is refined with full Levenberg-Marquardt optimization and parameter covariance estimation. For symmetric matrices ($M_{ij} = M_{ji}$), candidate pairs across the diagonal $(x, y) \leftrightarrow (y, x)$ are deduplicated.
 
+---
 
+## 9. Nuclear Lifetime & Half-Life Fitting (`halflife.py`)
+
+In fast-timing nuclear spectroscopy (e.g. LaBr$_3$(Ce) scintillators, BaF$_2$, TAC, TDC, or digital CFD timestamp time-difference $\Delta T$ matrices), nuclear level half-lives ($T_{1/2}$) are extracted by convolving the instrumental prompt response function (IRF) with the physical exponential decay.
+
+### Analytical Physics Model
+
+The combined model convolves a Gaussian prompt response (representing the instrument time resolution with dispersion $\sigma_g = \text{FWHM} / 2.35482$) with an exponential radioactive decay:
+
+$$F(x) = \text{BG} + \frac{A}{\lambda} \cdot \mathcal{M}(x; x_0, \sigma_g, \lambda)$$
+
+Where:
+- $\lambda = \frac{\ln 2}{T_{1/2}}$ is the decay constant ($\text{ch}^{-1}$).
+- For positive half-lives ($T_{1/2} > 0$, right-sided decay tail $x > x_0$):
+  $$F(x) = \text{BG} + \frac{A}{2} \exp\left( \frac{\sigma_g^2 \lambda^2}{2} - \lambda(x - x_0) \right) \text{erfc}\left( \frac{\sigma_g \lambda - (x - x_0)/\sigma_g}{\sqrt{2}} \right)$$
+- For negative half-lives ($T_{1/2} < 0$, inverted / left-sided decay tail $x < x_0$):
+  $$F(x) = \text{BG} + \frac{A}{2} \exp\left( \frac{\sigma_g^2 \lambda^2}{2} + \lambda(x - x_0) \right) \text{erfc}\left( \frac{\sigma_g \lambda + (x - x_0)/\sigma_g}{\sqrt{2}} \right)$$
+- For prompt-only resolution calibration ($T_{1/2} = 0$):
+  $$F(x) = \text{BG} + A \exp\left(-\frac{(x - x_0)^2}{2\sigma_g^2}\right)$$
+- For pure exponential decay without prompt broadening ($\text{FWHM} = 0$):
+  $$F(x) = \text{BG} + A \exp(-\lambda |x - x_0|) \cdot \Theta(\pm(x - x_0))$$
+
+### Numerical Stability via Scaled Complementary Error Function
+
+Direct evaluation of $\exp(\dots) \text{erfc}(u)$ can suffer from severe floating-point underflow or overflow for large $u$. `python-cmat` implements numerically stable evaluation using `scipy.special.erfcx`:
+
+$$\exp(z) \text{erfc}(u) = \text{erfcx}(u) \cdot \exp\left( z - u^2 \right) = \text{erfcx}(u) \cdot \exp\left( -\left(\frac{x - x_0}{\sqrt{2}\sigma_g}\right)^2 \right)$$
+
+For deep tail regions ($u < -25$), the standard asymptotic transformation $\text{erfc}(u) = 2 - \text{erfc}(-u)$ prevents overflow.
+
+### Background Profiling ($\chi^2$ Scan)
+
+Because the background offset and exponential decay slope can exhibit strong mathematical covariance in truncated fit ranges, `halflife.py` provides automated $\chi^2$ profiling over fixed background grids:
+1. Fix background to a sequence of values $B_k \in [B_{\text{min}}, B_{\text{max}}]$.
+2. Perform bounded Levenberg-Marquardt / Trust Region Reflective optimization over free parameters $(T_{1/2}, \text{FWHM}, x_0, A)$.
+3. Record $\chi^2(B_k)$ and locate the global parabolic minimum $\chi^2_{\text{min}}$.
+4. Calculate $1\sigma$ confidence limits from the profile crossing points $\chi^2(B) = \chi^2_{\text{min}} + 1.0$.
+
+### Error Propagation
+
+For coincidence-gated time spectra $Y = W - s \cdot B$, the statistical variance per bin is propagated as:
+$$\sigma_{Y, i} = \sqrt{\max(|Y_i|, 1.0) \cdot (1.0 + s)}$$
+and for raw un-gated time spectra:
+$$\sigma_{Y, i} = \sqrt{\max(Y_i, 1.0)}$$
+These uncertainties are utilized as inverse-variance weights $w_i = 1 / \sigma_{Y, i}$ in the minimization objective:
+$$\chi^2 = \sum_{i} \left(\frac{y_i - F(x_i)}{\sigma_i}\right)^2$$

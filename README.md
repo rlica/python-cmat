@@ -45,6 +45,7 @@
 - **1D & 2D Peak Fitting**: Fits Gaussian, RadWare / SAMPO exponential tail, and Hypermet EMG profiles with complete parameter covariance. Decomposes 2D coincidence peaks with Gamba & Morhác 4-component background analysis.
 - **Automatic 2D Coincidence Peak Search**: 4-stage hybrid 2D peak search engine (`P` in 2D) combining 1D CWT projection seeding, local Gamba 4-component decomposition, false Compton scattering ridge & cross-talk filtering, and 2D non-maximum suppression (NMS) with collision-free zoom-adaptive label rendering.
 - **Fit Results File Logging**: Seamlessly appends 1D and 2D fit results to clean, fixed-width text logs (`fit_results_<timestamp>.txt`) with right-aligned formatting, accommodating 10+ digit counts and error values. Toggleable via UI button, CLI startup flag (`--fit-log`), or macro command (`fit_log`).
+- **Nuclear Half-Life & Lifetime Fitting (`halflife.py`)**: Analytical nuclear lifetime fitting engine convolving Gaussian prompt instrumental response (IRF) with exponential radioactive decay and constant background offset. Supports interactive terminal REPL, scriptable CLI, interactive web pop-up viewer (`⏱️ Half-Life Fit`), and background $\chi^2$ profile exploration.
 - **ENSDF Automated Isotope Identification**: 100% offline, local SQLite-indexed nuclear structure search engine (`ensdf_search.py`) querying all 300+ ENSDF mass chains. Identifies 1D photopeaks and 2D coincidence cascades using physical transition topologies (direct prompt cascades, sequential intermediate transitions, high-excitation damping) and global mass-clustering with parsimonious minimum isotope set-cover. Accessible via web pop-up with interactive server file browser (`📂 Browse...`) or command-line.
 - **Coincidence & Banana Gating**: Multi-gate peak ($W$) and background ($X$) slicing with automatic channel normalization, plus 2D polygonal Banana graphical ROIs (`Shift+G` Peak / `Shift+B` Bg) for 2D area determination and 3D coincidence projection cuts.
 - **Multi-Matrix Differential Analysis**: Instant cycling (`[` / `]`) across multiple matrices while locking zoom, gates, and auto-refitted peak parameters.
@@ -155,7 +156,20 @@ python3 ensdf_search.py -c 1434.2 935.3 --tol 1.5
 python3 ensdf_search.py -g 1480.3 --tol 1.5
 ```
 
-### 5. Python Library API (`cmat.py` & `cmat3d.py`)
+### 5. Nuclear Half-Life & Lifetime Fitting (`halflife.py`)
+
+```bash
+# Interactive terminal REPL menu (matching classic halflife.c):
+python3 halflife.py -i spectrum.dat
+
+# Automated fit with initial guesses and export to ASCII .fit and vector PDF:
+python3 halflife.py spectrum.dat --t12 20.0 --fwhm 15.0 --range 450 750 --out fit.fit --pdf fit.pdf
+
+# Background chi-square profile exploration scan:
+python3 halflife.py spectrum.dat --scan-bg 0.0 40.0 50
+```
+
+### 6. Python Library API (`cmat.py` & `cmat3d.py`)
 
 #### 2D Matrix API (`cmat.py`)
 ```python

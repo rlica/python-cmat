@@ -1368,6 +1368,176 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps(res_data).encode("utf-8"))
 
+        elif path == "/halflife" or path == "/halflife_popup.html" or path == "/lifetime" or path.startswith("/halflife") or path.startswith("/lifetime"):
+            popup_path = Path(__file__).resolve().parent / "halflife_popup.html"
+            if not popup_path.exists():
+                self.send_error(404, "halflife_popup.html not found")
+                return
+            with open(popup_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            self.send_response(200)
+            self.send_header("Content-type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(content.encode("utf-8"))
+
+        elif path.startswith("/api/halflife/files"):
+            import datetime
+            files = []
+            patterns = ["*.dat", "*.txt", "*.fit"]
+            seen = set()
+            for pat in patterns:
+                for p in sorted(Path(".").glob(pat), key=lambda x: x.stat().st_mtime, reverse=True):
+                    if p.name in seen or p.name.startswith("."):
+                        continue
+                    seen.add(p.name)
+                    st = p.stat()
+                    mtime_str = datetime.datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                    files.append({
+                        "name": p.name,
+                        "path": str(p.resolve()),
+                        "size_bytes": st.st_size,
+                        "modified": mtime_str
+                    })
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": True, "files": files}).encode("utf-8"))
+
+        elif path.startswith("/api/halflife/load"):
+            from halflife import load_ascii_spectrum
+            fn = query.get("file", [""])[0].strip()
+            use_energy = int(query.get("use_energy", [0])[0]) == 1
+            if not fn:
+                self.send_response(400)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "No file parameter provided"}).encode("utf-8"))
+                return
+
+            filepath = Path(fn)
+            if not filepath.exists():
+                alt = Path(__file__).resolve().parent / fn
+                if alt.exists():
+                    filepath = alt
+                else:
+                    self.send_response(404)
+                    self.send_header("Content-type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": f"File '{fn}' not found"}).encode("utf-8"))
+                    return
+
+            try:
+                spec_obj = load_ascii_spectrum(filepath, use_energy=use_energy)
+                resp = {
+                    "success": True,
+                    "filename": spec_obj.filename,
+                    "x": spec_obj.x.tolist(),
+                    "y": spec_obj.y.tolist(),
+                    "dy": spec_obj.dy.tolist(),
+                    "x_energy": spec_obj.x_energy.tolist() if spec_obj.x_energy is not None else None,
+                    "header_lines": spec_obj.header_lines,
+                    "is_gated": spec_obj.is_gated,
+                    "bg_scale_factor": spec_obj.bg_scale_factor,
+                    "x_label": spec_obj.x_label
+                }
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(resp).encode("utf-8"))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+
+        elif path.startswith("/api/halflife/active_spectrum"):
+            axis = int(query.get("axis", [0])[0])
+            session = self.get_session()
+            spec = session.get_1d_spectrum(axis)
+            if spec is None or len(spec) == 0:
+                self.send_response(404)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": f"No spectrum available on Axis {axis}"}).encode("utf-8"))
+                return
+
+            m = session.get_active_matrix()
+            mname = m['name'] if m else "matrix3d"
+            cal = session.get_cal(axis)
+            dy_arr = np.sqrt(np.maximum(spec, 1.0))
+            x_arr = np.arange(len(spec), dtype=np.float64)
+            x_energy = np.array([cal[0] + cal[1]*ch + (cal[2]*(ch**2) if len(cal)>2 else 0) for ch in x_arr], dtype=np.float64) if (cal[1] != 1.0 or cal[0] != 0.0) else None
+
+            resp = {
+                "success": True,
+                "filename": f"{mname}_Axis{axis+1}.dat",
+                "x": x_arr.tolist(),
+                "y": spec.tolist(),
+                "dy": dy_arr.tolist(),
+                "x_energy": x_energy.tolist() if x_energy is not None else None,
+                "header_lines": [f"# Active 1D Spectrum from 3D Matrix {mname} - Axis {axis+1}"],
+                "is_gated": False,
+                "bg_scale_factor": 0.0,
+                "x_label": "Channel"
+            }
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(resp).encode("utf-8"))
+
+        elif path.startswith("/api/halflife/export_pdf"):
+            from halflife import HalfLifeFitter
+            fn = query.get("file", ["spectrum.dat"])[0].strip()
+            t12 = float(query.get("t12", [20.0])[0])
+            fwhm = float(query.get("fwhm", [15.0])[0])
+            centroid = float(query.get("centroid", [0.0])[0])
+            scale = float(query.get("scale", [1000.0])[0])
+            bg = float(query.get("bg", [0.0])[0])
+            r0 = float(query.get("r0", [0.0])[0])
+            r1 = float(query.get("r1", [0.0])[0])
+            is_log = int(query.get("log", [0])[0]) == 1
+
+            fitter = HalfLifeFitter()
+            filepath = Path(fn)
+            if not filepath.exists():
+                filepath = Path(__file__).resolve().parent / fn
+
+            try:
+                if filepath.exists():
+                    fitter.load_data(filepath)
+                else:
+                    session = self.get_session()
+                    spec = session.get_1d_spectrum(0)
+                    fitter.set_data(np.arange(len(spec)), spec)
+
+                res = fitter.fit(
+                    t12=t12, fwhm=fwhm, centroid=centroid, scale=scale, bg=bg,
+                    freepars=[False, False, False, False, False],
+                    fit_range=(r0, r1) if (r1 > r0) else None
+                )
+
+                import tempfile
+                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                    tmp_pdf_path = Path(tmp.name)
+
+                fitter.export_plot(tmp_pdf_path, log_scale=is_log)
+                pdf_bytes = tmp_pdf_path.read_bytes()
+                try:
+                    tmp_pdf_path.unlink()
+                except Exception:
+                    pass
+
+                self.send_response(200)
+                self.send_header("Content-type", "application/pdf")
+                self.send_header("Content-Disposition", f'attachment; filename="{Path(fn).stem}_halflife_fit.pdf"')
+                self.end_headers()
+                self.wfile.write(pdf_bytes)
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+
         else:
             self.send_error(404, "Not Found")
 
@@ -1431,6 +1601,117 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
                 self.send_header("Content-type", "application/json")
                 self.end_headers()
                 self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+
+        elif self.path == "/api/halflife/fit":
+            content_len = int(self.headers.get("Content-Length", 0))
+            body_bytes = self.rfile.read(content_len)
+            try:
+                data = json.loads(body_bytes.decode("utf-8"))
+                from halflife import HalfLifeFitter
+                fitter = HalfLifeFitter()
+                x_arr = np.array(data["x"], dtype=np.float64)
+                y_arr = np.array(data["y"], dtype=np.float64)
+                dy_arr = np.array(data["dy"], dtype=np.float64) if "dy" in data else None
+                fitter.set_data(x_arr, y_arr, dy=dy_arr)
+
+                fit_range = tuple(data["fit_range"]) if ("fit_range" in data and data["fit_range"]) else None
+                freepars = data.get("freepars", [True, True, True, True, False])
+
+                res = fitter.fit(
+                    t12=data.get("t12"),
+                    fwhm=data.get("fwhm"),
+                    centroid=data.get("centroid"),
+                    scale=data.get("scale"),
+                    bg=data.get("bg"),
+                    freepars=freepars,
+                    fit_range=fit_range
+                )
+
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(res).encode("utf-8"))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+
+        elif self.path == "/api/halflife/scan_bg":
+            content_len = int(self.headers.get("Content-Length", 0))
+            body_bytes = self.rfile.read(content_len)
+            try:
+                data = json.loads(body_bytes.decode("utf-8"))
+                from halflife import HalfLifeFitter
+                fitter = HalfLifeFitter()
+                x_arr = np.array(data["x"], dtype=np.float64)
+                y_arr = np.array(data["y"], dtype=np.float64)
+                dy_arr = np.array(data["dy"], dtype=np.float64) if "dy" in data else None
+                fitter.set_data(x_arr, y_arr, dy=dy_arr)
+
+                fit_range = tuple(data["fit_range"]) if ("fit_range" in data and data["fit_range"]) else None
+                fitter.active_range = fit_range
+                fitter.pars = [
+                    float(data.get("t12", 20.0)),
+                    float(data.get("fwhm", 15.0)),
+                    float(data.get("centroid", 0.0)),
+                    float(data.get("scale", 1000.0)),
+                    float(data.get("bg", 0.0))
+                ]
+                fitter.freepars = data.get("freepars", [True, True, True, True, False])
+
+                b_min = float(data["b_min"]) if "b_min" in data else None
+                b_max = float(data["b_max"]) if "b_max" in data else None
+                steps = int(data.get("steps", 21))
+
+                scan_res = fitter.scan_background(b_min=b_min, b_max=b_max, steps=steps, apply_best=True)
+
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(scan_res).encode("utf-8"))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+
+        elif self.path == "/api/halflife/compress":
+            content_len = int(self.headers.get("Content-Length", 0))
+            body_bytes = self.rfile.read(content_len)
+            try:
+                data = json.loads(body_bytes.decode("utf-8"))
+                from halflife import HalfLifeFitter
+                fitter = HalfLifeFitter()
+                x_arr = np.array(data["x"], dtype=np.float64)
+                y_arr = np.array(data["y"], dtype=np.float64)
+                dy_arr = np.array(data["dy"], dtype=np.float64) if "dy" in data else None
+                fitter.set_data(x_arr, y_arr, dy=dy_arr)
+                fitter.spec.filename = data.get("filename", "compressed")
+
+                factor = int(data.get("factor", 2))
+                new_spec = fitter.compress(factor)
+
+                resp = {
+                    "success": True,
+                    "filename": new_spec.filename,
+                    "x": new_spec.x.tolist(),
+                    "y": new_spec.y.tolist(),
+                    "dy": new_spec.dy.tolist(),
+                    "x_energy": None,
+                    "is_gated": False,
+                    "bg_scale_factor": 0.0,
+                    "x_label": new_spec.x_label
+                }
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(resp).encode("utf-8"))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
 
         else:
             self.send_error(404, "Not Found")

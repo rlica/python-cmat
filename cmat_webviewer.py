@@ -2077,24 +2077,31 @@ def generate_pdf_2d(matrix, x0, x1, y0, y1, cmap_name="turbo", scale_mode="log",
     return buf.getvalue()
 
 
-def export_1d_ascii(filepath: Path, spec: np.ndarray, cal: list = None, header: str = "") -> None:
-    """Export 1D spectrum to ASCII .dat file with columns: Channel, Energy (if calibrated), Counts."""
+def export_1d_ascii(filepath: Path, spec: np.ndarray, cal: list = None, header: str = "", dy: np.ndarray = None, is_gated: bool = False, bg_scale: float = 0.0) -> None:
+    """Export 1D spectrum to ASCII .dat file with columns: Channel, Energy (if calibrated), Counts, Error."""
     filepath = Path(filepath)
     filepath.parent.mkdir(parents=True, exist_ok=True)
     is_cal = is_calibrated_coeffs(cal)
+    
+    if dy is None:
+        if is_gated and bg_scale > 0:
+            dy = np.sqrt(np.maximum(np.abs(spec), 1.0) * (1.0 + bg_scale))
+        else:
+            dy = np.sqrt(np.maximum(spec, 1.0))
+
     with open(filepath, "w", encoding="utf-8") as f:
         f.write("# python-cmat 1D Spectrum Export\n")
         if header:
             f.write(f"# {header}\n")
         if is_cal:
-            f.write("# Channel\tEnergy_keV\tCounts\n")
-            for ch, val in enumerate(spec):
+            f.write("# Channel\tEnergy_keV\tCounts\tError\n")
+            for ch, (val, err) in enumerate(zip(spec, dy)):
                 e = ch_to_energy(ch, cal)
-                f.write(f"{ch}\t{e:.4f}\t{val:.2f}\n")
+                f.write(f"{ch}\t{e:.4f}\t{val:.2f}\t{err:.2f}\n")
         else:
-            f.write("# Channel\tCounts\n")
-            for ch, val in enumerate(spec):
-                f.write(f"{ch}\t{val:.2f}\n")
+            f.write("# Channel\tCounts\tError\n")
+            for ch, (val, err) in enumerate(zip(spec, dy)):
+                f.write(f"{ch}\t{val:.2f}\t{err:.2f}\n")
 
 
 def export_amat_ascii(filepath: Path, matrix: np.ndarray, header: str = "") -> None:
@@ -4480,6 +4487,8 @@ class CMATCommandInterpreter:
             self.cmd_export_1d(args)
         elif verb in ("export_amat", "export_mat", "exportamat"):
             self.cmd_export_amat(args)
+        elif verb in ("halflife", "fit_halflife", "lifetime"):
+            self.cmd_halflife(args)
         elif verb in ("macro", "run") or verb.startswith("@"):
             if verb.startswith("@"):
                 args = [verb[1:]] + args
@@ -4531,8 +4540,11 @@ class CMATCommandInterpreter:
         print("  Export & Publishing:")
         print("    pdf_1d <axis> <out.pdf> [--fit]     Export vector PDF of 1D (or gated) spectrum")
         print("    pdf_2d <out.pdf> [--x ...] [--fit]  Export vector PDF of 2D coincidence matrix")
-        print("    export_1d <axis> <out.dat>          Export 1D spectrum to ASCII data table")
+        print("    export_1d <axis> <out.dat>          Export 1D spectrum to ASCII data table (with errors)")
         print("    export_amat <out.mat>               Export 2D matrix to ASCII matrix format")
+        print()
+        print("  Lifetime & Half-Life Fitting:")
+        print("    halflife <axis|file.dat> [--t12 V] [--fwhm V] [--centroid V] [--bg V] [--range min max] [--scan-bg] [--out f.fit] [--pdf f.pdf]")
         print()
         print("  Scripting & Control:")
         print("    macro <filepath>                    Execute commands from macro script file")
@@ -5277,8 +5289,13 @@ class CMATCommandInterpreter:
         outfile = Path(pos[1])
         spec = self.session.get_spectrum(axis)
         m = self.session.get_active_matrix()
+        gate = self.session.gates.get(1 - axis)
+        is_gated = gate is not None and bool(gate.get("w_gates"))
+        bg_scale = gate.get("scale", 0.0) if is_gated else 0.0
         hdr = f"Matrix: {m['name'] if m else 'unknown'} | Det {axis + 1} ({'X' if axis == 0 else 'Y'})"
-        export_1d_ascii(outfile, spec, cal=self.session.get_cal(axis), header=hdr)
+        if is_gated:
+            hdr += f" | Gated Coincidence Cut | BG scale: {bg_scale:.4f}"
+        export_1d_ascii(outfile, spec, cal=self.session.get_cal(axis), header=hdr, is_gated=is_gated, bg_scale=bg_scale)
         print(f"[+] Exported 1D spectrum data: {outfile.resolve()}")
 
     def cmd_export_amat(self, args: list):
@@ -5294,6 +5311,137 @@ class CMATCommandInterpreter:
         hdr = f"Matrix: {m['name']}"
         export_amat_ascii(outfile, m["matrix"], header=hdr)
         print(f"[+] Exported 2D matrix data: {outfile.resolve()}")
+
+    def cmd_halflife(self, args: list):
+        """
+        Fit a nuclear lifetime / half-life spectrum from active 1D projection or .dat file.
+        Syntax:
+          halflife <axis|filepath> [--t12 val] [--fwhm val] [--centroid val] [--scale val] [--bg val]
+                                   [--range min max] [--fix-t12] [--fix-fwhm] [--fix-centroid] [--fix-scale]
+                                   [--free-bg] [--scan-bg] [--energy] [--compress N] [--out out.fit] [--pdf out.pdf]
+        """
+        from halflife import HalfLifeFitter, save_fit_file
+        pos, flags = parse_cmd_tokens(args)
+        if not pos:
+            print("[!] Usage: halflife <axis|filepath.dat> [--t12 val] [--fwhm val] [--centroid val] [--bg val] [--range min max] [--scan-bg] [--out out.fit] [--pdf out.pdf]", file=sys.stderr)
+            return
+
+        target = pos[0]
+        fitter = HalfLifeFitter()
+        source_name = ""
+
+        if target in ("0", "1"):
+            axis = int(target)
+            spec = self.session.get_spectrum(axis)
+            if spec is None or len(spec) == 0:
+                print(f"[!] No spectrum available on Axis {axis}.", file=sys.stderr)
+                return
+            m = self.session.get_active_matrix()
+            source_name = f"{m['name'] if m else 'matrix'}_axis{axis}"
+            cal = self.session.get_cal(axis)
+            gate = self.session.gates.get(1 - axis)
+            is_gated = gate is not None and bool(gate.get("w_gates"))
+            bg_scale = gate.get("scale", 0.0) if is_gated else 0.0
+            
+            if "energy" in flags and is_calibrated_coeffs(cal):
+                x_arr = np.array([ch_to_energy(ch, cal) for ch in range(len(spec))], dtype=np.float64)
+                x_label = "Energy (keV)"
+            else:
+                x_arr = np.arange(len(spec), dtype=np.float64)
+                x_label = "Channel"
+
+            if is_gated and bg_scale > 0:
+                dy_arr = np.sqrt(np.maximum(np.abs(spec), 1.0) * (1.0 + bg_scale))
+            else:
+                dy_arr = np.sqrt(np.maximum(spec, 1.0))
+
+            fitter.set_data(x_arr, spec, dy=dy_arr, x_label=x_label)
+        else:
+            filepath = Path(target)
+            if not filepath.exists():
+                alt_path = Path(__file__).resolve().parent / target
+                if alt_path.exists():
+                    filepath = alt_path
+                else:
+                    print(f"[!] Error: Spectrum file '{target}' not found.", file=sys.stderr)
+                    return
+            source_name = filepath.name
+            use_energy = "energy" in flags
+            fitter.load_data(filepath, use_energy=use_energy)
+
+        if "compress" in flags:
+            try:
+                comp_factor = int(flags["compress"])
+                fitter.compress(comp_factor)
+            except Exception as e:
+                print(f"[!] Warning: Compression failed: {e}", file=sys.stderr)
+
+        t12 = float(flags["t12"]) if "t12" in flags else None
+        fwhm = float(flags["fwhm"]) if "fwhm" in flags else None
+        centroid = float(flags["centroid"]) if "centroid" in flags else None
+        scale = float(flags["scale"]) if "scale" in flags else None
+        bg = float(flags["bg"]) if "bg" in flags else None
+
+        freepars = [
+            "fix-t12" not in flags,
+            "fix-fwhm" not in flags,
+            "fix-centroid" not in flags,
+            "fix-scale" not in flags,
+            "free-bg" in flags or "float-bg" in flags
+        ]
+
+        fit_range = None
+        if "range" in flags:
+            r_parts = str(flags["range"]).split()
+            if len(r_parts) >= 2:
+                try:
+                    fit_range = (float(r_parts[0]), float(r_parts[1]))
+                except ValueError:
+                    pass
+
+        if "scan-bg" in flags or "scan_bg" in flags:
+            print(f"[*] Exploring background chi^2 profile on '{source_name}'...")
+            fitter.scan_background(apply_best=True)
+
+        res = fitter.fit(
+            t12=t12,
+            fwhm=fwhm,
+            centroid=centroid,
+            scale=scale,
+            bg=bg,
+            freepars=freepars,
+            fit_range=fit_range
+        )
+
+        bar = "═" * 60
+        print(f"\n{bar}")
+        print(f" ⏱️ Half-Life Fit Results: {source_name}")
+        print(bar)
+        t12_s = f"+/- {res['t12_err']:.3f}" if freepars[0] else "(FIXED)"
+        fwhm_s = f"+/- {res['fwhm_err']:.3f}" if freepars[1] else "(FIXED)"
+        cent_s = f"+/- {res['centroid_err']:.2f}" if freepars[2] else "(FIXED)"
+        scale_s = f"+/- {res['scale_err']:.2f}" if freepars[3] else "(FIXED)"
+        bg_s = f"+/- {res['bg_err']:.2f}" if freepars[4] else "(FIXED / not fitted)"
+
+        print(f"  Half-Life (t_1/2) : {res['t12']:9.3f} {t12_s} {fitter.spec.x_label}")
+        print(f"  Prompt FWHM       : {res['fwhm']:9.3f} {fwhm_s} {fitter.spec.x_label}")
+        print(f"  Centroid          : {res['centroid']:9.2f} {cent_s}")
+        print(f"  Scaling Factor    : {res['scale']:9.2f} {scale_s}")
+        print(f"  Background Level  : {res['bg']:9.2f} {bg_s}")
+        print(f"  Chi^2 / D.O.F.    : {res['chisq_ndf']:9.3f} ({res['ndf']} degrees of freedom)")
+        print(f"{bar}\n")
+
+        # Save .fit if requested
+        if "out" in flags or "o" in flags:
+            out_file = Path(flags.get("out") or flags.get("o"))
+            save_fit_file(out_file, source_name, fitter.spec, res)
+            print(f"[+] Saved fit results to: {out_file.resolve()}")
+
+        # Export PDF if requested
+        if "pdf" in flags:
+            pdf_path = Path(flags["pdf"])
+            fitter.export_plot(pdf_path)
+            print(f"[+] Exported fit plot PDF: {pdf_path.resolve()}")
 
     def cmd_macro(self, args: list):
         if not args:
@@ -6482,6 +6630,195 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps(res_data).encode("utf-8"))
 
+        elif self.path == "/halflife" or self.path == "/halflife_popup.html" or self.path == "/lifetime" or self.path.startswith("/halflife") or self.path.startswith("/lifetime"):
+            popup_path = Path(__file__).resolve().parent / "halflife_popup.html"
+            if not popup_path.exists():
+                self.send_error(404, "halflife_popup.html not found")
+                return
+            with open(popup_path, "r", encoding="utf-8") as f:
+                content = f.read()
+            self.send_response(200)
+            self.send_header("Content-type", "text/html; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(content.encode("utf-8"))
+
+        elif self.path.startswith("/api/halflife/files"):
+            import datetime
+            files = []
+            patterns = ["*.dat", "*.txt", "*.fit"]
+            seen = set()
+            for pat in patterns:
+                for p in sorted(Path(".").glob(pat), key=lambda x: x.stat().st_mtime, reverse=True):
+                    if p.name in seen or p.name.startswith("."):
+                        continue
+                    seen.add(p.name)
+                    st = p.stat()
+                    mtime_str = datetime.datetime.fromtimestamp(st.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
+                    files.append({
+                        "name": p.name,
+                        "path": str(p.resolve()),
+                        "size_bytes": st.st_size,
+                        "modified": mtime_str
+                    })
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"success": True, "files": files}).encode("utf-8"))
+
+        elif self.path.startswith("/api/halflife/load"):
+            from urllib.parse import urlparse, parse_qs
+            from halflife import load_ascii_spectrum
+            query = parse_qs(urlparse(self.path).query)
+            fn = query.get("file", [""])[0].strip()
+            use_energy = int(query.get("use_energy", [0])[0]) == 1
+            if not fn:
+                self.send_response(400)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": "No file parameter provided"}).encode("utf-8"))
+                return
+
+            filepath = Path(fn)
+            if not filepath.exists():
+                alt = Path(__file__).resolve().parent / fn
+                if alt.exists():
+                    filepath = alt
+                else:
+                    self.send_response(404)
+                    self.send_header("Content-type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps({"error": f"File '{fn}' not found"}).encode("utf-8"))
+                    return
+
+            try:
+                spec_obj = load_ascii_spectrum(filepath, use_energy=use_energy)
+                resp = {
+                    "success": True,
+                    "filename": spec_obj.filename,
+                    "x": spec_obj.x.tolist(),
+                    "y": spec_obj.y.tolist(),
+                    "dy": spec_obj.dy.tolist(),
+                    "x_energy": spec_obj.x_energy.tolist() if spec_obj.x_energy is not None else None,
+                    "header_lines": spec_obj.header_lines,
+                    "is_gated": spec_obj.is_gated,
+                    "bg_scale_factor": spec_obj.bg_scale_factor,
+                    "x_label": spec_obj.x_label
+                }
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(resp).encode("utf-8"))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+
+        elif self.path.startswith("/api/halflife/active_spectrum"):
+            from urllib.parse import urlparse, parse_qs
+            query = parse_qs(urlparse(self.path).query)
+            axis = int(query.get("axis", [1])[0])
+            session = self.get_session()
+            spec = session.get_spectrum(axis)
+            if spec is None or len(spec) == 0:
+                self.send_response(404)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": f"No spectrum available on Axis {axis}"}).encode("utf-8"))
+                return
+
+            m = session.get_active_matrix()
+            mname = m['name'] if m else "matrix"
+            cal = session.get_cal(axis)
+            gate = session.gates.get(1 - axis)
+            is_gated = gate is not None and bool(gate.get("w_gates"))
+            bg_scale = gate.get("scale", 0.0) if is_gated else 0.0
+
+            x_arr = np.arange(len(spec), dtype=np.float64)
+            x_energy = np.array([ch_to_energy(ch, cal) for ch in range(len(spec))], dtype=np.float64) if is_calibrated_coeffs(cal) else None
+
+            if is_gated and bg_scale > 0:
+                dy_arr = np.sqrt(np.maximum(np.abs(spec), 1.0) * (1.0 + bg_scale))
+            else:
+                dy_arr = np.sqrt(np.maximum(spec, 1.0))
+
+            det_name = f"Det {axis+1} ({'X' if axis==0 else 'Y'})"
+            hdr = [f"# Active Gated Spectrum from {mname} - {det_name}"]
+            if is_gated:
+                hdr.append(f"# Peak Gates: {gate.get('w_gates')} | BG scale: {bg_scale:.4f}")
+
+            resp = {
+                "success": True,
+                "filename": f"{mname}_{'Det1_X' if axis==0 else 'Det2_Y'}{'_gated' if is_gated else ''}.dat",
+                "x": x_arr.tolist(),
+                "y": spec.tolist(),
+                "dy": dy_arr.tolist(),
+                "x_energy": x_energy.tolist() if x_energy is not None else None,
+                "header_lines": hdr,
+                "is_gated": is_gated,
+                "bg_scale_factor": bg_scale,
+                "x_label": "Channel"
+            }
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(resp).encode("utf-8"))
+
+        elif self.path.startswith("/api/halflife/export_pdf"):
+            from urllib.parse import urlparse, parse_qs
+            from halflife import HalfLifeFitter
+            query = parse_qs(urlparse(self.path).query)
+            fn = query.get("file", ["spectrum.dat"])[0].strip()
+            t12 = float(query.get("t12", [20.0])[0])
+            fwhm = float(query.get("fwhm", [15.0])[0])
+            centroid = float(query.get("centroid", [0.0])[0])
+            scale = float(query.get("scale", [1000.0])[0])
+            bg = float(query.get("bg", [0.0])[0])
+            r0 = float(query.get("r0", [0.0])[0])
+            r1 = float(query.get("r1", [0.0])[0])
+            is_log = int(query.get("log", [0])[0]) == 1
+
+            fitter = HalfLifeFitter()
+            filepath = Path(fn)
+            if not filepath.exists():
+                filepath = Path(__file__).resolve().parent / fn
+            
+            try:
+                if filepath.exists():
+                    fitter.load_data(filepath)
+                else:
+                    session = self.get_session()
+                    spec = session.get_spectrum(1)
+                    fitter.set_data(np.arange(len(spec)), spec)
+
+                res = fitter.fit(
+                    t12=t12, fwhm=fwhm, centroid=centroid, scale=scale, bg=bg,
+                    freepars=[False, False, False, False, False],
+                    fit_range=(r0, r1) if (r1 > r0) else None
+                )
+
+                import tempfile
+                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
+                    tmp_pdf_path = Path(tmp.name)
+
+                fitter.export_plot(tmp_pdf_path, log_scale=is_log)
+                pdf_bytes = tmp_pdf_path.read_bytes()
+                try:
+                    tmp_pdf_path.unlink()
+                except Exception:
+                    pass
+
+                self.send_response(200)
+                self.send_header("Content-type", "application/pdf")
+                self.send_header("Content-Disposition", f'attachment; filename="{Path(fn).stem}_halflife_fit.pdf"')
+                self.end_headers()
+                self.wfile.write(pdf_bytes)
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+
         else:
             self.send_error(404, "Not Found")
 
@@ -6593,6 +6930,117 @@ class CMATWebHandler(BaseHTTPRequestHandler):
                 self.send_header("Content-type", "application/json")
                 self.end_headers()
                 self.wfile.write(json.dumps({"success": False, "error": str(e)}).encode("utf-8"))
+
+        elif self.path == "/api/halflife/fit":
+            content_len = int(self.headers.get("Content-Length", 0))
+            body_bytes = self.rfile.read(content_len)
+            try:
+                data = json.loads(body_bytes.decode("utf-8"))
+                from halflife import HalfLifeFitter
+                fitter = HalfLifeFitter()
+                x_arr = np.array(data["x"], dtype=np.float64)
+                y_arr = np.array(data["y"], dtype=np.float64)
+                dy_arr = np.array(data["dy"], dtype=np.float64) if "dy" in data else None
+                fitter.set_data(x_arr, y_arr, dy=dy_arr)
+
+                fit_range = tuple(data["fit_range"]) if ("fit_range" in data and data["fit_range"]) else None
+                freepars = data.get("freepars", [True, True, True, True, False])
+
+                res = fitter.fit(
+                    t12=data.get("t12"),
+                    fwhm=data.get("fwhm"),
+                    centroid=data.get("centroid"),
+                    scale=data.get("scale"),
+                    bg=data.get("bg"),
+                    freepars=freepars,
+                    fit_range=fit_range
+                )
+
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(res).encode("utf-8"))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+
+        elif self.path == "/api/halflife/scan_bg":
+            content_len = int(self.headers.get("Content-Length", 0))
+            body_bytes = self.rfile.read(content_len)
+            try:
+                data = json.loads(body_bytes.decode("utf-8"))
+                from halflife import HalfLifeFitter
+                fitter = HalfLifeFitter()
+                x_arr = np.array(data["x"], dtype=np.float64)
+                y_arr = np.array(data["y"], dtype=np.float64)
+                dy_arr = np.array(data["dy"], dtype=np.float64) if "dy" in data else None
+                fitter.set_data(x_arr, y_arr, dy=dy_arr)
+
+                fit_range = tuple(data["fit_range"]) if ("fit_range" in data and data["fit_range"]) else None
+                fitter.active_range = fit_range
+                fitter.pars = [
+                    float(data.get("t12", 20.0)),
+                    float(data.get("fwhm", 15.0)),
+                    float(data.get("centroid", 0.0)),
+                    float(data.get("scale", 1000.0)),
+                    float(data.get("bg", 0.0))
+                ]
+                fitter.freepars = data.get("freepars", [True, True, True, True, False])
+
+                b_min = float(data["b_min"]) if "b_min" in data else None
+                b_max = float(data["b_max"]) if "b_max" in data else None
+                steps = int(data.get("steps", 21))
+
+                scan_res = fitter.scan_background(b_min=b_min, b_max=b_max, steps=steps, apply_best=True)
+
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(scan_res).encode("utf-8"))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
+
+        elif self.path == "/api/halflife/compress":
+            content_len = int(self.headers.get("Content-Length", 0))
+            body_bytes = self.rfile.read(content_len)
+            try:
+                data = json.loads(body_bytes.decode("utf-8"))
+                from halflife import HalfLifeFitter
+                fitter = HalfLifeFitter()
+                x_arr = np.array(data["x"], dtype=np.float64)
+                y_arr = np.array(data["y"], dtype=np.float64)
+                dy_arr = np.array(data["dy"], dtype=np.float64) if "dy" in data else None
+                fitter.set_data(x_arr, y_arr, dy=dy_arr)
+                fitter.spec.filename = data.get("filename", "compressed")
+
+                factor = int(data.get("factor", 2))
+                new_spec = fitter.compress(factor)
+
+                resp = {
+                    "success": True,
+                    "filename": new_spec.filename,
+                    "x": new_spec.x.tolist(),
+                    "y": new_spec.y.tolist(),
+                    "dy": new_spec.dy.tolist(),
+                    "x_energy": None,
+                    "is_gated": False,
+                    "bg_scale_factor": 0.0,
+                    "x_label": new_spec.x_label
+                }
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps(resp).encode("utf-8"))
+            except Exception as e:
+                self.send_response(500)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({"error": str(e)}).encode("utf-8"))
 
         else:
             self.send_error(404, "Not Found")

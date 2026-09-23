@@ -1,0 +1,1561 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>python-cmat - Nuclear Lifetime & Half-Life Fitting</title>
+  <style>
+    :root {
+      --bg-dark: #090d13;
+      --panel-bg: #131b26;
+      --card-bg: #1a2332;
+      --border: #2b394f;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --accent-cyan: #00e5ff;
+      --accent-blue: #58a6ff;
+      --accent-green: #3fb950;
+      --accent-orange: #d29922;
+      --accent-red: #f85149;
+      --accent-purple: #bc8cff;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg-dark);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      font-size: 13px;
+      line-height: 1.45;
+      padding: 14px;
+      overflow-y: auto;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 14px;
+    }
+
+    .title-group h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--accent-cyan);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .title-group p {
+      font-size: 0.76rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      background: rgba(0, 229, 255, 0.12);
+      color: var(--accent-cyan);
+      border: 1px solid rgba(0, 229, 255, 0.3);
+    }
+
+    .badge-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent-green);
+      box-shadow: 0 0 6px var(--accent-green);
+    }
+
+    /* Grid Layout */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 420px 1fr;
+      gap: 14px;
+      margin-bottom: 14px;
+    }
+
+    @media (max-width: 1024px) {
+      .main-grid { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px 14px;
+      margin-bottom: 12px;
+    }
+
+    .card:last-child { margin-bottom: 0; }
+
+    .card-title {
+      font-size: 0.82rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--accent-blue);
+      margin-bottom: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Form Controls */
+    .form-group {
+      margin-bottom: 10px;
+    }
+
+    .form-group:last-child { margin-bottom: 0; }
+
+    .form-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+      font-weight: 600;
+    }
+
+    .form-label span.val {
+      color: var(--accent-cyan);
+      font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+
+    input[type="text"], input[type="number"], select {
+      width: 100%;
+      background: #0f1622;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 5px 8px;
+      border-radius: 4px;
+      font-size: 0.8rem;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+
+    input[type="text"]:focus, input[type="number"]:focus, select:focus {
+      border-color: var(--accent-cyan);
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent-cyan);
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .row-2col {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .row-3col {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+    }
+
+    /* Buttons */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-size: 0.78rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: #212c3d;
+      color: var(--text);
+      transition: all 0.15s ease-in-out;
+    }
+
+    .btn:hover {
+      background: #2b3a50;
+      border-color: #415573;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #0284c7, #2563eb);
+      border-color: #38bdf8;
+      color: #ffffff;
+      box-shadow: 0 2px 6px rgba(2, 132, 199, 0.35);
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(135deg, #0369a1, #1d4ed8);
+      border-color: #7dd3fc;
+    }
+
+    .btn-success {
+      background: #195e2e;
+      border-color: #2ea043;
+      color: #ffffff;
+    }
+    .btn-success:hover { background: #238636; }
+
+    .btn-warning {
+      background: #744210;
+      border-color: #d29922;
+      color: #fef08a;
+    }
+    .btn-warning:hover { background: #975a16; }
+
+    .btn-sm {
+      padding: 3px 6px;
+      font-size: 0.72rem;
+    }
+
+    .btn-block { width: 100%; }
+
+    /* Parameters Table */
+    .params-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.78rem;
+    }
+
+    .params-table th {
+      text-align: left;
+      padding: 5px 6px;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+    }
+
+    .params-table td {
+      padding: 5px 6px;
+      border-bottom: 1px solid rgba(43, 57, 79, 0.5);
+      vertical-align: middle;
+    }
+
+    .params-table input[type="number"] {
+      padding: 3px 5px;
+      font-size: 0.78rem;
+    }
+
+    .checkbox-container {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      cursor: pointer;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      user-select: none;
+    }
+
+    /* Plot Container */
+    .plot-card {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    .plot-toolbar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 8px;
+      margin-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .plot-wrapper {
+      position: relative;
+      flex: 1;
+      min-height: 440px;
+      background: #0b1118;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Results Card */
+    .results-hero {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .res-metric {
+      background: #111823;
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 8px 10px;
+      text-align: center;
+    }
+
+    .res-metric .lbl {
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-weight: 600;
+      margin-bottom: 2px;
+    }
+
+    .res-metric .val {
+      font-size: 1.1rem;
+      font-weight: 700;
+      color: var(--accent-cyan);
+      font-family: ui-monospace, monospace;
+    }
+
+    .res-metric .err {
+      font-size: 0.74rem;
+      color: #a5b4fc;
+      font-family: ui-monospace, monospace;
+    }
+
+    /* Chi2 Scan Modal */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(4, 7, 12, 0.75);
+      backdrop-filter: blur(3px);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .modal-backdrop.show {
+      display: flex;
+    }
+
+    .modal-content {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      width: 90%;
+      max-width: 760px;
+      max-height: 85vh;
+      overflow-y: auto;
+      padding: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 8px;
+    }
+
+    .modal-header h3 {
+      color: var(--accent-cyan);
+      font-size: 1.05rem;
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      color: var(--text-muted);
+      font-size: 1.2rem;
+      cursor: pointer;
+    }
+    .close-btn:hover { color: var(--accent-red); }
+
+    /* Scan table */
+    .scan-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.76rem;
+      margin-top: 10px;
+    }
+    .scan-table th, .scan-table td {
+      padding: 4px 8px;
+      text-align: right;
+      border-bottom: 1px solid var(--border);
+    }
+    .scan-table th:first-child, .scan-table td:first-child { text-align: left; }
+    .scan-table tr.best-row { background: rgba(0, 229, 255, 0.12); font-weight: 700; color: var(--accent-cyan); }
+
+    .tooltip {
+      position: absolute;
+      background: rgba(13, 20, 30, 0.95);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 6px 9px;
+      font-size: 0.72rem;
+      color: var(--text);
+      pointer-events: none;
+      display: none;
+      z-index: 100;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      font-family: ui-monospace, monospace;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- HEADER -->
+  <header>
+    <div class="title-group">
+      <h1>⏱️ Nuclear Lifetime & Half-Life Fitting</h1>
+      <p>Analytical Convoluted Gaussian-Exponential Decay Spectroscopy Engine (halflife.py)</p>
+    </div>
+    <div style="display: flex; gap: 8px; align-items: center;">
+      <span class="badge" id="specStatusBadge"><span class="badge-dot"></span> Ready</span>
+      <button class="btn btn-sm" onclick="fetchActiveSpectrum()" title="Fetch current 1D gated cut directly from active CMAT webviewer session">📥 Pull from WebViewer</button>
+    </div>
+  </header>
+
+  <!-- MAIN GRID -->
+  <div class="main-grid">
+
+    <!-- LEFT COLUMN: CONTROLS & PARAMS -->
+    <div>
+      
+      <!-- DATASET LOADER -->
+      <div class="card">
+        <div class="card-title">
+          <span>📂 1D Spectrum Dataset</span>
+          <button class="btn btn-sm" onclick="refreshFileList()" title="Reload list of .dat files">🔄 Refresh</button>
+        </div>
+        
+        <div class="form-group">
+          <label class="form-label">Select Server Spectrum File (.dat / .txt / .fit):</label>
+          <select id="fileSelect" onchange="loadFile(this.value)">
+            <option value="">-- Choose Spectrum File --</option>
+          </select>
+        </div>
+
+        <div class="row-2col" style="margin-top: 8px;">
+          <div class="form-group">
+            <label class="form-label">X-Axis Coordinate:</label>
+            <select id="xAxisMode" onchange="updateXAxisMode()">
+              <option value="channel">Channel Coordinates</option>
+              <option value="energy">Calibrated Energy / Time</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Compression / Binning:</label>
+            <div style="display: flex; gap: 4px;">
+              <button class="btn btn-sm btn-block" onclick="compressData(2)">x2</button>
+              <button class="btn btn-sm btn-block" onclick="compressData(4)">x4</button>
+              <button class="btn btn-sm btn-block" onclick="reloadCurrentFile()">1:1</button>
+            </div>
+          </div>
+        </div>
+
+        <div id="fileMetaInfo" style="font-size: 0.72rem; color: var(--text-muted); margin-top: 6px; padding: 4px 6px; background: #101621; border-radius: 3px; border: 1px solid #1f2937;">
+          No spectrum loaded.
+        </div>
+      </div>
+
+      <!-- FIT RANGE -->
+      <div class="card">
+        <div class="card-title">
+          <span>🎯 Fitting Range Bounds</span>
+          <button class="btn btn-sm" onclick="resetRangeFull()">Full Range</button>
+        </div>
+        <div class="row-2col">
+          <div class="form-group">
+            <label class="form-label">X Min:</label>
+            <input type="number" id="rangeMin" step="any" onchange="onRangeInputChange()">
+          </div>
+          <div class="form-group">
+            <label class="form-label">X Max:</label>
+            <input type="number" id="rangeMax" step="any" onchange="onRangeInputChange()">
+          </div>
+        </div>
+      </div>
+
+      <!-- PARAMETERS & FIT CONTROLS -->
+      <div class="card">
+        <div class="card-title">
+          <span>⚙️ Model Parameters & Initial Guesses</span>
+          <button class="btn btn-sm" onclick="autoEstimateGuesses()" title="Auto-detect prompt centroid, FWHM, and decay slope">⚡ Auto Guess</button>
+        </div>
+
+        <table class="params-table">
+          <thead>
+            <tr>
+              <th>Parameter</th>
+              <th style="width: 120px;">Initial / Current</th>
+              <th style="width: 60px; text-align: center;">Fix</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>
+                <strong>t<sub>1/2</sub></strong> <span style="font-size:0.7rem; color:var(--text-muted);">(Half-Life)</span>
+              </td>
+              <td><input type="number" id="p_t12" step="any" oninput="onParamInput()"></td>
+              <td style="text-align: center;">
+                <input type="checkbox" id="fix_t12" onchange="onParamInput()">
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <strong>FWHM</strong> <span style="font-size:0.7rem; color:var(--text-muted);">(Prompt)</span>
+              </td>
+              <td><input type="number" id="p_fwhm" step="any" oninput="onParamInput()"></td>
+              <td style="text-align: center;">
+                <input type="checkbox" id="fix_fwhm" onchange="onParamInput()">
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <strong>Centroid</strong> <span style="font-size:0.7rem; color:var(--text-muted);">(x<sub>0</sub>)</span>
+              </td>
+              <td><input type="number" id="p_centroid" step="any" oninput="onParamInput()"></td>
+              <td style="text-align: center;">
+                <input type="checkbox" id="fix_centroid" onchange="onParamInput()">
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <strong>Scale</strong> <span style="font-size:0.7rem; color:var(--text-muted);">(Area)</span>
+              </td>
+              <td><input type="number" id="p_scale" step="any" oninput="onParamInput()"></td>
+              <td style="text-align: center;">
+                <input type="checkbox" id="fix_scale" onchange="onParamInput()">
+              </td>
+            </tr>
+            <tr>
+              <td>
+                <strong>Background</strong> <span style="font-size:0.7rem; color:var(--text-muted);">(Offset)</span>
+              </td>
+              <td><input type="number" id="p_bg" step="any" oninput="onParamInput()"></td>
+              <td style="text-align: center;">
+                <input type="checkbox" id="fix_bg" checked onchange="onParamInput()" title="Fix baseline level (recommended default)">
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div style="margin-top: 12px; display: grid; grid-template-columns: 1.4fr 1fr; gap: 8px;">
+          <button class="btn btn-primary btn-block" onclick="executeFit()" id="btnFit">▶️ Fit Lifetime Spectrum</button>
+          <button class="btn btn-warning btn-block" onclick="openBgScanModal()" title="Explore chi^2 as function of background offset">🔍 Scan Background</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT COLUMN: PLOT & RESULTS -->
+    <div style="display: flex; flex-direction: column; gap: 12px;">
+
+      <!-- RESULTS SUMMARY HERO -->
+      <div class="card" style="padding: 10px 12px;">
+        <div class="card-title" style="margin-bottom: 8px;">
+          <span>📊 Fit Results & Statistical Metrics</span>
+          <span id="fitStatusBadge" style="font-size:0.72rem; color:var(--text-muted);">Unfitted</span>
+        </div>
+        
+        <div class="results-hero">
+          <div class="res-metric">
+            <div class="lbl">Half-Life (t<sub>1/2</sub>)</div>
+            <div class="val" id="resT12">--</div>
+            <div class="err" id="resT12Err">--</div>
+          </div>
+          <div class="res-metric">
+            <div class="lbl">Prompt FWHM</div>
+            <div class="val" id="resFWHM">--</div>
+            <div class="err" id="resFWHMErr">--</div>
+          </div>
+          <div class="res-metric">
+            <div class="lbl">Centroid (x<sub>0</sub>)</div>
+            <div class="val" id="resCentroid">--</div>
+            <div class="err" id="resCentroidErr">--</div>
+          </div>
+          <div class="res-metric">
+            <div class="lbl">Scaling Area</div>
+            <div class="val" id="resScale">--</div>
+            <div class="err" id="resScaleErr">--</div>
+          </div>
+          <div class="res-metric">
+            <div class="lbl">Background</div>
+            <div class="val" id="resBg">--</div>
+            <div class="err" id="resBgErr">Fixed</div>
+          </div>
+          <div class="res-metric">
+            <div class="lbl">&chi;<sup>2</sup> / D.O.F.</div>
+            <div class="val" id="resChisq" style="color: #38bdf8;">--</div>
+            <div class="err" id="resNDF">--</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- SPECTRUM PLOT CANVAS -->
+      <div class="card plot-card" style="flex: 1; min-height: 480px;">
+        <div class="plot-toolbar">
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <span style="font-weight: 700; color: var(--accent-cyan); font-size: 0.82rem;">📈 Spectrum & Convoluted Fit View</span>
+            <span style="font-size: 0.72rem; color: var(--text-muted);" id="plotRangeLabel"></span>
+          </div>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <label class="checkbox-container">
+              <input type="checkbox" id="plotLogScale" onchange="redrawPlot()"> Log Scale
+            </label>
+            <label class="checkbox-container">
+              <input type="checkbox" id="plotShowComponents" checked onchange="redrawPlot()"> Components
+            </label>
+            <button class="btn btn-sm" onclick="exportPDF()" title="Download Publication Vector PDF plot">📄 Export PDF</button>
+            <button class="btn btn-sm" onclick="downloadFitFile()" title="Download .fit ASCII format file">💾 Save .fit</button>
+          </div>
+        </div>
+
+        <div class="plot-wrapper" id="plotContainer">
+          <canvas id="plotCanvas"></canvas>
+          <div class="tooltip" id="plotTooltip"></div>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <!-- CHI2 BACKGROUND SCAN MODAL -->
+  <div class="modal-backdrop" id="bgScanModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3>🔍 Background Level vs &chi;<sup>2</sup> Exploration (Mode 6)</h3>
+        <button class="close-btn" onclick="closeBgScanModal()">&times;</button>
+      </div>
+
+      <p style="font-size: 0.76rem; color: var(--text-muted); margin-bottom: 12px;">
+        Scans constant baseline background values and optimizes remaining free parameters at each step to determine the minimum &chi;<sup>2</sup> baseline and quantify systematic uncertainty on t<sub>1/2</sub>.
+      </p>
+
+      <div class="row-3col" style="margin-bottom: 12px;">
+        <div class="form-group">
+          <label class="form-label">Background Min:</label>
+          <input type="number" id="scanBgMin" step="any">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Background Max:</label>
+          <input type="number" id="scanBgMax" step="any">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Steps:</label>
+          <input type="number" id="scanBgSteps" value="21">
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 8px; margin-bottom: 12px;">
+        <button class="btn btn-warning btn-block" onclick="runBackgroundScan()">🚀 Run &chi;<sup>2</sup> Background Profile</button>
+      </div>
+
+      <div id="scanResultsArea" style="display: none;">
+        <div style="height: 200px; background: #0f1622; border: 1px solid var(--border); border-radius: 4px; margin-bottom: 10px; position: relative;">
+          <canvas id="scanCanvas"></canvas>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <span style="font-weight: 700; color: var(--accent-cyan); font-size: 0.8rem;" id="scanBestSummary"></span>
+          <button class="btn btn-success btn-sm" onclick="applyOptimalBg()">Apply Optimal Background</button>
+        </div>
+
+        <div style="max-height: 180px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px;">
+          <table class="scan-table" id="scanTable">
+            <thead>
+              <tr>
+                <th>Background</th>
+                <th>t<sub>1/2</sub></th>
+                <th>Prompt FWHM</th>
+                <th>Centroid</th>
+                <th>&chi;<sup>2</sup> / NDF</th>
+              </tr>
+            </thead>
+            <tbody id="scanTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    // Global State
+    let currentData = null;      // Loaded SpectrumData
+    let activeFitResult = null;  // Last Fit JSON
+    let lastScanData = null;     // Last Scan JSON
+    let currentFileName = "";
+
+    // DOM Elements
+    const canvas = document.getElementById('plotCanvas');
+    const ctx = canvas.getContext('2d');
+    const tooltip = document.getElementById('plotTooltip');
+
+    // Initialize
+    window.addEventListener('DOMContentLoaded', () => {
+      initCanvasSize();
+      refreshFileList();
+      window.addEventListener('resize', () => {
+        initCanvasSize();
+        redrawPlot();
+      });
+      initTooltipEvents();
+    });
+
+    function initCanvasSize() {
+      const rect = canvas.parentElement.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      ctx.scale(dpr, dpr);
+    }
+
+    // File Management
+    async function refreshFileList() {
+      try {
+        const res = await fetch('/api/halflife/files');
+        const json = await res.json();
+        const sel = document.getElementById('fileSelect');
+        sel.innerHTML = '<option value="">-- Choose Spectrum File --</option>';
+        if (json.files && json.files.length > 0) {
+          json.files.forEach(f => {
+            const opt = document.createElement('option');
+            opt.value = f.name;
+            opt.textContent = `${f.name} (${(f.size_bytes/1024).toFixed(1)} KB)`;
+            sel.appendChild(opt);
+          });
+          // Auto load first .dat file if none selected
+          if (!currentFileName && json.files.length > 0) {
+            loadFile(json.files[0].name);
+            sel.value = json.files[0].name;
+          }
+        }
+      } catch (err) {
+        console.warn("Could not fetch file list:", err);
+      }
+    }
+
+    async function loadFile(filename) {
+      if (!filename) return;
+      currentFileName = filename;
+      const useEnergy = (document.getElementById('xAxisMode').value === 'energy');
+      try {
+        const res = await fetch(`/api/halflife/load?file=${encodeURIComponent(filename)}&use_energy=${useEnergy ? 1 : 0}`);
+        const json = await res.json();
+        if (json.error) {
+          alert("Error loading file: " + json.error);
+          return;
+        }
+        processLoadedSpectrum(json);
+      } catch (err) {
+        alert("Failed to load spectrum: " + err);
+      }
+    }
+
+    async function reloadCurrentFile() {
+      if (currentFileName) loadFile(currentFileName);
+    }
+
+    async function fetchActiveSpectrum() {
+      try {
+        const res = await fetch('/api/halflife/active_spectrum?axis=1');
+        const json = await res.json();
+        if (json.error) {
+          // Try axis 0
+          const res0 = await fetch('/api/halflife/active_spectrum?axis=0');
+          const json0 = await res0.json();
+          if (json0.error) {
+            alert("No active gated spectrum found in current webviewer session. Please load a matrix first.");
+            return;
+          }
+          processLoadedSpectrum(json0);
+          return;
+        }
+        processLoadedSpectrum(json);
+      } catch (err) {
+        alert("Error fetching active spectrum: " + err);
+      }
+    }
+
+    function processLoadedSpectrum(data) {
+      currentData = data;
+      document.getElementById('fileMetaInfo').innerHTML = `
+        <strong>File:</strong> ${data.filename} | <strong>Channels:</strong> ${data.x.length} | 
+        <strong>Range:</strong> [${data.x[0].toFixed(1)} .. ${data.x[data.x.length - 1].toFixed(1)}] ${data.x_label} |
+        ${data.is_gated ? '<span style="color:var(--accent-green);">Gated Cut (Subtracted)</span>' : 'Standard Projection'}
+      `;
+
+      // Set Range Bounds
+      document.getElementById('rangeMin').value = data.x[0];
+      document.getElementById('rangeMax').value = data.x[data.x.length - 1];
+
+      // Auto estimate
+      autoEstimateGuesses();
+      activeFitResult = null;
+      updateResultsUI(null);
+      redrawPlot();
+    }
+
+    function updateXAxisMode() {
+      if (currentFileName) loadFile(currentFileName);
+    }
+
+    // Auto Estimate Parameters
+    function autoEstimateGuesses() {
+      if (!currentData || currentData.x.length === 0) return;
+
+      const r0 = parseFloat(document.getElementById('rangeMin').value) || currentData.x[0];
+      const r1 = parseFloat(document.getElementById('rangeMax').value) || currentData.x[currentData.x.length - 1];
+
+      const x = currentData.x;
+      const y = currentData.y;
+      
+      let indices = [];
+      for (let i = 0; i < x.length; i++) {
+        if (x[i] >= r0 && x[i] <= r1) indices.push(i);
+      }
+      if (indices.length < 4) indices = Array.from({length: x.length}, (_, i) => i);
+
+      // Baseline estimate
+      const nEdge = Math.max(2, Math.floor(indices.length / 10));
+      let edgeSum = 0;
+      for (let i = 0; i < nEdge; i++) edgeSum += y[indices[i]] + y[indices[indices.length - 1 - i]];
+      const bgEst = Math.max(0, edgeSum / (2 * nEdge));
+
+      // Peak Max
+      let maxIdx = indices[0];
+      let maxVal = -1e9;
+      for (let idx of indices) {
+        if (y[idx] > maxVal) {
+          maxVal = y[idx];
+          maxIdx = idx;
+        }
+      }
+
+      const centroidEst = x[maxIdx];
+      const peakHeight = Math.max(1, maxVal - bgEst);
+
+      // FWHM estimate
+      let halfIdx = maxIdx;
+      for (let i = maxIdx; i >= indices[0]; i--) {
+        if (y[i] - bgEst <= peakHeight * 0.5) {
+          halfIdx = i;
+          break;
+        }
+      }
+      const fwhmEst = Math.max(2, Math.abs(centroidEst - x[halfIdx]) * 2.2);
+
+      // Half life estimate from tail slope
+      let t12Est = 20.0;
+      let tailX = [], tailY = [];
+      for (let i = maxIdx + 1; i <= indices[indices.length - 1]; i++) {
+        const val = y[i] - bgEst;
+        if (val > 0.05 * peakHeight) {
+          tailX.push(x[i] - centroidEst);
+          tailY.push(Math.log(Math.max(val, 1)));
+        }
+      }
+      if (tailX.length >= 4) {
+        // Linear regression
+        const n = tailX.length;
+        const sumX = tailX.reduce((a, b) => a + b, 0);
+        const sumY = tailY.reduce((a, b) => a + b, 0);
+        const sumXY = tailX.reduce((acc, v, i) => acc + v * tailY[i], 0);
+        const sumXX = tailX.reduce((acc, v) => acc + v * v, 0);
+        const slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX);
+        if (slope < 0) {
+          t12Est = -Math.LN2 / slope;
+        }
+      }
+
+      // Scale
+      let sumCounts = 0;
+      for (let idx of indices) sumCounts += Math.max(0, y[idx] - bgEst);
+      const scaleEst = Math.max(100, sumCounts);
+
+      document.getElementById('p_t12').value = t12Est.toFixed(3);
+      document.getElementById('p_fwhm').value = fwhmEst.toFixed(3);
+      document.getElementById('p_centroid').value = centroidEst.toFixed(2);
+      document.getElementById('p_scale').value = scaleEst.toFixed(1);
+      document.getElementById('p_bg').value = bgEst.toFixed(2);
+
+      redrawPlot();
+    }
+
+    function onRangeInputChange() {
+      redrawPlot();
+    }
+
+    function onParamInput() {
+      redrawPlot();
+    }
+
+    function resetRangeFull() {
+      if (!currentData) return;
+      document.getElementById('rangeMin').value = currentData.x[0];
+      document.getElementById('rangeMax').value = currentData.x[currentData.x.length - 1];
+      redrawPlot();
+    }
+
+    async function compressData(factor) {
+      if (!currentData) return;
+      try {
+        const res = await fetch('/api/halflife/compress', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            x: currentData.x,
+            y: currentData.y,
+            dy: currentData.dy,
+            factor: factor,
+            filename: currentData.filename
+          })
+        });
+        const json = await res.json();
+        if (json.error) {
+          alert("Compression error: " + json.error);
+          return;
+        }
+        processLoadedSpectrum(json);
+      } catch (err) {
+        alert("Compression failed: " + err);
+      }
+    }
+
+    // Model Evaluation (Client-Side for live dragging & initial preview)
+    function evaluateModel(xArr, t12, fwhm, cent, scale, bg) {
+      const yOut = new Float64Array(xArr.length);
+      const tau = -t12 / Math.LN2;
+      const absTau = Math.abs(tau);
+      const sigmaG = Math.max(Math.abs(fwhm) / (2.0 * Math.sqrt(Math.LN2)), 1e-9);
+      const ep = (0.5 * sigmaG) / tau;
+
+      for (let i = 0; i < xArr.length; i++) {
+        const x1 = xArr[i] - cent;
+        if (Math.abs(t12) < 1e-9) {
+          yOut[i] = scale * Math.exp(-Math.pow(x1 / sigmaG, 2)) / (Math.sqrt(Math.PI) * sigmaG) + bg;
+          continue;
+        }
+        let u = (x1 / sigmaG) + ep;
+        if (tau < 0) u = -u;
+
+        let val = 0;
+        if (u >= -25.0) {
+          // Abramowitz & Stegun erfpol_new
+          const ax = Math.abs(u);
+          const t = 1.0 / (1.0 + 0.3275911 * ax);
+          let poly = t * (0.254829592 + t * (-0.284496736 + t * (1.421413741 + t * (-1.453152027 + 1.061405429 * t))));
+          if (u < 0) {
+            val = (2.0 * Math.exp(u * u) - poly) * 0.5 / absTau * Math.exp(-Math.pow(x1 / sigmaG, 2));
+          } else {
+            val = 0.5 / absTau * poly * Math.exp(-Math.pow(x1 / sigmaG, 2));
+          }
+        } else {
+          const arg = x1 / tau + ep * ep;
+          val = (1.0 / absTau) * Math.exp(Math.max(-500, Math.min(700, arg)));
+        }
+        yOut[i] = scale * val + bg;
+      }
+      return yOut;
+    }
+
+    // Execute Fit
+    async function executeFit() {
+      if (!currentData) {
+        alert("Please load a spectrum first.");
+        return;
+      }
+
+      const btn = document.getElementById('btnFit');
+      btn.innerText = "⏳ Fitting...";
+      btn.disabled = true;
+
+      const payload = {
+        x: currentData.x,
+        y: currentData.y,
+        dy: currentData.dy,
+        t12: parseFloat(document.getElementById('p_t12').value),
+        fwhm: parseFloat(document.getElementById('p_fwhm').value),
+        centroid: parseFloat(document.getElementById('p_centroid').value),
+        scale: parseFloat(document.getElementById('p_scale').value),
+        bg: parseFloat(document.getElementById('p_bg').value),
+        freepars: [
+          !document.getElementById('fix_t12').checked,
+          !document.getElementById('fix_fwhm').checked,
+          !document.getElementById('fix_centroid').checked,
+          !document.getElementById('fix_scale').checked,
+          !document.getElementById('fix_bg').checked
+        ],
+        fit_range: [
+          parseFloat(document.getElementById('rangeMin').value),
+          parseFloat(document.getElementById('rangeMax').value)
+        ]
+      };
+
+      try {
+        const res = await fetch('/api/halflife/fit', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload)
+        });
+        const result = await res.json();
+        if (result.error) {
+          alert("Fit error: " + result.error);
+          return;
+        }
+
+        activeFitResult = result;
+        // Update input boxes with optimized parameters
+        document.getElementById('p_t12').value = result.t12.toFixed(3);
+        document.getElementById('p_fwhm').value = result.fwhm.toFixed(3);
+        document.getElementById('p_centroid').value = result.centroid.toFixed(2);
+        document.getElementById('p_scale').value = result.scale.toFixed(1);
+        document.getElementById('p_bg').value = result.bg.toFixed(2);
+
+        updateResultsUI(result);
+        redrawPlot();
+      } catch (err) {
+        alert("Fit failed: " + err);
+      } finally {
+        btn.innerText = "▶️ Fit Lifetime Spectrum";
+        btn.disabled = false;
+      }
+    }
+
+    function updateResultsUI(res) {
+      const badge = document.getElementById('fitStatusBadge');
+      if (!res) {
+        badge.innerText = "Unfitted";
+        badge.style.color = "var(--text-muted)";
+        document.getElementById('resT12').innerText = "--";
+        document.getElementById('resT12Err').innerText = "--";
+        document.getElementById('resFWHM').innerText = "--";
+        document.getElementById('resFWHMErr').innerText = "--";
+        document.getElementById('resCentroid').innerText = "--";
+        document.getElementById('resCentroidErr').innerText = "--";
+        document.getElementById('resScale').innerText = "--";
+        document.getElementById('resScaleErr').innerText = "--";
+        document.getElementById('resBg').innerText = "--";
+        document.getElementById('resBgErr').innerText = "--";
+        document.getElementById('resChisq').innerText = "--";
+        document.getElementById('resNDF').innerText = "--";
+        return;
+      }
+
+      badge.innerText = `Fit Converged (${res.nfev} evals)`;
+      badge.style.color = "var(--accent-green)";
+
+      const unit = currentData ? currentData.x_label : "ch";
+      document.getElementById('resT12').innerText = `${res.t12.toFixed(3)}`;
+      document.getElementById('resT12Err').innerText = res.freepars[0] ? `± ${res.t12_err.toFixed(3)} ${unit}` : '(FIXED)';
+
+      document.getElementById('resFWHM').innerText = `${res.fwhm.toFixed(3)}`;
+      document.getElementById('resFWHMErr').innerText = res.freepars[1] ? `± ${res.fwhm_err.toFixed(3)} ${unit}` : '(FIXED)';
+
+      document.getElementById('resCentroid').innerText = `${res.centroid.toFixed(2)}`;
+      document.getElementById('resCentroidErr').innerText = res.freepars[2] ? `± ${res.centroid_err.toFixed(2)}` : '(FIXED)';
+
+      document.getElementById('resScale').innerText = `${res.scale.toFixed(1)}`;
+      document.getElementById('resScaleErr').innerText = res.freepars[3] ? `± ${res.scale_err.toFixed(1)}` : '(FIXED)';
+
+      document.getElementById('resBg').innerText = `${res.bg.toFixed(2)}`;
+      document.getElementById('resBgErr').innerText = res.freepars[4] ? `± ${res.bg_err.toFixed(2)}` : '(Fixed)';
+
+      document.getElementById('resChisq').innerText = `${res.chisq_ndf.toFixed(3)}`;
+      document.getElementById('resNDF').innerText = `${res.ndf} D.O.F.`;
+    }
+
+    // CANVAS DRAWING ENGINE
+    function redrawPlot() {
+      if (!currentData || currentData.x.length === 0) {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        return;
+      }
+
+      const rect = canvas.getBoundingClientRect();
+      const w = rect.width;
+      const h = rect.height;
+
+      ctx.clearRect(0, 0, w, h);
+
+      // Plot Layout Split: Main Spectrum (top 75%), Residuals (bottom 25%)
+      const margin = { top: 20, right: 30, bottom: 35, left: 60 };
+      const resGap = 15;
+      const resHeight = 80;
+      const mainHeight = h - margin.top - margin.bottom - resHeight - resGap;
+      const plotWidth = w - margin.left - margin.right;
+
+      const r0 = parseFloat(document.getElementById('rangeMin').value) || currentData.x[0];
+      const r1 = parseFloat(document.getElementById('rangeMax').value) || currentData.x[currentData.x.length - 1];
+      const isLog = document.getElementById('plotLogScale').checked;
+      const showComps = document.getElementById('plotShowComponents').checked;
+
+      // X Scale
+      const xMin = Math.min(r0, r1);
+      const xMax = Math.max(r0, r1);
+      const xSpan = Math.max(1e-6, xMax - xMin);
+
+      function toScreenX(xVal) {
+        return margin.left + ((xVal - xMin) / xSpan) * plotWidth;
+      }
+      function toDataX(screenX) {
+        return xMin + ((screenX - margin.left) / plotWidth) * xSpan;
+      }
+
+      // Filter visible data
+      const xData = currentData.x;
+      const yData = currentData.y;
+      const dyData = currentData.dy;
+
+      let yMin = isLog ? 0.5 : 0;
+      let yMax = 10;
+      for (let i = 0; i < xData.length; i++) {
+        if (xData[i] >= xMin && xData[i] <= xMax) {
+          if (yData[i] > yMax) yMax = yData[i];
+        }
+      }
+      yMax *= (isLog ? 2.5 : 1.15);
+
+      function toScreenY(yVal) {
+        if (isLog) {
+          const safeY = Math.max(0.1, yVal);
+          const logMin = Math.log10(yMin);
+          const logMax = Math.log10(yMax);
+          return margin.top + (1.0 - (Math.log10(safeY) - logMin) / (logMax - logMin)) * mainHeight;
+        } else {
+          return margin.top + (1.0 - (yVal - yMin) / (yMax - yMin)) * mainHeight;
+        }
+      }
+
+      function toScreenResY(resVal) {
+        const resMin = -4.5, resMax = 4.5;
+        const resTop = margin.top + mainHeight + resGap;
+        return resTop + (1.0 - (resVal - resMin) / (resMax - resMin)) * resHeight;
+      }
+
+      // 1. Grid & Backgrounds
+      ctx.fillStyle = "#0c131c";
+      ctx.fillRect(margin.left, margin.top, plotWidth, mainHeight);
+      ctx.fillRect(margin.left, margin.top + mainHeight + resGap, plotWidth, resHeight);
+
+      // Fit Range Shading
+      ctx.fillStyle = "rgba(0, 229, 255, 0.04)";
+      ctx.fillRect(margin.left, margin.top, plotWidth, mainHeight + resGap + resHeight);
+
+      // Grid Lines
+      ctx.strokeStyle = "rgba(43, 57, 79, 0.4)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+
+      // Horiz grid main
+      const yTicks = isLog ? [1, 10, 100, 1000, 10000, 100000] : [0, yMax*0.25, yMax*0.5, yMax*0.75, yMax];
+      ctx.fillStyle = "#8b949e";
+      ctx.font = "10px monospace";
+      ctx.textAlign = "right";
+      yTicks.forEach(yt => {
+        if (yt >= yMin && yt <= yMax) {
+          const sy = toScreenY(yt);
+          ctx.beginPath();
+          ctx.moveTo(margin.left, sy);
+          ctx.lineTo(margin.left + plotWidth, sy);
+          ctx.stroke();
+          ctx.fillText(yt.toFixed(0), margin.left - 6, sy + 3);
+        }
+      });
+
+      // Vert grid
+      const xStep = Math.pow(10, Math.floor(Math.log10(xSpan))) * (xSpan / Math.pow(10, Math.floor(Math.log10(xSpan))) > 5 ? 2 : 1);
+      const firstTick = Math.ceil(xMin / xStep) * xStep;
+      for (let xt = firstTick; xt <= xMax; xt += xStep) {
+        const sx = toScreenX(xt);
+        ctx.beginPath();
+        ctx.moveTo(sx, margin.top);
+        ctx.lineTo(sx, margin.top + mainHeight + resGap + resHeight);
+        ctx.stroke();
+        ctx.textAlign = "center";
+        ctx.fillText(xt.toFixed(0), sx, margin.top + mainHeight + resGap + resHeight + 14);
+      }
+      ctx.setLineDash([]);
+
+      // 2. Residuals reference lines
+      const resZeroY = toScreenResY(0);
+      ctx.strokeStyle = "#64748b";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(margin.left, resZeroY);
+      ctx.lineTo(margin.left + plotWidth, resZeroY);
+      ctx.stroke();
+
+      ctx.strokeStyle = "#ef4444";
+      ctx.setLineDash([2, 2]);
+      [-2, 2].forEach(sig => {
+        const sy = toScreenResY(sig);
+        ctx.beginPath();
+        ctx.moveTo(margin.left, sy);
+        ctx.lineTo(margin.left + plotWidth, sy);
+        ctx.stroke();
+      });
+      ctx.setLineDash([]);
+
+      // Residuals Y labels
+      ctx.textAlign = "right";
+      ctx.fillStyle = "#8b949e";
+      ctx.fillText("+2σ", margin.left - 6, toScreenResY(2) + 3);
+      ctx.fillText("0", margin.left - 6, resZeroY + 3);
+      ctx.fillText("-2σ", margin.left - 6, toScreenResY(-2) + 3);
+
+      // 3. Draw Data Points (with error bars)
+      ctx.strokeStyle = "#6b7280";
+      ctx.fillStyle = "#9ca3af";
+      ctx.lineWidth = 1;
+
+      for (let i = 0; i < xData.length; i++) {
+        if (xData[i] < xMin || xData[i] > xMax) continue;
+        const sx = toScreenX(xData[i]);
+        const sy = toScreenY(yData[i]);
+        const syLow = toScreenY(yData[i] - dyData[i]);
+        const syHigh = toScreenY(yData[i] + dyData[i]);
+
+        // Error bar
+        ctx.beginPath();
+        ctx.moveTo(sx, syLow);
+        ctx.lineTo(sx, syHigh);
+        ctx.stroke();
+
+        // Data point dot
+        ctx.beginPath();
+        ctx.arc(sx, sy, 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // 4. Model Curve & Components
+      const t12 = parseFloat(document.getElementById('p_t12').value);
+      const fwhm = parseFloat(document.getElementById('p_fwhm').value);
+      const cent = parseFloat(document.getElementById('p_centroid').value);
+      const scale = parseFloat(document.getElementById('p_scale').value);
+      const bg = parseFloat(document.getElementById('p_bg').value);
+
+      const nCurve = Math.min(800, Math.floor(plotWidth * 1.5));
+      const curveX = new Float64Array(nCurve);
+      for (let i = 0; i < nCurve; i++) curveX[i] = xMin + (i / (nCurve - 1)) * xSpan;
+      const curveY = evaluateModel(curveX, t12, fwhm, cent, scale, bg);
+
+      // Background baseline
+      const bgY = toScreenY(bg);
+      ctx.strokeStyle = "#38bdf8";
+      ctx.lineWidth = 1.2;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.moveTo(margin.left, bgY);
+      ctx.lineTo(margin.left + plotWidth, bgY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Prompt Component (t12=0) if components enabled
+      if (showComps && Math.abs(t12) > 0.1) {
+        const promptY = evaluateModel(curveX, 0.0, fwhm, cent, scale * 0.4, bg);
+        ctx.strokeStyle = "#fbbf24";
+        ctx.lineWidth = 1.2;
+        ctx.setLineDash([3, 2]);
+        ctx.beginPath();
+        ctx.moveTo(toScreenX(curveX[0]), toScreenY(promptY[0]));
+        for (let i = 1; i < nCurve; i++) ctx.lineTo(toScreenX(curveX[i]), toScreenY(promptY[i]));
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Total Convoluted Fit Line
+      ctx.strokeStyle = "#ef4444";
+      ctx.lineWidth = 2.0;
+      ctx.beginPath();
+      ctx.moveTo(toScreenX(curveX[0]), toScreenY(curveY[0]));
+      for (let i = 1; i < nCurve; i++) {
+        ctx.lineTo(toScreenX(curveX[i]), toScreenY(curveY[i]));
+      }
+      ctx.stroke();
+
+      // 5. Draw Residuals
+      if (activeFitResult && activeFitResult.residuals) {
+        ctx.fillStyle = "#38bdf8";
+        for (let i = 0; i < xData.length; i++) {
+          if (xData[i] < xMin || xData[i] > xMax) continue;
+          const sx = toScreenX(xData[i]);
+          const resVal = activeFitResult.residuals[i] || 0;
+          const sresY = toScreenResY(Math.max(-4.4, Math.min(4.4, resVal)));
+          ctx.beginPath();
+          ctx.arc(sx, sresY, 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      // Axis Titles
+      ctx.fillStyle = "#e6edf3";
+      ctx.font = "bold 11px sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(currentData.x_label, margin.left + plotWidth / 2, h - 8);
+
+      ctx.save();
+      ctx.translate(14, margin.top + mainHeight / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText("Counts", 0, 0);
+      ctx.restore();
+
+      ctx.save();
+      ctx.translate(14, margin.top + mainHeight + resGap + resHeight / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.font = "bold 9px sans-serif";
+      ctx.fillText("Res (σ)", 0, 0);
+      ctx.restore();
+    }
+
+    // Tooltip Events
+    function initTooltipEvents() {
+      canvas.addEventListener('mousemove', (e) => {
+        if (!currentData) return;
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        const margin = { top: 20, right: 30, bottom: 35, left: 60 };
+        const plotWidth = rect.width - margin.left - margin.right;
+
+        if (mouseX < margin.left || mouseX > margin.left + plotWidth) {
+          tooltip.style.display = 'none';
+          return;
+        }
+
+        const r0 = parseFloat(document.getElementById('rangeMin').value) || currentData.x[0];
+        const r1 = parseFloat(document.getElementById('rangeMax').value) || currentData.x[currentData.x.length - 1];
+        const xMin = Math.min(r0, r1);
+        const xMax = Math.max(r0, r1);
+        const dataX = xMin + ((mouseX - margin.left) / plotWidth) * (xMax - xMin);
+
+        // Find closest point
+        let bestIdx = 0;
+        let minDiff = 1e9;
+        for (let i = 0; i < currentData.x.length; i++) {
+          const diff = Math.abs(currentData.x[i] - dataX);
+          if (diff < minDiff) {
+            minDiff = diff;
+            bestIdx = i;
+          }
+        }
+
+        const ptX = currentData.x[bestIdx];
+        const ptY = currentData.y[bestIdx];
+        const ptDy = currentData.dy[bestIdx];
+
+        tooltip.style.display = 'block';
+        tooltip.style.left = `${e.clientX + 14}px`;
+        tooltip.style.top = `${e.clientY - 20}px`;
+        tooltip.innerHTML = `
+          <strong>${currentData.x_label}:</strong> ${ptX.toFixed(2)}<br>
+          <strong>Counts:</strong> ${ptY.toFixed(1)} ± ${ptDy.toFixed(1)}
+        `;
+      });
+
+      canvas.addEventListener('mouseleave', () => {
+        tooltip.style.display = 'none';
+      });
+    }
+
+    // Modal Background Scan
+    function openBgScanModal() {
+      const curBg = parseFloat(document.getElementById('p_bg').value) || 0;
+      const delta = Math.max(3.0, curBg * 0.3);
+      document.getElementById('scanBgMin').value = Math.max(0, curBg - delta).toFixed(1);
+      document.getElementById('scanBgMax').value = (curBg + delta).toFixed(1);
+      document.getElementById('bgScanModal').classList.add('show');
+    }
+
+    function closeBgScanModal() {
+      document.getElementById('bgScanModal').classList.remove('show');
+    }
+
+    async function runBackgroundScan() {
+      if (!currentData) return;
+      const bMin = parseFloat(document.getElementById('scanBgMin').value);
+      const bMax = parseFloat(document.getElementById('scanBgMax').value);
+      const steps = parseInt(document.getElementById('scanBgSteps').value) || 21;
+
+      const payload = {
+        x: currentData.x,
+        y: currentData.y,
+        dy: currentData.dy,
+        b_min: bMin,
+        b_max: bMax,
+        steps: steps,
+        t12: parseFloat(document.getElementById('p_t12').value),
+        fwhm: parseFloat(document.getElementById('p_fwhm').value),
+        centroid: parseFloat(document.getElementById('p_centroid').value),
+        scale: parseFloat(document.getElementById('p_scale').value),
+        freepars: [
+          !document.getElementById('fix_t12').checked,
+          !document.getElementById('fix_fwhm').checked,
+          !document.getElementById('fix_centroid').checked,
+          !document.getElementById('fix_scale').checked,
+          false // fixed bg during scan steps
+        ],
+        fit_range: [
+          parseFloat(document.getElementById('rangeMin').value),
+          parseFloat(document.getElementById('rangeMax').value)
+        ]
+      };
+
+      try {
+        const res = await fetch('/api/halflife/scan_bg', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(payload)
+        });
+        const json = await res.json();
+        if (json.error) {
+          alert("Scan error: " + json.error);
+          return;
+        }
+
+        lastScanData = json;
+        renderScanResults(json);
+      } catch (err) {
+        alert("Scan request failed: " + err);
+      }
+    }
+
+    function renderScanResults(data) {
+      document.getElementById('scanResultsArea').style.display = 'block';
+      document.getElementById('scanBestSummary').innerText = 
+        `Optimal Background = ${data.best_bg.toFixed(2)} (Min χ²/NDF = ${data.best_chisq_ndf.toFixed(3)})`;
+
+      const tbody = document.getElementById('scanTableBody');
+      tbody.innerHTML = '';
+
+      data.records.forEach(r => {
+        const tr = document.createElement('tr');
+        if (Math.abs(r.bg - data.best_bg) < 1e-4) tr.classList.add('best-row');
+        tr.innerHTML = `
+          <td>${r.bg.toFixed(2)}</td>
+          <td>${r.t12.toFixed(3)} ± ${r.t12_err.toFixed(3)}</td>
+          <td>${r.fwhm.toFixed(2)}</td>
+          <td>${r.centroid.toFixed(2)}</td>
+          <td>${r.chisq_ndf.toFixed(3)}</td>
+        `;
+        tbody.appendChild(tr);
+      });
+
+      // Draw Scan Curve
+      drawScanCanvas(data.records);
+    }
+
+    function drawScanCanvas(records) {
+      const scanCanvas = document.getElementById('scanCanvas');
+      const scanCtx = scanCanvas.getContext('2d');
+      const rect = scanCanvas.getBoundingClientRect();
+      scanCanvas.width = rect.width;
+      scanCanvas.height = rect.height;
+
+      const w = rect.width, h = rect.height;
+      scanCtx.clearRect(0, 0, w, h);
+
+      if (!records || records.length === 0) return;
+
+      const bVals = records.map(r => r.bg);
+      const chiVals = records.map(r => r.chisq_ndf);
+      const bMin = Math.min(...bVals), bMax = Math.max(...bVals);
+      const chiMin = Math.min(...chiVals), chiMax = Math.max(...chiVals) * 1.05;
+
+      const pad = { left: 45, right: 20, top: 15, bottom: 25 };
+      const pw = w - pad.left - pad.right;
+      const ph = h - pad.top - pad.bottom;
+
+      function toSX(b) { return pad.left + ((b - bMin) / (bMax - bMin || 1)) * pw; }
+      function toSY(c) { return pad.top + (1.0 - (c - chiMin) / (chiMax - chiMin || 1)) * ph; }
+
+      // Grid
+      scanCtx.strokeStyle = "rgba(43, 57, 79, 0.4)";
+      scanCtx.strokeRect(pad.left, pad.top, pw, ph);
+
+      // Curve
+      scanCtx.strokeStyle = "#38bdf8";
+      scanCtx.lineWidth = 2;
+      scanCtx.beginPath();
+      scanCtx.moveTo(toSX(records[0].bg), toSY(records[0].chisq_ndf));
+      for (let i = 1; i < records.length; i++) {
+        scanCtx.lineTo(toSX(records[i].bg), toSY(records[i].chisq_ndf));
+      }
+      scanCtx.stroke();
+
+      // Points
+      scanCtx.fillStyle = "#00e5ff";
+      records.forEach(r => {
+        scanCtx.beginPath();
+        scanCtx.arc(toSX(r.bg), toSY(r.chisq_ndf), 3, 0, Math.PI * 2);
+        scanCtx.fill();
+      });
+
+      // Axis labels
+      scanCtx.fillStyle = "#8b949e";
+      scanCtx.font = "9px sans-serif";
+      scanCtx.fillText("Bkgnd", w / 2, h - 6);
+      scanCtx.fillText("χ²/NDF", 6, pad.top + 10);
+    }
+
+    function applyOptimalBg() {
+      if (!lastScanData) return;
+      document.getElementById('p_bg').value = lastScanData.best_bg.toFixed(2);
+      closeBgScanModal();
+      executeFit();
+    }
+
+    // Export Utilities
+    function downloadFitFile() {
+      if (!activeFitResult) {
+        alert("Please perform a fit first.");
+        return;
+      }
+      let content = `# Input file: ${currentData.filename}\n`;
+      content += `# Output file: ${currentData.filename}.fit\n`;
+      content += `#++++++++++++Results of fit++++++++++++\n`;
+      content += `# t_1/2 = ${activeFitResult.t12.toFixed(3)} +/- ${activeFitResult.t12_err.toFixed(3)}\n`;
+      content += `# FWHM = ${activeFitResult.fwhm.toFixed(3)} +/- ${activeFitResult.fwhm_err.toFixed(3)}\n`;
+      content += `# Centroid = ${activeFitResult.centroid.toFixed(2)} +/- ${activeFitResult.centroid_err.toFixed(2)}\n`;
+      content += `# Scaling factor = ${activeFitResult.scale.toFixed(2)} +/- ${activeFitResult.scale_err.toFixed(2)}\n`;
+      content += `# Background level = ${activeFitResult.bg.toFixed(2)} (fixed)\n`;
+      content += `# Chisqr/D.O.F. = ${activeFitResult.chisq_ndf.toFixed(3)}\n`;
+      content += `#++++++++++++++++++++++++++++++++++++++\n`;
+      content += `#   Chan \t    fit\n`;
+
+      const x = activeFitResult.x_eval;
+      const yFit = activeFitResult.y_fit;
+      for (let i = 0; i < x.length; i++) {
+        content += `${x[i].toFixed(1)}\t${yFit[i].toFixed(3)}\n`;
+      }
+
+      const blob = new Blob([content], { type: 'text/plain' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `${currentData.filename}.fit`;
+      a.click();
+    }
+
+    async function exportPDF() {
+      if (!activeFitResult) {
+        alert("Please perform a fit first before exporting PDF.");
+        return;
+      }
+      const isLog = document.getElementById('plotLogScale').checked ? 1 : 0;
+      const url = `/api/halflife/export_pdf?file=${encodeURIComponent(currentData.filename)}&t12=${activeFitResult.t12}&fwhm=${activeFitResult.fwhm}&centroid=${activeFitResult.centroid}&scale=${activeFitResult.scale}&bg=${activeFitResult.bg}&r0=${activeFitResult.fit_range[0]}&r1=${activeFitResult.fit_range[1]}&log=${isLog}`;
+      window.open(url, '_blank');
+    }
+  </script>
+</body>
+</html>

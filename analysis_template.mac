@@ -156,9 +156,41 @@ bg_1d 0 1140 1150 1185 1195
 #   fit_log on my_run_fits.txt
 #   fit_1d 0 1173.0
 #   fit_2d 1173.0 1332.0
-#   fit_log off
 
-
+# ------------------------------------------------------------------------------
+# 5d. HALF-LIFE & LIFETIME TIME-DIFFERENCE FITTING
+# ------------------------------------------------------------------------------
+# Fit nuclear decay time-difference spectra (TAC, TDC, digital CFD/timestamp ΔT)
+# with a physical model convolving a Gaussian prompt response (IRF) with an exponential
+# decay component and constant background offset.
+#
+# Syntax:
+#   halflife <dat_file_or_axis> [--t12 T] [--fix-t12] [--fwhm W] [--fix-fwhm]
+#                               [--centroid C] [--fix-centroid] [--bg B] [--fix-bg]
+#                               [--range min max] [--compress N] [--scan-bg [min max steps]]
+#                               [--out result.fit] [--pdf figure.pdf] [--zero-suppress]
+#
+# Parameters:
+#   <dat_file_or_axis> : Path to .dat/.txt ASCII spectrum file, or active 1D axis number (0 or 1)
+#   --t12               : Initial half-life estimate (>0 for right-tail decay, <0 for left-tail)
+#   --fix-t12           : Fix half-life during optimization (e.g. to fit pure prompt IRF)
+#   --fwhm              : Initial prompt time resolution FWHM estimate (0 for pure exponential)
+#   --fix-fwhm          : Fix FWHM during optimization
+#   --centroid          : Initial centroid / prompt peak position
+#   --fix-centroid      : Fix centroid during optimization
+#   --bg                : Initial constant background level
+#   --fix-bg            : Fix background level during optimization
+#   --range <min> <max> : Fit range window bounds in channels
+#   --compress <N>      : Rebin / compress spectrum by factor N before fitting
+#   --scan-bg           : Perform chi-square profile scan over background values
+#   --out <file.fit>    : Export fit parameters, covariance, and fitted curve to ASCII .fit file
+#   --pdf <file.pdf>    : Export publication-quality vector PDF plot with residuals
+#
+# Example: Fit an exported TAC lifetime spectrum:
+#   halflife LaE-TAC.cmat_Det2_Y_Gated_1437_2458.dat --t12 20.0 --fwhm 15.0 --range 450 750 --out t12_result.fit --pdf t12_plot.pdf
+#
+# Example: Fit the currently projected Y-axis spectrum directly in memory:
+#   halflife 1 --t12 19.5 --fwhm 15.2 --range 460 720
 # ------------------------------------------------------------------------------
 # 6. 2D COINCIDENCE PEAK FITTING (GAMBA DECOMPOSITION)
 # ------------------------------------------------------------------------------

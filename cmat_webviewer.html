@@ -703,6 +703,7 @@
     <button id="btnNextMatrix" class="matrix-nav-btn" title="Next Matrix [ ] ]">▶</button>
     <button id="btnHeaderOpenBrowser" class="matrix-nav-btn" title="Browse Server Matrices [Ctrl+O]" style="padding: 2px 7px; margin-left: 3px; font-size: 0.8rem; background: #1e293b; border-color: #334155;">📂</button>
     <button id="btnHeaderOpenIsotopeID" class="matrix-nav-btn" title="Automatic Isotope Identification [ENSDF] (Opens Pop-up Window)" style="padding: 2px 8px; margin-left: 5px; font-size: 0.78rem; background: #312e81; border-color: #4338ca; color: #a5b4fc; font-weight: 500;">🔬 Isotope ID</button>
+    <button id="btnHeaderOpenHalfLife" class="matrix-nav-btn" onclick="openHalfLifePopup()" title="Nuclear Lifetime & Half-Life Fitting [halflife.py] (Opens Pop-up Window)" style="padding: 2px 8px; margin-left: 5px; font-size: 0.78rem; background: #064e3b; border-color: #059669; color: #6ee7b7; font-weight: 500;">⏱️ Half-Life Fit</button>
   </div>
 
   <div class="hud" id="hudCoords">Det 1 (X): - | Det 2 (Y): - | Counts: -</div>
@@ -775,9 +776,12 @@
         <small id="fitLogStatusText" style="color: #888; font-size: 0.65rem; display: block; margin-top: 3px; word-break: break-all;">
           Logs 1D/2D fits as fixed-width one-liners.
         </small>
-        <div style="margin-top: 8px;">
-          <button id="btnOpenIsotopeID" class="btn btn-primary" style="width: 100%; padding: 5px 8px; font-size: 0.76rem; background: linear-gradient(135deg, #0284c7, #6366f1); border: none; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 6px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); cursor: pointer;" title="Open Automatic Nuclear Isotope Identification Pop-up Window (ENSDF database)">
-            <span>🔬</span> Auto Isotope Identification...
+        <div style="margin-top: 8px; display: grid; grid-template-columns: 1fr 1fr; gap: 6px;">
+          <button id="btnOpenIsotopeID" class="btn btn-primary" style="padding: 5px 6px; font-size: 0.74rem; background: linear-gradient(135deg, #0284c7, #6366f1); border: none; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); cursor: pointer;" title="Open Automatic Nuclear Isotope Identification Pop-up Window (ENSDF database)">
+            <span>🔬</span> Isotope ID
+          </button>
+          <button id="btnOpenHalfLifeID" class="btn btn-primary" onclick="openHalfLifePopup()" style="padding: 5px 6px; font-size: 0.74rem; background: linear-gradient(135deg, #059669, #0d9488); border: none; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); cursor: pointer;" title="Open Nuclear Lifetime & Half-Life Fitting Pop-up Window (halflife.py)">
+            <span>⏱️</span> Half-Life Fit
           </button>
         </div>
       </div>
@@ -5569,11 +5573,19 @@
       content += `# Spectrum: ${axis === 0 ? 'Det 1 (X Projection, Slice Y)' : 'Det 2 (Y Projection, Slice X)'}\n`;
       content += `# Sliced 2D Window: X=[${currentProjSlice.x0}..${currentProjSlice.x1}], Y=[${currentProjSlice.y0}..${currentProjSlice.y1}]\n`;
     }
-    content += `# Channel Energy_keV Counts\n`;
+    content += `# Channel Energy_keV Counts Error\n`;
 
     for (let i = chStart; i <= chEnd; i++) {
       let e = chToEnergy(i + 0.5, axis).toFixed(3);
-      content += `${i} ${e} ${spec[i]}\n`;
+      let val = spec[i] || 0;
+      let err = 1.0;
+      if (isGatedCut && gate1DState.last_res) {
+        const scale = gate1DState.last_res.scale || 0;
+        err = Math.sqrt(Math.max(Math.abs(val), 1.0) * (1.0 + scale));
+      } else {
+        err = Math.sqrt(Math.max(val, 1.0));
+      }
+      content += `${i} ${e} ${val.toFixed(2)} ${err.toFixed(2)}\n`;
     }
 
     const blob = new Blob([content], { type: 'text/plain' });
@@ -5880,6 +5892,14 @@
     const left = Math.max(40, Math.floor((window.screen.width - w) / 2));
     const top = Math.max(40, Math.floor((window.screen.height - h) / 2));
     window.open('/isotope_search', 'CMAT_Isotope_Search', `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes`);
+  }
+
+  function openHalfLifePopup() {
+    const w = 1200;
+    const h = 860;
+    const left = Math.max(40, Math.floor((window.screen.width - w) / 2));
+    const top = Math.max(40, Math.floor((window.screen.height - h) / 2));
+    window.open('/halflife_popup.html', 'CMAT_HalfLife_Fitter', `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes`);
   }
 
   async function saveConfig() {
