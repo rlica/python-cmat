@@ -886,7 +886,7 @@
       <div class="panel-1d" id="panel1D_0">
         <div class="panel-1d-header">
           <div style="display:flex; align-items:center; gap:6px;">
-            <span class="panel-1d-title" style="color:#00e5ff;">Axis 1 (X)</span>
+            <span class="panel-1d-title" id="panel1DTitle0" style="color:#00e5ff;">Axis 1 (X)</span>
             <button id="btnScaleToggle0" class="scale-toggle-btn" onclick="toggle1DScale(0)">LIN</button>
             <button id="btnGridToggle0" class="grid-toggle-btn active" onclick="cycle1DGridMode()">GRID</button>
             <button id="btnClearGate0" class="fit-btn-close" style="display:none; padding:1px 6px;" onclick="clearGate(0)">Gate ✕</button>
@@ -907,7 +907,7 @@
       <div class="panel-1d" id="panel1D_1">
         <div class="panel-1d-header">
           <div style="display:flex; align-items:center; gap:6px;">
-            <span class="panel-1d-title" style="color:#ff9800;">Axis 2 (Y)</span>
+            <span class="panel-1d-title" id="panel1DTitle1" style="color:#ff9800;">Axis 2 (Y)</span>
             <button id="btnScaleToggle1" class="scale-toggle-btn" onclick="toggle1DScale(1)">LIN</button>
             <button id="btnGridToggle1" class="grid-toggle-btn active" onclick="cycle1DGridMode()">GRID</button>
             <button id="btnClearGate1" class="fit-btn-close" style="display:none; padding:1px 6px;" onclick="clearGate(1)">Gate ✕</button>
@@ -928,7 +928,7 @@
       <div class="panel-1d" id="panel1D_2">
         <div class="panel-1d-header">
           <div style="display:flex; align-items:center; gap:6px;">
-            <span class="panel-1d-title" style="color:#00e676;">Axis 3 (Z)</span>
+            <span class="panel-1d-title" id="panel1DTitle2" style="color:#00e676;">Axis 3 (Z)</span>
             <button id="btnScaleToggle2" class="scale-toggle-btn" onclick="toggle1DScale(2)">LIN</button>
             <button id="btnGridToggle2" class="grid-toggle-btn active" onclick="cycle1DGridMode()">GRID</button>
             <button id="btnClearGate2" class="fit-btn-close" style="display:none; padding:1px 6px;" onclick="clearGate(2)">Gate ✕</button>
@@ -1030,6 +1030,7 @@
           <div class="fit-compact-line" id="fitCompactLine2D_X">-</div>
           <div class="fit-compact-line" id="fitCompactLine2D_Y">-</div>
           <div class="fit-compact-line" id="fitCompactLine2D_Gamba" style="color: #81c784; font-size: 0.72rem; margin-top: 3px;">-</div>
+          <div class="fit-compact-line" id="fitCompactLine2D_GambaCut" style="display:none; color: #00e676; font-size: 0.72rem; margin-top: 3px;">-</div>
         </div>
         <div class="fit-grid" id="fitGrid2D" style="display: none; margin-top: 6px; padding-top: 6px; border-top: 1px solid #333;">
           <div class="fit-item"><span class="lbl">2D Centroid:</span><span class="val" id="fitCentroid2D">-</span></div>
@@ -1078,7 +1079,7 @@
       <tr><td><kbd>B</kbd> / <kbd>b</kbd></td><td>In 1D: Set background region; In 2D: Draw Background Banana</td></tr>
       <tr><td><kbd>R</kbd> / <kbd>r</kbd></td><td>Set 1D Fit / Integration Region limits</td></tr>
       <tr><td><kbd>I</kbd> / <kbd>i</kbd></td><td>Integrate peak over Region ('R') subtracting background</td></tr>
-      <tr><td><kbd>V</kbd> / <kbd>v</kbd></td><td>Fit single peak at cursor (1D or 2D coincidence peak)</td></tr>
+      <tr><td><kbd>V</kbd> / <kbd>v</kbd></td><td>Fit single peak at cursor (1D or 2D coincidence peak with 3D Gamba cut)</td></tr>
       <tr><td><kbd>H</kbd> / <kbd>h</kbd></td><td>Fit all visible peaks on focused 1D display</td></tr>
       <tr><td><kbd>P</kbd> / <kbd>p</kbd></td><td>Automatic 1D Peak Search on focused spectrum (CWT method)</td></tr>
       <tr><td><kbd>G</kbd> / <kbd>g</kbd></td><td>Add / remove manual peak marker at cursor</td></tr>
@@ -1217,6 +1218,8 @@
   let bananaPolygonBg = []; // [{x, y}]
   let bananaGateActive = false;
   let bananaGateResult = null;
+  let gambaGateActive = false;
+  let gambaGateResult = null;
 
   // Fit & Analysis State
   let foundPeaks1D = { 0: [], 1: [], 2: [] };
@@ -1759,6 +1762,20 @@
 
   // --- Coincidence Gating Logic ---
   async function recomputeGates(force = false) {
+    if (gambaGateActive && gambaGateResult) {
+      const tgt = gambaGateResult.target_axis;
+      spec1D[tgt] = gambaGateResult.net_spec;
+      for (let ax = 0; ax < 3; ax++) {
+        if (ax !== tgt) {
+          spec1D[ax] = sumSpec1D[ax];
+        }
+      }
+      updateGateUI();
+      renderAll1DSpectra();
+      render2D();
+      return;
+    }
+
     if (bananaGateActive && bananaGateResult) {
       const plAxes = getPlaneAxes(activePlane);
       const zAx = plAxes.z;
@@ -1937,6 +1954,8 @@
     for (let ax = 0; ax < 3; ax++) {
       gates1D[ax] = { w: [], b: [], pending_w: null, pending_b: null };
     }
+    gambaGateActive = false;
+    gambaGateResult = null;
     lastGateResults = {};
     lastGateConfigKey = '';
     fetchTileAndRender();
@@ -1945,11 +1964,45 @@
     showMatrixToast("All coincidence gates cleared");
   }
 
+  function clearGambaGate() {
+    gambaGateActive = false;
+    gambaGateResult = null;
+    updateGateUI();
+    recomputeGates();
+    renderAll1DSpectra();
+    showMatrixToast("Gamba 3D coincidence cut cleared");
+  }
+
   function updateGateUI() {
+    const axNames = ['Axis 1 (X)', 'Axis 2 (Y)', 'Axis 3 (Z)'];
     for (let ax = 0; ax < 3; ax++) {
       const btn = document.getElementById(`btnClearGate${ax}`);
+      const titleEl = document.getElementById(`panel1DTitle${ax}`);
+      const has1DGate = (gates1D[ax].w.length > 0 || gates1D[ax].b.length > 0);
+      const hasGambaGate = (gambaGateActive && gambaGateResult && gambaGateResult.target_axis === ax);
+
       if (btn) {
-        btn.style.display = (gates1D[ax].w.length > 0 || gates1D[ax].b.length > 0) ? 'inline-block' : 'none';
+        btn.style.display = (has1DGate || hasGambaGate) ? 'inline-block' : 'none';
+        if (hasGambaGate) {
+          btn.innerText = 'Gamba Cut ✕';
+          btn.style.borderColor = '#00e676';
+          btn.style.color = '#00e676';
+        } else {
+          btn.innerText = 'Gate ✕';
+          btn.style.borderColor = '';
+          btn.style.color = '';
+        }
+      }
+
+      if (titleEl) {
+        if (hasGambaGate) {
+          const g3 = gambaGateResult;
+          const ex = g3.centroid_x_e !== undefined && g3.centroid_x_e !== null ? `${Number(g3.centroid_x_e).toFixed(1)} keV` : `ch ${g3.centroid_x_ch}`;
+          const ey = g3.centroid_y_e !== undefined && g3.centroid_y_e !== null ? `${Number(g3.centroid_y_e).toFixed(1)} keV` : `ch ${g3.centroid_y_ch}`;
+          titleEl.innerHTML = `${axNames[ax]} <span style="background:rgba(0,230,118,0.18); border:1px solid #00e676; border-radius:3px; padding:1px 5px; font-size:0.7rem; color:#00e676; font-weight:bold;">[Gamba Cut: ${ex} × ${ey} | Net: ${Math.round(g3.net_counts).toLocaleString()} cts]</span>`;
+        } else {
+          titleEl.innerText = axNames[ax];
+        }
       }
     }
   }
@@ -2543,10 +2596,20 @@
         foundPeaks1D[plAxes.y] = [...outsideY, newMarkerY].sort((a, b) => a.channel - b.channel);
 
         displayFitCard2D(data);
+        if (data.gamba_3rd_cut && data.gamba_3rd_cut.success) {
+          gambaGateActive = true;
+          gambaGateResult = data.gamba_3rd_cut;
+          spec1D[data.gamba_3rd_cut.target_axis] = data.gamba_3rd_cut.net_spec;
+          const tgtName = ['Axis 1 (X)', 'Axis 2 (Y)', 'Axis 3 (Z)'][data.gamba_3rd_cut.target_axis];
+          const gambaVol = Math.round(data.gamba_net !== undefined ? data.gamba_net : (data.gamba_net_counts || 0));
+          showMatrixToast(`2D Fit: Vol=${Math.round(data.volume || 0)}, Gamba=${gambaVol} => 3D Cut on ${tgtName} (Net=${Math.round(data.gamba_3rd_cut.net_counts).toLocaleString()} cts)`);
+        } else {
+          const gambaVol = Math.round(data.gamba_net !== undefined ? data.gamba_net : (data.gamba_net_counts || 0));
+          showMatrixToast(`2D Coincidence Fit: Vol=${Math.round(data.volume || 0)}, Gamba=${gambaVol}`);
+        }
+        updateGateUI();
         render2D();
         renderAll1DSpectra();
-        const gambaVol = Math.round(data.gamba_net !== undefined ? data.gamba_net : (data.gamba_net_counts || 0));
-        showMatrixToast(`2D Coincidence Fit: Vol=${Math.round(data.volume || 0)}, Gamba=${gambaVol}`);
       } else {
         showMatrixToast(data.error || "2D fit failed", true);
       }
@@ -3566,6 +3629,19 @@
     document.getElementById('fitCompactLine2D_Gamba').innerText =
       `Net Fitted Vol: ${Math.round(d.volume || 0)} cts | Gamba Net: ${gambaNet} | χ²: ${rChi2?.toFixed(2) || '-'}`;
 
+    const gambaCutEl = document.getElementById('fitCompactLine2D_GambaCut');
+    if (gambaCutEl) {
+      if (d.gamba_3rd_cut && d.gamba_3rd_cut.success) {
+        const g3 = d.gamba_3rd_cut;
+        const tgtName = ['Axis 1 (X)', 'Axis 2 (Y)', 'Axis 3 (Z)'][g3.target_axis];
+        gambaCutEl.innerHTML =
+          `3D Cut on <strong>${tgtName}</strong>: Net = <strong style="color:#00e676">${Math.round(g3.net_counts).toLocaleString()}</strong> cts (Π=${g3.pi_ratio_percent}%) <button class="fit-btn-close" onclick="clearGambaGate()" style="margin-left:6px; padding:1px 5px; font-size:0.65rem;">Reset Cut</button>`;
+        gambaCutEl.style.display = 'block';
+      } else {
+        gambaCutEl.style.display = 'none';
+      }
+    }
+
     document.getElementById('fitCentroid2D').innerText = `(${cx?.toFixed(2)}, ${cy?.toFixed(2)})`;
     document.getElementById('fitVolume2D').innerText = Math.round(d.volume || 0);
     document.getElementById('fitGambaNet2D').innerText = gambaNet;
@@ -3891,6 +3967,32 @@
 
   function exportDat(axis) {
     if (axis === undefined) axis = 0;
+    const spec = spec1D[axis];
+    if (spec && spec.length > 0) {
+      const cal = getCalForAxis(axis);
+      const axNames = ['Axis 1 (X)', 'Axis 2 (Y)', 'Axis 3 (Z)'];
+      const mName = metadata ? (metadata.filename || 'matrix3d') : 'matrix3d';
+      let tag = 'projection';
+      if (gambaGateActive && gambaGateResult && gambaGateResult.target_axis === axis) tag = 'gamba_cut';
+      else if (bananaGateActive && bananaGateResult) tag = 'banana_gate';
+      else if (gates1D[0].w.length > 0 || gates1D[1].w.length > 0 || gates1D[2].w.length > 0) tag = 'gated';
+
+      let lines = [`# Exported spectrum for ${mName} - ${axNames[axis]} (${tag})\n# Ch\tEnergy(keV)\tCounts\n`];
+      for (let ch = 0; ch < spec.length; ch++) {
+        const en = cal[0] + cal[1] * (ch + 0.5) + cal[2] * Math.pow(ch + 0.5, 2);
+        lines.push(`${ch}\t${en.toFixed(3)}\t${spec[ch]}\n`);
+      }
+      const blob = new Blob(lines, { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${mName}_axis${axis}_${tag}.dat`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      return;
+    }
     window.open(`/api/export_dat?axis=${axis}&plane=${activePlane}`, '_blank');
   }
 
@@ -3954,6 +4056,9 @@
   function clearFit2D() {
     fit2DResult = null;
     activeFits2D = [];
+    if (gambaGateActive) {
+      clearGambaGate();
+    }
     render2D();
     const card = document.getElementById('fitCard2D');
     if (card) card.style.display = 'none';
@@ -3996,6 +4101,7 @@
   window.cycle1DGridMode = cycle1DGridMode;
   window.clearGate = clearGate;
   window.clear1DGates = clear1DGates;
+  window.clearGambaGate = clearGambaGate;
   window.clearGate3rd = clearGate3rd;
   window.applyGate3rdInput = applyGate3rdInput;
   window.autoContrast = autoContrast;

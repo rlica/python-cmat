@@ -47,7 +47,7 @@ try:
 except Exception:
     pass
 
-from cmat3d import CMAT3DReader, compute_3d_gate, compute_2d_banana_gate, parse_gate_ranges
+from cmat3d import CMAT3DReader, compute_3d_gate, compute_2d_banana_gate, compute_2d_gamba_gate, parse_gate_ranges
 from cmat_webviewer import (
     fit_gaussian_peak,
     fit_all_peaks_1d,
@@ -191,6 +191,40 @@ def print_banana_gate_terminal_report_3d(res: dict, matrix_name: str):
         print(f"  • Net Area Counts: {res.get('net_counts', 0):,.1f} counts\n", flush=True)
     else:
         print(f"  • Net Gated Counts:{res.get('total_gated_counts', 0):,} counts\n", flush=True)
+
+
+def print_gamba_gate_terminal_report_3d(gamba_res: dict, matrix_name: str, plane: str, cal_z: tuple, is_cal_z: bool = False):
+    axis_names = ["Axis 1 (X)", "Axis 2 (Y)", "Axis 3 (Z)"]
+    target_axis = gamba_res.get("target_axis", 2)
+    dst_det = axis_names[target_axis]
+
+    if plane == "0-1":
+        ax_x, ax_y = 0, 1
+    elif plane == "0-2":
+        ax_x, ax_y = 0, 2
+    else:
+        ax_x, ax_y = 1, 2
+
+    cx_ch = gamba_res.get("centroid_x_ch", 0.0)
+    cy_ch = gamba_res.get("centroid_y_ch", 0.0)
+    cx_e = gamba_res.get("centroid_x_e")
+    cy_e = gamba_res.get("centroid_y_e")
+    pos_x = f"{cx_e:.1f} keV (ch {cx_ch:.1f})" if cx_e is not None else f"ch {cx_ch:.1f}"
+    pos_y = f"{cy_e:.1f} keV (ch {cy_ch:.1f})" if cy_e is not None else f"ch {cy_ch:.1f}"
+
+    px_r = gamba_res.get("peak_x_range", [0, 0])
+    py_r = gamba_res.get("peak_y_range", [0, 0])
+    rx_r = gamba_res.get("roi_x_range", [0, 0])
+    ry_r = gamba_res.get("roi_y_range", [0, 0])
+
+    print(f"\n[2D Gamba 3D Coincidence Cut] {matrix_name} -> Plane {plane} ({axis_names[ax_x]} × {axis_names[ax_y]}) => {dst_det}:", flush=True)
+    print(f"  • Fitted 2D Coincidence Peak: {axis_names[ax_x]} = {pos_x}, {axis_names[ax_y]} = {pos_y}", flush=True)
+    print(f"  • Gamba 2D Gates (ROI [{rx_r[0]}..{rx_r[1]}] × [{ry_r[0]}..{ry_r[1]}]):", flush=True)
+    print(f"      P|P:   [{px_r[0]}..{px_r[1]}] × [{py_r[0]}..{py_r[1]}] (Area: {gamba_res.get('area_pp', 0):,} px, Raw S_pp: {gamba_res.get('n_pp_m', 0):,.1f} cts)", flush=True)
+    print(f"      P|BG:  Peak X × ROI BG Y (Area: {gamba_res.get('area_pbg', 0):,} px, Scale: {gamba_res.get('scale_pbg', 0.0):.4f}, Raw: {gamba_res.get('n_pbg_raw', 0):,.1f} cts)", flush=True)
+    print(f"      BG|P:  ROI BG X × Peak Y (Area: {gamba_res.get('area_bgp', 0):,} px, Scale: {gamba_res.get('scale_bgp', 0.0):.4f}, Raw: {gamba_res.get('n_bgp_raw', 0):,.1f} cts)", flush=True)
+    print(f"      BG|BG: ROI BG X × ROI BG Y (Area: {gamba_res.get('area_bgbg', 0):,} px, Scale: {gamba_res.get('scale_bgbg', 0.0):.4f}, Raw: {gamba_res.get('n_bgbg_raw', 0):,.1f} cts)", flush=True)
+    print(f"  • {dst_det} Net Coincidence Spectrum: Integrated Area = {gamba_res.get('net_counts', 0):,.1f} cts (Π Ratio = {gamba_res.get('pi_ratio_percent', 0):.1f}%)\n", flush=True)
 
 
 DEFAULT_CONFIG = {
@@ -1008,8 +1042,16 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
                     total_counts=tot_counts,
                 )
                 print_fit_2d_terminal_report(res, m["filename"], (is_cal_x, is_cal_y), verbosity="compact")
-                if res.get("success") and session.fit_log_enabled:
-                    append_fit_2d_result_to_file(session.fit_log_filename, res, (is_cal_x, is_cal_y))
+                if res.get("success"):
+                    target_axis = 2 if plane == "0-1" else (1 if plane == "0-2" else 0)
+                    cal_z = session.get_cal(target_axis)
+                    is_cal_z = session.is_calibrated(target_axis)
+                    gamba_3rd = compute_2d_gamba_gate(reader, plane, res)
+                    res["gamba_3rd_cut"] = gamba_3rd
+                    if gamba_3rd.get("success"):
+                        print_gamba_gate_terminal_report_3d(gamba_3rd, m["filename"], plane, cal_z, is_cal_z)
+                    if session.fit_log_enabled:
+                        append_fit_2d_result_to_file(session.fit_log_filename, res, (is_cal_x, is_cal_y))
             except Exception as e:
                 res = {"success": False, "error": str(e), "is_2d": True}
                 print(f"[!] 2D peak fit error: {e}", file=sys.stderr)

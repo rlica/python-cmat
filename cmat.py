@@ -345,9 +345,9 @@ class CMATReader:
         # If no stored projection or segment empty, compute from full matrix
         mat = self.to_numpy()
         if axis == 0:
-            return np.sum(mat, axis=0) + (np.diag(mat) if self.is_symmetric else 0)
+            return np.sum(mat, axis=0)
         else:
-            return np.sum(mat, axis=1) + (np.diag(mat) if self.is_symmetric else 0)
+            return np.sum(mat, axis=1)
 
     def to_numpy(self) -> np.ndarray:
         """
@@ -385,14 +385,20 @@ class CMATReader:
                         y0 = s2 * self.step2
 
                         if s1 == s2:
-                            # Diagonal block: upper triangular (ki1 <= ki2)
+                            # Diagonal block: lower triangular (ki1 <= ki2)
                             limit_k2 = min(self.step2, dim - y0)
                             limit_k1 = min(self.step1, dim - x0)
                             for ki2 in range(limit_k2):
                                 for ki1 in range(min(ki2 + 1, limit_k1)):
                                     val = block_2d[ki2, ki1]
-                                    mat[y0 + ki2, x0 + ki1] = val
-                                    mat[x0 + ki1, y0 + ki2] = val
+                                    if ki1 == ki2:
+                                        # Diagonal events (E1 == E2) have multiplicity 2 in symmetric 2D
+                                        # coincidence representation, matching surrounding 2D background density
+                                        # and satisfying sum(mat, axis=0) == proj0 exactly.
+                                        mat[y0 + ki2, x0 + ki1] = 2 * val
+                                    else:
+                                        mat[y0 + ki2, x0 + ki1] = val
+                                        mat[x0 + ki1, y0 + ki2] = val
                         else:
                             # Off-diagonal block
                             y1 = min(y0 + self.step2, dim)
@@ -711,10 +717,7 @@ def write_cmat(
     # Segment 1: Reserved / Empty
 
     # Segment 2: Projection on axis 0 (Det 1 / X)
-    if symmetric:
-        proj0 = np.sum(mat, axis=0) + np.diag(mat)
-    else:
-        proj0 = np.sum(mat, axis=0)
+    proj0 = np.sum(mat, axis=0)
     add_compressed_segment(2, proj0)
 
     # Segment 3: Projection on axis 1 (Det 2 / Y)
@@ -732,7 +735,12 @@ def write_cmat(
                 seg_idx = iseg + nextra
                 x0 = s1 * step1
                 y0 = s2 * step2
-                block_2d = mat[y0:y0 + step2, x0:x0 + step1]
+                block_2d = mat[y0:y0 + step2, x0:x0 + step1].copy()
+                if s1 == s2:
+                    # In folded format, zero out upper triangle and store diagonal // 2
+                    block_2d = np.tril(block_2d)
+                    diag = np.diag(block_2d)
+                    np.fill_diagonal(block_2d, (diag + 1) // 2)
                 add_compressed_segment(seg_idx, block_2d.flatten())
     else:
         for s2 in range(ndiv2):

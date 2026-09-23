@@ -99,6 +99,21 @@ and the Peak-to-Total-Background ratio:
 
 $$\Pi = \frac{n^t_{p|p}}{n^m_{p|p}}$$
 
+### Gamba 4-Component 3D Coincidence Slicing (3D Matrix Volumes)
+When analyzing 3D matrix volumes (e.g. $\gamma$-$\gamma$-$\text{Rings}$, $\gamma$-$\gamma$-$\Delta t$, or 3-fold symmetric cubes) in `cmat3d_webviewer.py`, fitting a 2D coincidence peak on any orthogonal plane automatically performs **discrete Gamba background decomposition on the 3rd axis ($z$)**.
+
+The 3D volume is sliced over the 2D Peak ($P|P$) ROI, the two orthogonal Compton/random cross-ridges ($P|BG$ and $BG|P$), and the 4 corner continuum regions ($BG|BG$):
+- $\text{Spec}_{P|P}(z) = \sum_{(x,y) \in \text{ROI}_{P|P}} V(x, y, z)$
+- $\text{Spec}_{P|BG}(z) = \sum_{(x,y) \in \text{ROI}_{P|BG}} V(x, y, z)$
+- $\text{Spec}_{BG|P}(z) = \sum_{(x,y) \in \text{ROI}_{BG|P}} V(x, y, z)$
+- $\text{Spec}_{BG|BG}(z) = \sum_{(x,y) \in \text{ROI}_{BG|BG}} V(x, y, z)$
+
+The net coincidence spectrum on the 3rd axis is constructed using the discrete Gamba formula:
+
+$$\text{Spec}_{\text{net}}(z) = \text{Spec}_{P|P}(z) - \frac{N_{P|BG}}{N_{BG|BG \text{ (1)}}} \text{Spec}_{BG|P}(z) - \frac{N_{BG|P}}{N_{BG|BG \text{ (2)}}} \text{Spec}_{P|BG}(z) + \frac{N_{BG|BG \text{ (corr)}}}{N_{BG|BG \text{ (all)}}} \text{Spec}_{BG|BG}(z)$$
+
+This cleanly eliminates both Compton ridges and time-uncorrelated random events from the 3rd-axis projection, providing pure net lifetime curves or detector ring distributions.
+
 ---
 
 ## 4. 1D Multi-Gate Slicing & Normalized Background Subtraction (`xtrackn W/X/Z`)

@@ -75,6 +75,9 @@ On modern Linux environments enforcing PEP 668 (`externally-managed-environment`
 ## Key Capabilities at a Glance
 
 - **Pure Python + NumPy Decompression**: Fully reverse-engineers all proprietary IVF block compression algorithms (Modes 0–32 bit-packing, Mode 33 16-bit sparse lists, Mode 34 32-bit sparse lists, Mode 37 tagged token bit-streams, and Mode 41 unary run-length shift maps) without requiring legacy 32-bit Fortran binaries or external C libraries.
+- **Sparse On-Demand 3D Engine**: Fast direct block-indexing engine (`.cmat3d_cache/<file>.idx`) that opens massive 3D symmetric cubes ($8192^3$ channels, $>2\text{ TB}$ uncompressed) in $<0.5\text{ s}$ and extracts gated slices on-demand in $<10\text{ ms}$ without disk explosion or RAM exhaustion.
+- **Exact Diagonal Symmetrization (2D & 3D)**: Dual-level intra-block tetrahedral unfolding for 3D matrices and diagonal multiplicity unfolding ($2 \times \text{val}$) for 2D symmetric matrices, completely resolving dark diagonal lines/triangular artifacts and maintaining exact match with 1D stored projections ($\Delta = 0$).
+- **Gamba 3D Coincidence Slicing**: Automatically decomposes 3rd axis coincidence projections with 4-component Gamba discrete background subtraction ($P|P, P|BG, BG|P, BG|BG$) when fitting 2D coincidence peaks in 3D volumes.
 - **Arbitrary Geometry**: Handles symmetric, asymmetric, and arbitrary step sizes ($32 \times 32$, $32 \times 64$, $64 \times 128$, $128 \times 128$, etc.).
 - **Interactive Web Interface**: Ultra-responsive HTML5 Canvas architecture with pixel-matched data decimation and 2D max-pooling to preserve narrow photopeaks even when viewing the entire 4096×4096 matrix.
 - **Simultaneous Dual 1D Projections**: Stacked top/bottom stepped staircase histograms displaying Det 1 (X projection sliced over visible Y) and Det 2 (Y projection sliced over visible X) with synchronized crosshair tracking and calibrated energy readouts.

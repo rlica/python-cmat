@@ -15,6 +15,7 @@ $$ndiv_1 = \frac{res_1}{step_1}, \quad ndiv_2 = \frac{res_2}{step_2}$$
 
 `python-cmat` supports both standard and non-standard geometries:
 - **Symmetric Matrices** ($res_1 = res_2, step_1 = step_2$): E.g., $4096 \times 4096$ channels with $128 \times 128$ blocks $\rightarrow 32 \times 32$ grid. Due to symmetry ($M_{ij} = M_{ji}$), only the lower triangular portion containing $\frac{32 \times 33}{2} = 528$ blocks is physically stored.
+  - **Diagonal Multiplicity**: In folded symmetric representation, diagonal elements $(E_1 == E_2)$ occupy single discrete bins while off-diagonal pairs $(E_1, E_2)$ occupy two symmetrical points. During unfolding in `CMATReader.to_numpy()`, diagonal elements are multiplied by 2 ($2 \times \text{val}$), ensuring continuous 2D background density and exact agreement with the 1D stored projection ($\sum_y M(y, x) = \text{proj}_0(x)$ with $\Delta = 0$).
 - **Normal Matrices** (non-folded full matrices): E.g., $6144 \times 6144$ with $128 \times 128$ blocks $\rightarrow 2304$ stored blocks.
 - **Asymmetric Matrices & Arbitrary Steps**: E.g., $2048 \times 4096$ with $32 \times 64$ sub-blocks $\rightarrow 4096$ stored blocks.
 
@@ -63,10 +64,12 @@ Each sub-block in the matrix is compressed independently according to its sparse
 
 ## 3D `.cmat` Cube Container Specification
 
-3D `.cmat` matrices (e.g. $\gamma$-$\gamma$-$\text{Rings}$ or $\gamma$-$\gamma$-$\Delta t$ cubes) extend the IVF block architecture to 3-dimensional coordinate spaces:
-- **Geometry**: Defined by dimensions $(N_x, N_y, N_z)$, such as $(4096, 4096, 128)$.
+3D `.cmat` matrices (e.g. $\gamma$-$\gamma$-$\text{Rings}$, $\gamma$-$\gamma$-$\Delta t$, or 3-fold symmetric $\gamma$-$\gamma$-$\gamma$ cubes) extend the IVF block architecture to 3-dimensional coordinate spaces:
+- **Geometry**: Defined by dimensions $(N_x, N_y, N_z)$, such as $(4096, 4096, 128)$ or $(8192, 8192, 8192)$.
 - **Storage Layout**: Concatenated sequence of 2D IVF sub-matrix planes along the 3rd axis, each containing its own independent IVF header and compressed block offset tables.
-- **Decompression & Memory-Mapped Caching (`CMAT3DReader`)**:
-  - Slices are decompressed sequentially into a contiguous binary cache file (`.cmat3d_cache/<filename>.dat`) with shape $(N_x, N_y, N_z)$ in `int32` format.
-  - Slicing and projections are executed directly via `numpy.memmap` pointers, enabling sub-millisecond orthogonal plane extraction and coincidence slicing without saturating system RAM.
+- **Tetrahedral Intra-Block Folding**: For symmetric 3D cubes (`matmode == 1`), blocks are indexed in the lower tetrahedron $s_1 \le s_2 \le s_3$. On diagonal boundary planes ($s_1=s_2<s_3$, $s_1<s_2=s_3$, $s_1=s_2=s_3$), internal sub-block channels are folded into sub-triangles and sub-tetrahedra. `CMAT3DReader` performs full 6-permutation sub-tetrahedral unfolding to guarantee complete volumetric symmetry.
+- **Storage Engines**:
+  - **Memory-Mapped Dense Engine (`.dat`)**: Sequentially decompresses moderate volumes to disk (`.cmat3d_cache/<file>.dat`) and memory-maps the binary array.
+  - **Sparse On-Demand Engine (`.idx`)**: For massive cubes ($8192^3$), indexes block segment offsets into a tiny `.idx` file and decompresses requested sub-blocks on-the-fly in $<10\text{ ms}$.
+
 

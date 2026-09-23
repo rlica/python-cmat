@@ -54,12 +54,23 @@ The server binds to `http://0.0.0.0:8080` (or the configured host/port) and auto
 
 ## Key Features & Capabilities
 
-### 1. Memory-Mapped 3D Volume Engine (`.cmat3d_cache/`)
-3D `.cmat` files frequently contain large data volumes (e.g. $4096 \times 4096 \times 128 = 2.14 \times 10^9$ channels, $\approx 8.5\text{ GB}$ uncompressed).
-- **Zero RAM Bloat**: `CMAT3DReader` decompresses slices on first access into a binary cache file (`.cmat3d_cache/<filename>.dat`) and accesses the data as a 3D `numpy.memmap` (`int32`).
-- **Instant Subsequent Startup**: Subsequent launches read the cached memory-mapped file instantly ($<50\text{ ms}$).
+### 1. Dual 3D Storage Engines: Memory-Mapped & Sparse On-Demand (`.cmat3d_cache/`)
+3D `.cmat` files vary from moderately-sized asymmetric cubes to massive symmetric volumes:
+- **Dense Memory-Mapped Volume Engine (`.dat`)**: For moderately sized cubes (e.g. $4096 \times 4096 \times 128 = 2.14 \times 10^9$ channels, $\approx 8.5\text{ GB}$ uncompressed), `CMAT3DReader` decompresses slices on first access into a binary cache file (`.cmat3d_cache/<filename>.dat`) accessed as a `numpy.memmap` (`int32`), providing instant subsequent startup ($<50\text{ ms}$).
+- **Sparse On-Demand Indexing Engine (`.idx`)**: For massive symmetric 3-fold cubes (e.g. $8192 \times 8192 \times 8192 = 5.5 \times 10^{11}$ channels, which would require $\approx 2.2\text{ TB}$ uncompressed), building a full dense file is impossible. `python-cmat` automatically enables a sparse on-demand reader:
+  - Generates a compact index file (`.cmat3d_cache/<filename>.idx`) in $<0.5\text{ seconds}$ without uncompressing unread data.
+  - Slices, orthogonal planes, and coincidence cuts are extracted on-the-fly directly from the compressed IVF segment streams in $<10\text{ ms}$.
 
-### 2. Multi-Plane Orthogonal Projections
+### 2. Exact Intra-Block Tetrahedral Symmetrization
+In folded 3D symmetric matrices (`matmode == 1`, $N_x = N_y = N_z$):
+- Block coordinates are folded into the lower tetrahedron $s_1 \le s_2 \le s_3$.
+- In addition, sub-block channels along diagonal planes are folded internally:
+  - Plane $s_1 = s_2 < s_3$: internal channels folded into $dx \le dy$.
+  - Plane $s_1 < s_2 = s_3$: internal channels folded into $dy \le dz$.
+  - Main diagonal $s_1 = s_2 = s_3$: internal channels folded into $dx \le dy \le dz$ (1/6th sub-tetrahedron).
+- `CMAT3DReader` performs vectorized sub-tetrahedral unfolding across all 6 permutations, eliminating dark triangular artifacts along diagonal boundaries and guaranteeing exact spatial symmetry ($|M - M^T| = 0$).
+
+### 3. Multi-Plane Orthogonal Projections
 The viewer allows real-time orthogonal slicing across any pair of dimensions:
 - **Plane 0-1 (`Det 1 vs Det 2`)**: Standard $4096 \times 4096$ $\gamma$-$\gamma$ coincidence matrix, sliced over the visible/gated 3rd axis.
 - **Plane 0-2 (`Det 1 vs Rings`)**: $4096 \times 128$ matrix showing $\gamma$-ray energy on Det 1 as a function of detector ring or timing.
@@ -67,7 +78,7 @@ The viewer allows real-time orthogonal slicing across any pair of dimensions:
 
 Switch planes instantly using the header toolbar buttons (`0-1`, `0-2`, `1-2`) or dropdown menu.
 
-### 3. Real-Time Subregion Slicing & Accelerated Navigation
+### 4. Real-Time Subregion Slicing & Accelerated Navigation
 - **Pre-Sum Slicing**: When zooming into a 2D region $[x_0..x_1, y_0..y_1]$, the backend extracts only the required subvolume from the 3D memory map *before* summing over the 3rd axis, accelerating tile generation from $76.5\text{ ms}$ to **$1.6\text{ ms}$ (~48× speedup)**.
 - **Multi-Threaded Server**: `ThreadingHTTPServer` processes simultaneous tile requests, 1D projections, and peak fits on separate background threads without blocking.
 - **Debounced 2D Synchronization**: 1D wheel zooming and channel panning update the stepped histograms client-side at 60 FPS ($<1\text{ ms}$), while heavy 2D tile rendering is debounced (45 ms) with `AbortController` cancellation to prevent network congestion.
@@ -109,14 +120,19 @@ For particle-gamma identification, ring discrimination, or kinematic curve gatin
 
 ---
 
-## 1D & 2D Peak Fitting
+## 1D & 2D Peak Fitting and Gamba 3D Coincidence Slicing
 
 The 3D viewer incorporates the complete spectroscopy peak fitting engine:
 - **Gaussian**: Standard symmetric photopeak with linear/quadratic continuum baseline.
 - **RadWare / SAMPO**: Photopeak with an exponential low-energy tail ($A, \eta$) for high-energy HPGe detectors.
 - **Hypermet EMG**: Convolved Gaussian exponential tail plus complementary error function ($\text{erfc}$) Compton step.
 - **Multiplet Fits**: Place multiple candidate markers with **`P`** or click fit region with **`R`**, then press **`V`** to perform multi-component non-linear least-squares fitting.
-- **2D Peak Fit**: `Ctrl+Click` on the 2D plane to perform 2D Gaussian peak fitting with Gamba coincidence background decomposition.
+- **2D Peak Fit & Gamba 3D Slicing (`Ctrl+Click` or `V` in 2D)**:
+  `Ctrl+Click` on any 2D orthogonal plane fits the 2D coincidence peak and decomposes the local region into the Gamba 4-component model. In 3D matrices, this automatically computes and displays the **net 3rd-axis coincidence spectrum**:
+
+  $$\text{Spec}_{\text{net}}(z) = \text{Spec}_{P|P}(z) - \frac{N_{P|BG}}{N_{BG|BG \text{ (1)}}} \text{Spec}_{BG|P}(z) - \frac{N_{BG|P}}{N_{BG|BG \text{ (2)}}} \text{Spec}_{P|BG}(z) + \frac{N_{BG|BG \text{ (corr)}}}{N_{BG|BG \text{ (all)}}} \text{Spec}_{BG|BG}(z)$$
+
+  This opens an interactive modal window displaying the net 3rd-axis projection (e.g. lifetime distribution or ring spectrum) with peak areas, background breakdown, 1D fitting tools, and vector PDF export.
 
 ---
 
