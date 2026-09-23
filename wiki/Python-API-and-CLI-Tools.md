@@ -348,10 +348,13 @@ print(f"Centroid:  {res.centroid:.4f} +/- {res.centroid_err:.4f} ch")
 print(f"Chi2/NDF:  {res.chi2_ndf:.3f} (NDF={res.ndf})")
 
 # 4. Perform background chi-square exploration scan
-scan = fitter.scan_background(bg_min=0.0, bg_max=40.0, num_steps=40)
+# Args: b_min, b_max, steps  (not bg_min / num_steps)
+scan = fitter.scan_background(b_min=0.0, b_max=40.0, steps=40)
 print(f"Best background from scan: {scan['best_bg']:.2f}")
 
 # 5. Export results
-fitter.export_fit_file("output.fit")
-fitter.export_pdf("output.pdf", title="138La Nuclear Lifetime Fit")
+# save_fit_file is a module-level helper; export_plot is the instance method for PDF/PNG
+from halflife import save_fit_file
+save_fit_file("output.fit", "spectrum.dat", fitter.spec, res)
+fitter.export_plot("output.pdf", title="138La Nuclear Lifetime Fit")
 ```
