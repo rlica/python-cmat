@@ -446,6 +446,30 @@ class MatrixSession3D:
 
 class CMAT3DWebHandler(BaseHTTPRequestHandler):
     session: Optional[MatrixSession3D] = None
+    # Sparse 3D requests can temporarily allocate large NumPy arrays. Limit
+    # concurrent handlers so rapid navigation cannot multiply peak memory.
+    request_slots = threading.BoundedSemaphore(2)
+    client_disconnect_errors = (BrokenPipeError, ConnectionResetError, ConnectionAbortedError)
+
+    def handle(self):
+        """Handle a request with bounded concurrency and clean disconnects."""
+        if not self.request_slots.acquire(timeout=30):
+            self.close_connection = True
+            try:
+                self.send_error(503, "Viewer is busy; please retry")
+            except self.client_disconnect_errors:
+                pass
+            return
+        try:
+            super().handle()
+        except self.client_disconnect_errors:
+            # Browsers cancel fetch() requests during fast navigation. The
+            # server may still be finishing the calculation when the TCP
+            # connection is closed, so do not report BrokenPipeError as a
+            # server failure or let socketserver print a traceback.
+            self.close_connection = True
+        finally:
+            self.request_slots.release()
 
     def log_message(self, format, *args):
         # Silence default HTTP access logs to keep terminal clean
@@ -525,6 +549,7 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
         session = self.get_session()
         m = session.get_active_matrix() if session else None
         reader: Optional[CMAT3DReader] = m["reader"] if m else None
+        axis_names = ["Axis 1 (X)", "Axis 2 (Y)", "Axis 3 (Z)"]
 
         if path == "/" or path.startswith("/index"):
             self.send_response(200)
@@ -754,8 +779,9 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
                 spec = np.array(gate_res["net_spec"], dtype=np.float64)
                 det_name = f"{axis_names[axis]} (Gated Coincidence)"
             else:
-                spec0, spec1, spec2 = reader.get_projections_for_region(plane=plane, x0=x0, x1=x1, y0=y0, y1=y1)
-                spec = spec0 if axis == 0 else (spec1 if axis == 1 else spec2)
+                spec = reader.get_projection_for_region(
+                    axis=axis, plane=plane, x0=x0, x1=x1, y0=y0, y1=y1
+                )
                 spec = np.array(spec, dtype=np.float64)
                 det_name = f"{axis_names[axis]} (Projection)"
 
@@ -817,10 +843,9 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
                 spec = np.array(gate_res["net_spec"], dtype=np.float64)
                 det_name = f"{axis_names[axis]} (Gated Coincidence)"
             else:
-                spec0, spec1, spec2 = reader.get_projections_for_region(
-                    plane=plane, x0=x0, x1=x1, y0=y0, y1=y1, gate_3rd=gate_3rd
+                spec = reader.get_projection_for_region(
+                    axis=axis, plane=plane, x0=x0, x1=x1, y0=y0, y1=y1, gate_3rd=gate_3rd
                 )
-                spec = spec0 if axis == 0 else (spec1 if axis == 1 else spec2)
                 spec = np.array(spec, dtype=np.float64)
                 det_name = f"{axis_names[axis]} (Projection)"
 
@@ -833,7 +858,9 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
                 res["axis"] = axis
                 print_fit_terminal_report(res, det_name, m["filename"], is_cal, verbosity="compact")
                 if res.get("success") and session.fit_log_enabled:
-                    append_fit_1d_result_to_file(session.fit_log_filename, res, is_cal)
+                    append_fit_1d_result_to_file(
+                        res, cal=axis_cal, is_cal=is_cal, filepath=session.fit_log_filename
+                    )
             except Exception as e:
                 res = {"success": False, "error": str(e), "axis": axis}
                 print(f"[!] Peak fit error at channel {channel:.1f} on axis {axis}: {e}", file=sys.stderr)
@@ -875,10 +902,9 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
                 gate_res = compute_3d_gate(reader, axis, gate_specs)
                 spec = np.array(gate_res["net_spec"], dtype=np.float64)
             else:
-                spec0, spec1, spec2 = reader.get_projections_for_region(
-                    plane=plane, x0=x0, x1=x1, y0=y0, y1=y1, gate_3rd=gate_3rd
+                spec = reader.get_projection_for_region(
+                    axis=axis, plane=plane, x0=x0, x1=x1, y0=y0, y1=y1, gate_3rd=gate_3rd
                 )
-                spec = spec0 if axis == 0 else (spec1 if axis == 1 else spec2)
                 spec = np.array(spec, dtype=np.float64)
 
             ch_min = int(float(query.get("ch_min", [0])[0]))
@@ -926,8 +952,9 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
                     det_name = axis_names[axis]
                     print_multi_fit_terminal_report(res, det_name, m["filename"], is_cal)
                     if session.fit_log_enabled:
-                        for pk in res.get("peaks", []):
-                            append_fit_1d_result_to_file(session.fit_log_filename, pk, is_cal)
+                        append_fit_1d_result_to_file(
+                            res, cal=axis_cal, is_cal=is_cal, filepath=session.fit_log_filename
+                        )
             except Exception as e:
                 res = {"success": False, "error": str(e), "axis": axis, "peaks": []}
                 print(f"[!] Multi-peak fit error on axis {axis}: {e}", file=sys.stderr)
@@ -971,10 +998,9 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
                     gate_res = compute_3d_gate(reader, axis, gate_specs)
                     spec = np.array(gate_res["net_spec"], dtype=np.float64)
                 else:
-                    spec0, spec1, spec2 = reader.get_projections_for_region(
-                        plane=plane, x0=x0, x1=x1, y0=y0, y1=y1, gate_3rd=gate_3rd
+                    spec = reader.get_projection_for_region(
+                        axis=axis, plane=plane, x0=x0, x1=x1, y0=y0, y1=y1, gate_3rd=gate_3rd
                     )
-                    spec = spec0 if axis == 0 else (spec1 if axis == 1 else spec2)
                     spec = np.array(spec, dtype=np.float64)
 
                 bg_str = query.get("bg_regions", [""])[0]
@@ -1051,7 +1077,13 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
                     if gamba_3rd.get("success"):
                         print_gamba_gate_terminal_report_3d(gamba_3rd, m["filename"], plane, cal_z, is_cal_z)
                     if session.fit_log_enabled:
-                        append_fit_2d_result_to_file(session.fit_log_filename, res, (is_cal_x, is_cal_y))
+                        append_fit_2d_result_to_file(
+                            res,
+                            cal_x=cal_x,
+                            cal_y=cal_y,
+                            is_cal=(is_cal_x, is_cal_y),
+                            filepath=session.fit_log_filename,
+                        )
             except Exception as e:
                 res = {"success": False, "error": str(e), "is_2d": True}
                 print(f"[!] 2D peak fit error: {e}", file=sys.stderr)

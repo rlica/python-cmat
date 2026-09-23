@@ -26,6 +26,7 @@
   </tr>
 </table>
 
+> **3D viewer development status:** Viewing of large symmetric 3D `.cmat` matrices is currently **preliminary and under active development**. The sparse on-demand engine, navigation, synchronized projections, fitting workflows, and performance characteristics should be considered experimental while further validation and optimization continue.
 
 ---
 

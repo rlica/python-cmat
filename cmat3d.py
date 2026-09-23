@@ -13,6 +13,8 @@ import sys
 import time
 import math
 import struct
+import threading
+from collections import OrderedDict
 from pathlib import Path
 from typing import Tuple, Optional, Dict, Any, Union, List
 import numpy as np
@@ -62,8 +64,12 @@ class CMAT3DReader:
         self._total_counts: Optional[int] = None
         self._max_count: Optional[int] = None
         self._nonzero_voxels: Optional[int] = None
-        self._block_cache: Dict[Tuple[int, int, int], np.ndarray] = {}
-        self._max_cached_blocks = 512
+        self._block_cache: OrderedDict[Tuple[int, int, int], np.ndarray] = OrderedDict()
+        self._block_cache_lock = threading.RLock()
+        # Keep the sparse block cache bounded. Each 64^3 int32 block is about
+        # 1 MiB; 128 blocks avoids the multi-hundred-MiB cache growth that can
+        # combine badly with concurrent HTTP request arrays.
+        self._max_cached_blocks = 128
 
         # Determine if sparse on-demand engine should be used
         uncompressed_bytes = self.res1 * self.res2 * self.res3 * 4
@@ -443,8 +449,11 @@ class CMAT3DReader:
         or None if block contains all zeros.
         """
         key = (gx, gy, gz)
-        if key in self._block_cache:
-            return self._block_cache[key]
+        with self._block_cache_lock:
+            if key in self._block_cache:
+                block = self._block_cache.pop(key)
+                self._block_cache[key] = block
+                return block
 
         if self.matmode == 1:
             s1 = min(gx, gy, gz)
@@ -506,11 +515,16 @@ class CMAT3DReader:
         else:
             b3d = b3d_sorted
 
-        # Cache block (LRU eviction if exceeded)
-        if len(self._block_cache) >= self._max_cached_blocks:
-            oldest = next(iter(self._block_cache))
-            del self._block_cache[oldest]
-        self._block_cache[key] = b3d
+        # Cache block (LRU eviction if exceeded). Multiple request threads
+        # can decompress the same block concurrently, but cache mutation is
+        # protected; the first completed insertion remains the cached entry.
+        with self._block_cache_lock:
+            if key in self._block_cache:
+                self._block_cache.move_to_end(key)
+            else:
+                if len(self._block_cache) >= self._max_cached_blocks:
+                    self._block_cache.popitem(last=False)
+                self._block_cache[key] = b3d
         return b3d
 
     def get_subvolume(
@@ -658,21 +672,213 @@ class CMAT3DReader:
                         out += np.sum(self.memmap_3d[ry0:ry1, rx0:rx1, xm:xx], axis=2, dtype=np.int32)
             return out
 
-        # Sparse on-demand extraction path
+        # Sparse on-demand extraction path: accumulate one 64^3 block at a
+        # time directly into the 2D output tile. Never allocate a dense 3D
+        # subvolume for a wide third-axis zoom.
+        bx_step, by_step, bz_step = self.step1, self.step2, self.step3
         for g0, g1 in all_gates:
             gm = min(g0, g1)
             gx = max(g0, g1) + 1
             if plane_norm == "0-1":
-                sub = self.get_subvolume((rx0, rx1), (ry0, ry1), (gm, gx))
-                out += np.sum(sub, axis=0, dtype=np.int32)
+                x_lo, x_hi = rx0, rx1
+                y_lo, y_hi = ry0, ry1
+                z_lo, z_hi = max(0, min(self.res3 - 1, gm)), max(0, min(self.res3, gx))
             elif plane_norm == "0-2":
-                sub = self.get_subvolume((rx0, rx1), (gm, gx), (ry0, ry1))
-                out += np.sum(sub, axis=1, dtype=np.int32)
+                x_lo, x_hi = rx0, rx1
+                y_lo, y_hi = max(0, min(self.res2 - 1, gm)), max(0, min(self.res2, gx))
+                z_lo, z_hi = ry0, ry1
             else:
-                sub = self.get_subvolume((gm, gx), (rx0, rx1), (ry0, ry1))
-                out += np.sum(sub, axis=2, dtype=np.int32)
+                x_lo, x_hi = max(0, min(self.res1 - 1, gm)), max(0, min(self.res1, gx))
+                y_lo, y_hi = rx0, rx1
+                z_lo, z_hi = ry0, ry1
 
+            gx_min = max(0, x_lo // bx_step)
+            gx_max = max(gx_min, (max(x_lo, x_hi - 1) // bx_step))
+            gy_min = max(0, y_lo // by_step)
+            gy_max = max(gy_min, (max(y_lo, y_hi - 1) // by_step))
+            gz_min = max(0, z_lo // bz_step)
+            gz_max = max(gz_min, (max(z_lo, z_hi - 1) // bz_step))
+
+            for gz in range(gz_min, gz_max + 1):
+                bz0, bz1 = gz * bz_step, min((gz + 1) * bz_step, self.res3)
+                oz0, oz1 = max(z_lo, bz0), min(z_hi, bz1)
+                if oz1 <= oz0:
+                    continue
+                for gy in range(gy_min, gy_max + 1):
+                    by0, by1 = gy * by_step, min((gy + 1) * by_step, self.res2)
+                    oy0, oy1 = max(y_lo, by0), min(y_hi, by1)
+                    if oy1 <= oy0:
+                        continue
+                    for gx in range(gx_min, gx_max + 1):
+                        bx0, bx1 = gx * bx_step, min((gx + 1) * bx_step, self.res1)
+                        ox0, ox1 = max(x_lo, bx0), min(x_hi, bx1)
+                        if ox1 <= ox0:
+                            continue
+                        block = self._get_block_3d(gx, gy, gz)
+                        if block is None:
+                            continue
+                        part = block[
+                            oz0 - bz0:oz1 - bz0,
+                            oy0 - by0:oy1 - by0,
+                            ox0 - bx0:ox1 - bx0,
+                        ]
+                        if plane_norm == "0-1":
+                            out[oy0 - ry0:oy1 - ry0, ox0 - rx0:ox1 - rx0] += np.sum(part, axis=0, dtype=np.int32)
+                        elif plane_norm == "0-2":
+                            out[oz0 - ry0:oz1 - ry0, ox0 - rx0:ox1 - rx0] += np.sum(part, axis=1, dtype=np.int32)
+                        else:
+                            out[oz0 - ry0:oz1 - ry0, oy0 - rx0:oy1 - rx0] += np.sum(part, axis=2, dtype=np.int32)
         return out
+
+    def _sum_projection_region(
+        self,
+        axis: int,
+        axis_ranges: Dict[int, List[Tuple[int, int]]],
+    ) -> np.ndarray:
+        """Sum physical axis ranges into one 1D spectrum block-by-block."""
+        result = np.zeros(self.shape[axis], dtype=np.int64)
+        if axis not in (0, 1, 2):
+            raise ValueError("axis must be 0, 1, or 2")
+
+        # axis_ranges uses physical matrix axes: {0: X ranges, 1: Y ranges, 2: Z ranges}.
+        x_ranges = axis_ranges[0]
+        y_ranges = axis_ranges[1]
+        z_ranges = axis_ranges[2]
+        bx_step, by_step, bz_step = self.step1, self.step2, self.step3
+
+        for x_lo, x_hi in x_ranges:
+            gx_min = max(0, x_lo // bx_step)
+            gx_max = max(gx_min, (max(x_lo, x_hi - 1) // bx_step))
+            for y_lo, y_hi in y_ranges:
+                gy_min = max(0, y_lo // by_step)
+                gy_max = max(gy_min, (max(y_lo, y_hi - 1) // by_step))
+                for z_lo, z_hi in z_ranges:
+                    gz_min = max(0, z_lo // bz_step)
+                    gz_max = max(gz_min, (max(z_lo, z_hi - 1) // bz_step))
+                    for gz in range(gz_min, gz_max + 1):
+                        bz0, bz1 = gz * bz_step, min((gz + 1) * bz_step, self.res3)
+                        oz0, oz1 = max(z_lo, bz0), min(z_hi, bz1)
+                        if oz1 <= oz0:
+                            continue
+                        for gy in range(gy_min, gy_max + 1):
+                            by0, by1 = gy * by_step, min((gy + 1) * by_step, self.res2)
+                            oy0, oy1 = max(y_lo, by0), min(y_hi, by1)
+                            if oy1 <= oy0:
+                                continue
+                            for gx in range(gx_min, gx_max + 1):
+                                bx0, bx1 = gx * bx_step, min((gx + 1) * bx_step, self.res1)
+                                ox0, ox1 = max(x_lo, bx0), min(x_hi, bx1)
+                                if ox1 <= ox0:
+                                    continue
+                                block = self._get_block_3d(gx, gy, gz)
+                                if block is None:
+                                    continue
+                                part = block[
+                                    oz0 - bz0:oz1 - bz0,
+                                    oy0 - by0:oy1 - by0,
+                                    ox0 - bx0:ox1 - bx0,
+                                ]
+                                if axis == 0:
+                                    result[ox0:ox1] += np.sum(part, axis=(0, 1), dtype=np.int64)
+                                elif axis == 1:
+                                    result[oy0:oy1] += np.sum(part, axis=(0, 2), dtype=np.int64)
+                                else:
+                                    result[oz0:oz1] += np.sum(part, axis=(1, 2), dtype=np.int64)
+        return result
+
+    def get_projection_for_region(
+        self,
+        axis: int,
+        plane: str = "0-1",
+        x0: int = 0,
+        x1: Optional[int] = None,
+        y0: int = 0,
+        y1: Optional[int] = None,
+        gate_3rd: Optional[Tuple[int, int]] = None,
+        gates_3rd: Optional[List[Tuple[int, int]]] = None,
+    ) -> np.ndarray:
+        """
+        Compute one 1D histogram for a 2D region.
+
+        This is the single-axis counterpart to get_projections_for_region().
+        It avoids calculating the two unused spectra, which is important for
+        interactive fits on large sparse 3D matrices.
+        """
+        if axis not in (0, 1, 2):
+            raise ValueError("axis must be 0, 1, or 2")
+
+        all_gates = []
+        if gate_3rd is not None:
+            all_gates.append(gate_3rd)
+        if gates_3rd:
+            all_gates.extend(gates_3rd)
+
+        plane_norm = str(plane).strip()
+        if plane_norm not in ("0-1", "0-2", "1-2"):
+            plane_norm = "0-1"
+
+        plane_axes = {
+            "0-1": (0, 1, 2),
+            "0-2": (0, 2, 1),
+            "1-2": (1, 2, 0),
+        }[plane_norm]
+        ax_x, ax_y, ax_z = plane_axes
+        # A gate on the target axis must not truncate that target spectrum.
+        # This matches get_projections_for_region(), which returns the full
+        # target-axis projection while applying a third-axis gate to the
+        # orthogonal spectra.
+        if axis == ax_z:
+            all_gates = []
+        ranges = [
+            (x0, x1 if x1 is not None else self.shape[ax_x]),
+            (y0, y1 if y1 is not None else self.shape[ax_y]),
+        ]
+        ranges = [
+            (max(0, int(lo)), min(self.shape[ax], max(int(lo) + 1, int(hi))))
+            for (lo, hi), ax in zip(ranges, (ax_x, ax_y))
+        ]
+        rx0, rx1 = ranges[0]
+        ry0, ry1 = ranges[1]
+        z_gate_ranges = []
+        for zm, zx in all_gates:
+            z_lo = max(0, min(self.shape[ax_z] - 1, min(zm, zx)))
+            z_hi = max(0, min(self.shape[ax_z], max(zm, zx) + 1))
+            if z_hi > z_lo:
+                z_gate_ranges.append((z_lo, z_hi))
+        if not z_gate_ranges:
+            z_gate_ranges = [(0, self.shape[ax_z])]
+
+        # For the two axes represented in the cached 2D projection, use the
+        # cache directly when no gate is active. The third-axis projection
+        # can also use the stored total projection when its region is full.
+        if not all_gates and axis == ax_z:
+            if ranges[0] == (0, self.shape[ax_x]) and ranges[1] == (0, self.shape[ax_y]):
+                return self.get_projection(axis)
+        if not all_gates and axis in (ax_x, ax_y):
+            p = self.proj_2d[plane_norm]
+            if plane_norm == "0-1":
+                if axis == 0:
+                    return np.sum(p[ry0:ry1, :], axis=0, dtype=np.int64)
+                return np.sum(p[:, rx0:rx1], axis=1, dtype=np.int64)
+            if plane_norm == "0-2":
+                if axis == 0:
+                    return np.sum(p[ry0:ry1, :], axis=0, dtype=np.int64)
+                return np.sum(p[:, rx0:rx1], axis=1, dtype=np.int64)
+            if axis == 1:
+                return np.sum(p[ry0:ry1, :], axis=0, dtype=np.int64)
+            return np.sum(p[:, rx0:rx1], axis=1, dtype=np.int64)
+
+        # Accumulate block-by-block into the requested 1D output. This avoids
+        # allocating a dense 3D temporary for wide or gated regions.
+        if plane_norm == "0-1":
+            axis_ranges = {0: [ranges[0]], 1: [ranges[1]], 2: z_gate_ranges}
+        elif plane_norm == "0-2":
+            axis_ranges = {0: [ranges[0]], 1: z_gate_ranges, 2: [ranges[1]]}
+        else:  # 1-2: displayed X is physical Y, displayed Y is physical Z.
+            axis_ranges = {0: z_gate_ranges, 1: [ranges[0]], 2: [ranges[1]]}
+        if axis == ax_z:
+            axis_ranges[ax_z] = [(0, self.shape[ax_z])]
+        return self._sum_projection_region(axis, axis_ranges)
 
     def get_projections_for_region(
         self,
@@ -688,99 +894,19 @@ class CMAT3DReader:
         Compute the 3 1D histograms (spec0, spec1, spec2) for the visible 2D box (x0..x1, y0..y1)
         and any optional gate on the 3rd axis.
         """
-        all_gates_3rd = []
-        if gate_3rd is not None:
-            all_gates_3rd.append(gate_3rd)
-        if gates_3rd:
-            all_gates_3rd.extend(gates_3rd)
-
-        plane_norm = str(plane).strip()
-        if plane_norm not in ("0-1", "0-2", "1-2"):
-            plane_norm = "0-1"
-
-        if plane_norm == "0-1":
-            rx0 = max(0, min(self.res1 - 1, x0))
-            rx1 = max(rx0 + 1, min(self.res1, x1 if x1 is not None else self.res1))
-            ry0 = max(0, min(self.res2 - 1, y0))
-            ry1 = max(ry0 + 1, min(self.res2, y1 if y1 is not None else self.res2))
-
-            if not all_gates_3rd:
-                spec0 = np.sum(self.proj_2d["0-1"][ry0:ry1, :], axis=0, dtype=np.int64) if (ry0 > 0 or ry1 < self.res2) else self.get_projection(0)
-                spec1 = np.sum(self.proj_2d["0-1"][:, rx0:rx1], axis=1, dtype=np.int64) if (rx0 > 0 or rx1 < self.res1) else self.get_projection(1)
-                if rx0 == 0 and rx1 >= self.res1 and ry0 == 0 and ry1 >= self.res2:
-                    spec2 = self.get_projection(2)
-                else:
-                    sub = self.get_subvolume((rx0, rx1), (ry0, ry1), (0, self.res3))
-                    spec2 = np.sum(sub, axis=(1, 2), dtype=np.int64)
-            else:
-                spec0 = np.zeros(self.res1, dtype=np.int64)
-                spec1 = np.zeros(self.res2, dtype=np.int64)
-                for zm, zx in all_gates_3rd:
-                    z_lo = max(0, min(self.res3 - 1, min(zm, zx)))
-                    z_hi = max(0, min(self.res3, max(zm, zx) + 1))
-                    if z_hi > z_lo:
-                        chunk = self.get_subvolume((rx0, rx1), (ry0, ry1), (z_lo, z_hi))
-                        spec0[rx0:rx1] += np.sum(chunk, axis=(0, 1), dtype=np.int64)
-                        spec1[ry0:ry1] += np.sum(chunk, axis=(0, 2), dtype=np.int64)
-
-                sub_full_z = self.get_subvolume((rx0, rx1), (ry0, ry1), (0, self.res3))
-                spec2 = np.sum(sub_full_z, axis=(1, 2), dtype=np.int64)
-
-            return spec0, spec1, spec2
-
-        elif plane_norm == "0-2":
-            rx0 = max(0, min(self.res1 - 1, x0))
-            rx1 = max(rx0 + 1, min(self.res1, x1 if x1 is not None else self.res1))
-            rz0 = max(0, min(self.res3 - 1, y0))
-            rz1 = max(rz0 + 1, min(self.res3, y1 if y1 is not None else self.res3))
-
-            if not all_gates_3rd:
-                spec0 = np.sum(self.proj_2d["0-2"][rz0:rz1, :], axis=0, dtype=np.int64) if (rz0 > 0 or rz1 < self.res3) else self.get_projection(0)
-                spec2 = np.sum(self.proj_2d["0-2"][:, rx0:rx1], axis=1, dtype=np.int64) if (rx0 > 0 or rx1 < self.res1) else self.get_projection(2)
-                sub = self.get_subvolume((rx0, rx1), (0, self.res2), (rz0, rz1))
-                spec1 = np.sum(sub, axis=(0, 2), dtype=np.int64)
-            else:
-                spec0 = np.zeros(self.res1, dtype=np.int64)
-                spec2 = np.zeros(self.res3, dtype=np.int64)
-                for ym, yx in all_gates_3rd:
-                    y_lo = max(0, min(self.res2 - 1, min(ym, yx)))
-                    y_hi = max(0, min(self.res2, max(ym, yx) + 1))
-                    if y_hi > y_lo:
-                        chunk = self.get_subvolume((rx0, rx1), (y_lo, y_hi), (rz0, rz1))
-                        spec0[rx0:rx1] += np.sum(chunk, axis=(0, 1), dtype=np.int64)
-                        spec2[rz0:rz1] += np.sum(chunk, axis=(1, 2), dtype=np.int64)
-
-                sub_full_y = self.get_subvolume((rx0, rx1), (0, self.res2), (rz0, rz1))
-                spec1 = np.sum(sub_full_y, axis=(0, 2), dtype=np.int64)
-
-            return spec0, spec1, spec2
-
-        else:
-            ry0 = max(0, min(self.res2 - 1, x0))
-            ry1 = max(ry0 + 1, min(self.res2, x1 if x1 is not None else self.res2))
-            rz0 = max(0, min(self.res3 - 1, y0))
-            rz1 = max(rz0 + 1, min(self.res3, y1 if y1 is not None else self.res3))
-
-            if not all_gates_3rd:
-                spec1 = np.sum(self.proj_2d["1-2"][rz0:rz1, :], axis=0, dtype=np.int64) if (rz0 > 0 or rz1 < self.res3) else self.get_projection(1)
-                spec2 = np.sum(self.proj_2d["1-2"][:, ry0:ry1], axis=1, dtype=np.int64) if (ry0 > 0 or ry1 < self.res2) else self.get_projection(2)
-                sub = self.get_subvolume((0, self.res1), (ry0, ry1), (rz0, rz1))
-                spec0 = np.sum(sub, axis=(0, 1), dtype=np.int64)
-            else:
-                spec1 = np.zeros(self.res2, dtype=np.int64)
-                spec2 = np.zeros(self.res3, dtype=np.int64)
-                for xm, xx in all_gates_3rd:
-                    x_lo = max(0, min(self.res1 - 1, min(xm, xx)))
-                    x_hi = max(0, min(self.res1, max(xm, xx) + 1))
-                    if x_hi > x_lo:
-                        chunk = self.get_subvolume((x_lo, x_hi), (ry0, ry1), (rz0, rz1))
-                        spec1[ry0:ry1] += np.sum(chunk, axis=(0, 2), dtype=np.int64)
-                        spec2[rz0:rz1] += np.sum(chunk, axis=(1, 2), dtype=np.int64)
-
-                sub_full_x = self.get_subvolume((0, self.res1), (ry0, ry1), (rz0, rz1))
-                spec0 = np.sum(sub_full_x, axis=(0, 1), dtype=np.int64)
-
-            return spec0, spec1, spec2
+        return tuple(
+            self.get_projection_for_region(
+                axis=axis,
+                plane=plane,
+                x0=x0,
+                x1=x1,
+                y0=y0,
+                y1=y1,
+                gate_3rd=gate_3rd,
+                gates_3rd=gates_3rd,
+            )
+            for axis in range(3)
+        )
 
     def get_info(self) -> Dict[str, Any]:
         return {

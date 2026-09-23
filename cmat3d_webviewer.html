@@ -1205,6 +1205,8 @@
   let tileAbortCtrl = null;
   let projAbortCtrl = null;
   let gateAbortCtrl = null;
+  let tileRequestGeneration = 0;
+  let projRequestGeneration = 0;
   let sync2DTimeout = null;
 
   function schedule2DSync(delay = 45) {
@@ -1213,6 +1215,8 @@
       sync2DTimeout = null;
       fetchTileAndRender();
       fetchProjections();
+      renderAll1DSpectra();
+      render2D();
     }, delay);
   }
 
@@ -1670,15 +1674,15 @@
     const shape = metadata.shape || [4096, 4096, 128];
     const maxCh = shape[zAx];
 
-    if (gates1D[zAx] && gates1D[zAx].w && gates1D[zAx].w.length > 0) {
-      return JSON.stringify(gates1D[zAx].w);
-    }
     if (view1D[zAx] && (view1D[zAx].start > 0 || view1D[zAx].end < maxCh)) {
       const s = Math.max(0, Math.floor(view1D[zAx].start));
       const e = Math.min(maxCh - 1, Math.ceil(view1D[zAx].end) - 1);
       if (s <= e) {
         return JSON.stringify([[s, e]]);
       }
+    }
+    if (gates1D[zAx] && gates1D[zAx].w && gates1D[zAx].w.length > 0) {
+      return JSON.stringify(gates1D[zAx].w);
     }
     return '';
   }
@@ -1691,6 +1695,7 @@
     }
     tileAbortCtrl = new AbortController();
     const signal = tileAbortCtrl.signal;
+    const requestGeneration = ++tileRequestGeneration;
 
     const dpr = window.devicePixelRatio || 1;
     const pr = getPlotRect2D();
@@ -1704,12 +1709,13 @@
     }
     try {
       const res = await fetch(url, { signal });
-      if (!res.ok) return;
+      if (requestGeneration !== tileRequestGeneration || !res.ok) return;
       const hw = res.headers.get('X-Shape-W') || res.headers.get('x-shape-w');
       const hh = res.headers.get('X-Shape-H') || res.headers.get('x-shape-h');
       tileW = hw ? parseInt(hw, 10) : reqW;
       tileH = hh ? parseInt(hh, 10) : reqH;
       const buf = await res.arrayBuffer();
+      if (requestGeneration !== tileRequestGeneration) return;
 
       currentTileData = new Int32Array(buf);
       if (tileW > 0 && currentTileData.length % tileW === 0 && currentTileData.length !== tileW * tileH) {
@@ -1739,6 +1745,7 @@
     }
     projAbortCtrl = new AbortController();
     const signal = projAbortCtrl.signal;
+    const requestGeneration = ++projRequestGeneration;
 
     const gate3rd = get3rdAxisGateParam();
     let url = `/api/projection_region?plane=${activePlane}&x0=${Math.floor(view2D.x0)}&x1=${Math.ceil(view2D.x1)}&y0=${Math.floor(view2D.y0)}&y1=${Math.ceil(view2D.y1)}`;
@@ -1747,8 +1754,9 @@
     }
     try {
       const res = await fetch(url, { signal });
-      if (!res.ok) return;
+      if (requestGeneration !== projRequestGeneration || !res.ok) return;
       const data = await res.json();
+      if (requestGeneration !== projRequestGeneration) return;
       sumSpec1D[0] = data.spec0;
       sumSpec1D[1] = data.spec1;
       sumSpec1D[2] = data.spec2;
@@ -2262,19 +2270,22 @@
   async function requestPeakFit(axis, ch) {
     if (ch === null || ch === undefined || isNaN(ch)) return;
 
+    const shape = metadata?.shape || [4096, 4096, 128];
+    const plAxes = getPlaneAxes(activePlane);
     const x0 = Math.floor(Math.max(0, view2D.x0));
-    const x1 = Math.ceil(Math.min(metadata.shape ? metadata.shape[0] : 4096, view2D.x1));
+    const x1 = Math.ceil(Math.min(shape[plAxes.x], view2D.x1));
     const y0 = Math.floor(Math.max(0, view2D.y0));
-    const y1 = Math.ceil(Math.min(metadata.shape ? metadata.shape[1] : 4096, view2D.y1));
+    const y1 = Math.ceil(Math.min(shape[plAxes.y], view2D.y1));
     const fitType = document.getElementById('fitTypeSelect')?.value || 'gaussian';
     const fwhmEst = parseFloat(document.getElementById('peakSearchFwhmSlider')?.value || '4.0');
     const fwhmMult = document.getElementById('fwhmMultSlider1D') ? parseFloat(document.getElementById('fwhmMultSlider1D').value) : 4.0;
     const axNames = ['Axis 1 (X)', 'Axis 2 (Y)', 'Axis 3 (Z)'];
     const detLabel = axNames[axis] || `Axis ${axis + 1}`;
     const gate3rd = get3rdAxisGateParam();
+    const fitGate3rd = axis === plAxes.z ? '' : gate3rd;
 
     let gateParams = '';
-    if (gate3rd) gateParams += `&gate_3rd=${encodeURIComponent(gate3rd)}`;
+    if (fitGate3rd) gateParams += `&gate_3rd=${encodeURIComponent(fitGate3rd)}`;
     for (let a = 0; a < 3; a++) {
       if (gates1D[a] && gates1D[a].w && gates1D[a].w.length > 0) {
         gateParams += `&w${a}=${encodeURIComponent(JSON.stringify(gates1D[a].w))}`;
@@ -2422,7 +2433,15 @@
     const url = `/api/fit_peak?axis=${axis}&channel=${fitCh}&fit_type=${fitType}&fwhm_mult=${fwhmMult}&plane=${activePlane}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}${gateParams}`;
     try {
       const res = await fetch(url);
-      const data = await res.json();
+      let data;
+      try {
+        data = await res.json();
+      } catch (parseError) {
+        throw new Error(`HTTP ${res.status}: invalid fit response`);
+      }
+      if (!res.ok) {
+        throw new Error(data.error || `HTTP ${res.status}`);
+      }
       if (data.success) {
         if (!activeFits1D[axis]) activeFits1D[axis] = [];
         const thresh1D = Math.max(2.0, (data.fwhm_ch || 4.0) * 0.8);
@@ -2457,6 +2476,7 @@
       }
     } catch (e) {
       console.error("Peak fit failed:", e);
+      showMatrixToast(`1D fit failed: ${e.message || e}`, true);
     }
   }
 
@@ -2504,10 +2524,12 @@
       }
     }
 
+    const shape = metadata?.shape || [4096, 4096, 128];
+    const plAxes = getPlaneAxes(activePlane);
     const x0 = Math.floor(Math.max(0, view2D.x0));
-    const x1 = Math.ceil(Math.min(metadata.shape ? metadata.shape[0] : 4096, view2D.x1));
+    const x1 = Math.ceil(Math.min(shape[plAxes.x], view2D.x1));
     const y0 = Math.floor(Math.max(0, view2D.y0));
-    const y1 = Math.ceil(Math.min(metadata.shape ? metadata.shape[1] : 4096, view2D.y1));
+    const y1 = Math.ceil(Math.min(shape[plAxes.y], view2D.y1));
 
     const url = `/api/fit_all_peaks_1d?axis=${axis}&fit_type=${fitType}&fwhm_est=${fwhmEst}&min_snr=${minSnr}&fwhm_mult=${fwhmMult}&ch_min=${chMin}&ch_max=${chMax}&plane=${activePlane}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}${peaksParam}${gateParams}`;
     try {
@@ -4629,6 +4651,8 @@
             schedule2DSync(45);
           } else if (ax === plAxes.z) {
             render1DSpectrum(ax);
+            renderAll1DSpectra();
+            render2D();
             schedule2DSync(45);
           } else {
             render1DSpectrum(ax);

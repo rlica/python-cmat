@@ -4,6 +4,8 @@ The `cmat3d_webviewer.py` server and companion `cmat3d_webviewer.html` client pr
 
 The viewer couples pure Python/NumPy memory-mapped slice decompression with a high-performance HTML5 Canvas frontend featuring real-time multi-plane orthoslicing, 3D multi-gate coincidence cuts, 2D graphical Banana ROI gates, 1D/2D photopeak fitting, and publication-quality vector PDF export.
 
+> **Development status:** The large symmetric 3D `.cmat` viewing workflow is **preliminary and under active development**. Sparse slicing, synchronized navigation, fitting workflows, and performance should be treated as experimental while validation and optimization continue.
+
 ---
 
 ## Launching the 3D Web Viewer
