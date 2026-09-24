@@ -250,7 +250,13 @@ MIT License. Developed for the gamma-ray spectroscopy community.
 
 ---
 
-## Acknowledgments & Disclaimer
+## Acknowledgments
 
-This project was developed with the assistance of **Antigravity**, an agentic AI coding assistant developed by Google DeepMind.
+This work was supported by a grant of the Romanian Ministry of Research, Innovation and Digitization, CNCS - UEFISCDI, project number PN-IV-P2-2.1-TE-2023-0339, within PNCDI IV, the Romanian National Authority for Research through the Nucleu Project No. PN 23 21 01 02, the Institute of Atomic Physics through the CERN/ISOLDE grant and the „ELI-NP” Programme Component, contract RO-CH Nr. 1/ 30.10.2025, within the 2nd Swiss Contribution to Romania. 
+
+---
+
+## Disclaimer
+
+This project was developed with the assistance of Gemini 3.8-flash-high through **Antigravity**, an agentic AI coding assistant developed by Google DeepMind.
 
