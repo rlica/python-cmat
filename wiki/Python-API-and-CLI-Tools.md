@@ -279,6 +279,8 @@ for res in report["results_2d"]:
 
 It supports both an interactive terminal REPL (matching the classic menu-driven workflow) and a fully scriptable command-line interface.
 
+> **Development status:** The half-life fitting workflow has been improved, but additional fitting, analysis, and interface changes are still upcoming.
+
 ### Command-Line Interface (CLI)
 
 ```bash
