@@ -411,7 +411,7 @@ class HalfLifeFitter:
         # Parameters: [t12, fwhm, centroid, scale, bg]
         self.pars: List[float] = [20.0, 15.0, 0.0, 1000.0, 0.0]
         self.errs: List[float] = [0.0, 0.0, 0.0, 0.0, 0.0]
-        self.freepars: List[bool] = [True, True, True, True, False]  # bg fixed by default like halflife.c
+        self.freepars: List[bool] = [True, True, True, True, True]  # background is free by default
         self.last_fit_result: Optional[Dict[str, Any]] = None
         self.last_scan_result: Optional[Dict[str, Any]] = None
 
@@ -499,9 +499,9 @@ class HalfLifeFitter:
                 x = x[mask]
                 y = y[mask]
 
-        # Estimate baseline background from 10% edges
-        n_edge = max(2, len(x) // 10)
-        bg_est = float(np.median(np.concatenate([y[:n_edge], y[-n_edge:]])))
+        # Estimate background from the late-time tail of the active range.
+        n_tail = max(3, int(np.ceil(len(x) * 0.15)))
+        bg_est = float(np.median(y[-n_tail:]))
         bg_est = max(0.0, bg_est)
 
         # Estimate prompt centroid (maximum counts above baseline)
@@ -573,8 +573,9 @@ class HalfLifeFitter:
         if self.spec is None or len(self.spec.x) == 0:
             raise ValueError("No spectrum loaded to fit.")
 
-        # Update initial parameters if provided
-        if t12 is not None: self.pars[0] = float(t12)
+        # Update initial parameters if provided. Interactive fitting is
+        # restricted to right-side (nonnegative) lifetimes.
+        if t12 is not None: self.pars[0] = max(0.0, float(t12))
         if fwhm is not None: self.pars[1] = float(fwhm)
         if centroid is not None: self.pars[2] = float(centroid)
         if scale is not None: self.pars[3] = float(scale)
@@ -637,27 +638,36 @@ class HalfLifeFitter:
 
         # Define reasonable physical bounds for free parameters
         x_min, x_max = np.min(x_fit), np.max(x_fit)
-        span = x_max - x_min
+        span = max(1e-6, x_max - x_min)
+        dx = float(np.median(np.diff(x_fit))) if len(x_fit) > 1 else span
+        edge_count = max(2, len(y_fit) // 10)
+        edge_values = np.concatenate((y_fit[:edge_count], y_fit[-edge_count:]))
+        peak = max(0.0, float(np.max(y_fit)))
+        noise = max(1.0, 1.4826 * float(np.median(np.abs(edge_values - np.median(edge_values)))))
+        initial_scale = max(1e-6, abs(p_current[3]))
         lower_bounds = []
         upper_bounds = []
 
         for idx in free_indices:
-            if idx == 0:  # t12
-                # Half-life can be positive or negative, but bounded by span
-                lower_bounds.append(-5.0 * span)
-                upper_bounds.append(5.0 * span)
-            elif idx == 1:  # FWHM
+            if idx == 0:  # t12: nonnegative, identifiable within the fitted span
                 lower_bounds.append(0.0)
-                upper_bounds.append(5.0 * span)
-            elif idx == 2:  # Centroid
-                lower_bounds.append(x_min - span)
-                upper_bounds.append(x_max + span)
-            elif idx == 3:  # Scale
+                upper_bounds.append(max(10.0 * span, 1e-6))
+            elif idx == 1:  # FWHM: prompt width should remain narrow
                 lower_bounds.append(0.0)
-                upper_bounds.append(1e12)
-            elif idx == 4:  # Background
+                upper_bounds.append(max(0.5 * span, 1e-6))
+            elif idx == 2:  # Centroid: fit range plus a small margin
+                lower_bounds.append(x_min - 0.1 * span)
+                upper_bounds.append(x_max + 0.1 * span)
+            elif idx == 3:  # Scale: practical range around the current estimate
                 lower_bounds.append(0.0)
-                upper_bounds.append(1e9)
+                upper_bounds.append(max(100.0 * initial_scale, 1000.0 * peak * max(dx, 1e-6), 1e-6))
+            elif idx == 4:  # Background: data-driven practical range
+                lower_bounds.append(0.0)
+                upper_bounds.append(max(5.0 * abs(p_current[4]), 5.0 * noise, 0.05 * peak, 5.0))
+
+        # Keep automatic/user initial guesses inside the practical bounds.
+        p0_free = np.asarray(p0_free, dtype=np.float64)
+        p0_free = np.minimum(np.maximum(p0_free, np.asarray(lower_bounds)), np.asarray(upper_bounds))
 
         res = scipy.optimize.least_squares(
             residuals,
@@ -1170,7 +1180,8 @@ Examples:
     parser.add_argument("--fix-fwhm", action="store_true", help="Fix FWHM parameter during fit")
     parser.add_argument("--fix-centroid", action="store_true", help="Fix centroid parameter during fit")
     parser.add_argument("--fix-scale", action="store_true", help="Fix scaling factor parameter during fit")
-    parser.add_argument("--free-bg", action="store_true", help="Allow background to float freely during fit")
+    parser.add_argument("--free-bg", action="store_true", help="Allow background to float freely during fit (default; retained for compatibility)")
+    parser.add_argument("--fix-bg", action="store_true", help="Fix background during fit")
     
     parser.add_argument("--range", nargs=2, type=float, metavar=("MIN", "MAX"), help="Fit range bounds [x_min x_max]")
     parser.add_argument("--energy", action="store_true", help="Fit on calibrated energy/time axis instead of channels")
@@ -1209,7 +1220,7 @@ Examples:
         not args.fix_fwhm,
         not args.fix_centroid,
         not args.fix_scale,
-        bool(args.free_bg)
+        not args.fix_bg
     ]
 
     fit_range = tuple(args.range) if args.range else None

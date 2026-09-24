@@ -5387,7 +5387,7 @@ class CMATCommandInterpreter:
             "fix-fwhm" not in flags,
             "fix-centroid" not in flags,
             "fix-scale" not in flags,
-            "free-bg" in flags or "float-bg" in flags
+            True
         ]
 
         fit_range = None
@@ -6769,7 +6769,7 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             from halflife import HalfLifeFitter
             query = parse_qs(urlparse(self.path).query)
             fn = query.get("file", ["spectrum.dat"])[0].strip()
-            t12 = float(query.get("t12", [20.0])[0])
+            t12 = max(0.0, float(query.get("t12", [20.0])[0]))
             fwhm = float(query.get("fwhm", [15.0])[0])
             centroid = float(query.get("centroid", [0.0])[0])
             scale = float(query.get("scale", [1000.0])[0])
@@ -6777,6 +6777,7 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             r0 = float(query.get("r0", [0.0])[0])
             r1 = float(query.get("r1", [0.0])[0])
             is_log = int(query.get("log", [0])[0]) == 1
+            mirrored = int(query.get("mirrored", [0])[0]) == 1
 
             fitter = HalfLifeFitter()
             filepath = Path(fn)
@@ -6790,6 +6791,18 @@ class CMATWebHandler(BaseHTTPRequestHandler):
                     session = self.get_session()
                     spec = session.get_spectrum(1)
                     fitter.set_data(np.arange(len(spec)), spec)
+
+                if mirrored:
+                    x = np.asarray(fitter.spec.x, dtype=np.float64)
+                    y = np.asarray(fitter.spec.y, dtype=np.float64)
+                    dy = np.asarray(fitter.spec.dy, dtype=np.float64)
+                    x_min, x_max = float(np.min(x)), float(np.max(x))
+                    fitter.set_data(
+                        (x_min + x_max - x)[::-1],
+                        y[::-1],
+                        dy=dy[::-1],
+                        x_label=fitter.spec.x_label
+                    )
 
                 res = fitter.fit(
                     t12=t12, fwhm=fwhm, centroid=centroid, scale=scale, bg=bg,
@@ -6944,7 +6957,7 @@ class CMATWebHandler(BaseHTTPRequestHandler):
                 fitter.set_data(x_arr, y_arr, dy=dy_arr)
 
                 fit_range = tuple(data["fit_range"]) if ("fit_range" in data and data["fit_range"]) else None
-                freepars = data.get("freepars", [True, True, True, True, False])
+                freepars = data.get("freepars", [True, True, True, True, True])
 
                 res = fitter.fit(
                     t12=data.get("t12"),
@@ -6981,13 +6994,13 @@ class CMATWebHandler(BaseHTTPRequestHandler):
                 fit_range = tuple(data["fit_range"]) if ("fit_range" in data and data["fit_range"]) else None
                 fitter.active_range = fit_range
                 fitter.pars = [
-                    float(data.get("t12", 20.0)),
+                    max(0.0, float(data.get("t12", 20.0))),
                     float(data.get("fwhm", 15.0)),
                     float(data.get("centroid", 0.0)),
                     float(data.get("scale", 1000.0)),
                     float(data.get("bg", 0.0))
                 ]
-                fitter.freepars = data.get("freepars", [True, True, True, True, False])
+                fitter.freepars = data.get("freepars", [True, True, True, True, True])
 
                 b_min = float(data["b_min"]) if "b_min" in data else None
                 b_max = float(data["b_max"]) if "b_max" in data else None

@@ -248,6 +248,23 @@
       font-size: 0.78rem;
     }
 
+    .param-control { min-width: 150px; }
+    .param-value-row { display: flex; align-items: stretch; gap: 3px; }
+    .param-value-row input[type="number"] { min-width: 0; flex: 1; }
+    .param-step-btn {
+      width: 20px; min-width: 20px; padding: 0; border: 1px solid var(--border);
+      border-radius: 3px; background: #101923; color: var(--accent-cyan);
+      cursor: pointer; font-size: 0.68rem; line-height: 1;
+    }
+    .param-step-btn:hover:not(:disabled) { border-color: var(--accent-cyan); background: rgba(0, 229, 255, 0.12); }
+    .param-step-btn:disabled, .param-slider:disabled { opacity: 0.38; cursor: not-allowed; }
+    .param-slider-wrap { position: relative; margin-top: 3px; }
+    .param-slider { width: 100%; height: 15px; margin: 0; accent-color: var(--accent-cyan); cursor: pointer; }
+    .param-center-mark { position: absolute; top: 2px; left: 50%; width: 1px; height: 11px; background: var(--accent-orange); opacity: 0.8; pointer-events: none; }
+    .param-center-label { display: block; color: var(--text-muted); font-size: 0.62rem; text-align: center; white-space: nowrap; }
+    .param-control.locked .param-slider-wrap { opacity: 0.5; }
+    .param-control.locked .param-center-label { color: var(--accent-orange); }
+
     .checkbox-container {
       display: flex;
       align-items: center;
@@ -288,6 +305,11 @@
       display: block;
       width: 100%;
       height: 100%;
+    }
+
+    #plotCanvas {
+      cursor: crosshair;
+      touch-action: none;
     }
 
     /* Results Card */
@@ -504,45 +526,95 @@
               <td>
                 <strong>t<sub>1/2</sub></strong> <span style="font-size:0.7rem; color:var(--text-muted);">(Half-Life)</span>
               </td>
-              <td><input type="number" id="p_t12" step="any" oninput="onParamInput()"></td>
+              <td>
+                <div class="param-control" id="ctrl_p_t12">
+                  <div class="param-value-row">
+                    <input type="number" id="p_t12" step="any" min="0" oninput="onParamInput('p_t12')">
+                    <button type="button" class="param-step-btn" onclick="stepParam('p_t12', 1)" title="Increase by 5%">▲</button>
+                    <button type="button" class="param-step-btn" onclick="stepParam('p_t12', -1)" title="Decrease by 5%">▼</button>
+                  </div>
+                  <div class="param-slider-wrap"><input type="range" class="param-slider" id="slider_p_t12" min="0" max="1000" step="1" oninput="onParamSlider('p_t12')"><span class="param-center-mark"></span></div>
+                  <span class="param-center-label">center: —</span>
+                </div>
+              </td>
               <td style="text-align: center;">
-                <input type="checkbox" id="fix_t12" onchange="onParamInput()">
+                <input type="checkbox" id="fix_t12" onchange="onParamFix('p_t12')">
               </td>
             </tr>
             <tr>
               <td>
                 <strong>FWHM</strong> <span style="font-size:0.7rem; color:var(--text-muted);">(Prompt)</span>
               </td>
-              <td><input type="number" id="p_fwhm" step="any" oninput="onParamInput()"></td>
+              <td>
+                <div class="param-control" id="ctrl_p_fwhm">
+                  <div class="param-value-row">
+                    <input type="number" id="p_fwhm" step="any" oninput="onParamInput('p_fwhm')">
+                    <button type="button" class="param-step-btn" onclick="stepParam('p_fwhm', 1)" title="Increase by 5%">▲</button>
+                    <button type="button" class="param-step-btn" onclick="stepParam('p_fwhm', -1)" title="Decrease by 5%">▼</button>
+                  </div>
+                  <div class="param-slider-wrap"><input type="range" class="param-slider" id="slider_p_fwhm" min="0" max="1000" step="1" oninput="onParamSlider('p_fwhm')"><span class="param-center-mark"></span></div>
+                  <span class="param-center-label">center: —</span>
+                </div>
+              </td>
               <td style="text-align: center;">
-                <input type="checkbox" id="fix_fwhm" onchange="onParamInput()">
+                <input type="checkbox" id="fix_fwhm" onchange="onParamFix('p_fwhm')">
               </td>
             </tr>
             <tr>
               <td>
                 <strong>Centroid</strong> <span style="font-size:0.7rem; color:var(--text-muted);">(x<sub>0</sub>)</span>
               </td>
-              <td><input type="number" id="p_centroid" step="any" oninput="onParamInput()"></td>
+              <td>
+                <div class="param-control" id="ctrl_p_centroid">
+                  <div class="param-value-row">
+                    <input type="number" id="p_centroid" step="any" oninput="onParamInput('p_centroid')">
+                    <button type="button" class="param-step-btn" onclick="stepParam('p_centroid', 1)" title="Increase by 5%">▲</button>
+                    <button type="button" class="param-step-btn" onclick="stepParam('p_centroid', -1)" title="Decrease by 5%">▼</button>
+                  </div>
+                  <div class="param-slider-wrap"><input type="range" class="param-slider" id="slider_p_centroid" min="0" max="1000" step="1" oninput="onParamSlider('p_centroid')"><span class="param-center-mark"></span></div>
+                  <span class="param-center-label">center: —</span>
+                </div>
+              </td>
               <td style="text-align: center;">
-                <input type="checkbox" id="fix_centroid" onchange="onParamInput()">
+                <input type="checkbox" id="fix_centroid" onchange="onParamFix('p_centroid')">
               </td>
             </tr>
             <tr>
               <td>
                 <strong>Scale</strong> <span style="font-size:0.7rem; color:var(--text-muted);">(Area)</span>
               </td>
-              <td><input type="number" id="p_scale" step="any" oninput="onParamInput()"></td>
+              <td>
+                <div class="param-control" id="ctrl_p_scale">
+                  <div class="param-value-row">
+                    <input type="number" id="p_scale" step="any" oninput="onParamInput('p_scale')">
+                    <button type="button" class="param-step-btn" onclick="stepParam('p_scale', 1)" title="Increase by 5%">▲</button>
+                    <button type="button" class="param-step-btn" onclick="stepParam('p_scale', -1)" title="Decrease by 5%">▼</button>
+                  </div>
+                  <div class="param-slider-wrap"><input type="range" class="param-slider" id="slider_p_scale" min="0" max="1000" step="1" oninput="onParamSlider('p_scale')"><span class="param-center-mark"></span></div>
+                  <span class="param-center-label">center: —</span>
+                </div>
+              </td>
               <td style="text-align: center;">
-                <input type="checkbox" id="fix_scale" onchange="onParamInput()">
+                <input type="checkbox" id="fix_scale" onchange="onParamFix('p_scale')">
               </td>
             </tr>
             <tr>
               <td>
                 <strong>Background</strong> <span style="font-size:0.7rem; color:var(--text-muted);">(Offset)</span>
               </td>
-              <td><input type="number" id="p_bg" step="any" oninput="onParamInput()"></td>
+              <td>
+                <div class="param-control" id="ctrl_p_bg">
+                  <div class="param-value-row">
+                    <input type="number" id="p_bg" step="any" oninput="onParamInput('p_bg')">
+                    <button type="button" class="param-step-btn" onclick="stepParam('p_bg', 1)" title="Increase by 5%">▲</button>
+                    <button type="button" class="param-step-btn" onclick="stepParam('p_bg', -1)" title="Decrease by 5%">▼</button>
+                  </div>
+                  <div class="param-slider-wrap"><input type="range" class="param-slider" id="slider_p_bg" min="0" max="1000" step="1" oninput="onParamSlider('p_bg')"><span class="param-center-mark"></span></div>
+                  <span class="param-center-label">center: —</span>
+                </div>
+              </td>
               <td style="text-align: center;">
-                <input type="checkbox" id="fix_bg" checked onchange="onParamInput()" title="Fix baseline level (recommended default)">
+                <input type="checkbox" id="fix_bg" onchange="onParamFix('p_bg')" title="Fix baseline level (free by default)">
               </td>
             </tr>
           </tbody>
@@ -614,6 +686,11 @@
             <label class="checkbox-container">
               <input type="checkbox" id="plotShowComponents" checked onchange="redrawPlot()"> Components
             </label>
+             <label class="checkbox-container" title="Reverse the spectrum orientation before fitting so a left-side decay becomes a positive/right-side lifetime">
+               <input type="checkbox" id="mirrorSpectrum" onchange="toggleMirrorSpectrum()"> ⇄ Mirror Spectrum
+             </label>
+             <span id="spectrumOrientationLabel" style="font-size:0.7rem; color:var(--text-muted);">normal</span>
+
             <button class="btn btn-sm" onclick="exportPDF()" title="Download Publication Vector PDF plot">📄 Export PDF</button>
             <button class="btn btn-sm" onclick="downloadFitFile()" title="Download .fit ASCII format file">💾 Save .fit</button>
           </div>
@@ -691,10 +768,36 @@
 
   <script>
     // Global State
-    let currentData = null;      // Loaded SpectrumData
+    const popupParams = new URLSearchParams(window.location.search);
+    const autoLoadFromWebViewer = popupParams.get('auto_load') === '1';
+    const requestedViewerAxis = popupParams.has('axis') && Number(popupParams.get('axis')) === 0 ? 0 : 1;
+    let suppressFileAutoLoad = autoLoadFromWebViewer;
+    let viewerRequestSequence = 0;
+    const viewerRequestWaiters = new Map();
+    let currentData = null;      // Active/orientation-specific SpectrumData
+    let sourceData = null;       // Unmodified loaded SpectrumData
     let activeFitResult = null;  // Last Fit JSON
     let lastScanData = null;     // Last Scan JSON
     let currentFileName = "";
+
+    const parameterState = {
+      p_t12: { center: null, kind: 'log-zero' },
+      p_fwhm: { center: null, kind: 'log-zero' },
+      p_centroid: { center: null, kind: 'linear' },
+      p_scale: { center: null, kind: 'log-positive' },
+      p_bg: { center: null, kind: 'log-zero' }
+    };
+
+    // Independent display viewport. The X Min/X Max controls below remain the
+    // fitting interval and are deliberately not changed by canvas navigation.
+    const plotViewport = { xMin: 0, xMax: 1, yZoom: 1 };
+    let isDragZooming = false;
+    let dragStartX = 0;
+    let dragCurrentX = 0;
+    let isPanning = false;
+    let panStartX = 0;
+    let panStartViewportXMin = 0;
+    let panStartSpan = 1;
 
     // DOM Elements
     const canvas = document.getElementById('plotCanvas');
@@ -702,26 +805,157 @@
     const tooltip = document.getElementById('plotTooltip');
 
     // Initialize
-    window.addEventListener('DOMContentLoaded', () => {
+    window.addEventListener('keydown', (event) => {
+      if (event.key !== 'l' && event.key !== 'L') return;
+      const target = event.target;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
+      const logToggle = document.getElementById('plotLogScale');
+      if (!logToggle) return;
+      event.preventDefault();
+      logToggle.checked = !logToggle.checked;
+      redrawPlot();
+    });
+
+    window.addEventListener('DOMContentLoaded', async () => {
       initCanvasSize();
-      refreshFileList();
       window.addEventListener('resize', () => {
         initCanvasSize();
         redrawPlot();
       });
       initTooltipEvents();
+      Object.keys(parameterState).forEach(id => {
+        document.getElementById(id).addEventListener('keydown', event => onParamKeydown(event, id));
+      });
+      syncAllParameterControls();
+
+      if (autoLoadFromWebViewer) {
+        let loaded = await fetchViewerSnapshot(requestedViewerAxis);
+        if (!loaded) loaded = await fetchActiveSpectrum(requestedViewerAxis, false);
+        if (loaded) {
+          // Populate the file picker without replacing the active webviewer spectrum.
+          await refreshFileList(true);
+        } else {
+          // Restore normal first-file loading if the active session has no spectrum.
+          suppressFileAutoLoad = false;
+          await refreshFileList();
+        }
+      } else {
+        await refreshFileList();
+      }
     });
 
     function initCanvasSize() {
       const rect = canvas.parentElement.getBoundingClientRect();
       const dpr = window.devicePixelRatio || 1;
-      canvas.width = rect.width * dpr;
-      canvas.height = rect.height * dpr;
-      ctx.scale(dpr, dpr);
+      canvas.width = Math.max(1, Math.floor(rect.width * dpr));
+      canvas.height = Math.max(1, Math.floor(rect.height * dpr));
+      // Setting the transform explicitly avoids cumulative scaling after a resize.
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+
+    function getDataBounds() {
+      if (!currentData || currentData.x.length === 0) return { min: 0, max: 1 };
+      return {
+        min: Math.min(currentData.x[0], currentData.x[currentData.x.length - 1]),
+        max: Math.max(currentData.x[0], currentData.x[currentData.x.length - 1])
+      };
+    }
+
+    function getFitRange() {
+      if (!currentData || currentData.x.length === 0) return getDataBounds();
+      const bounds = getDataBounds();
+      let r0 = parseFloat(document.getElementById('rangeMin').value);
+      let r1 = parseFloat(document.getElementById('rangeMax').value);
+      if (!Number.isFinite(r0)) r0 = bounds.min;
+      if (!Number.isFinite(r1)) r1 = bounds.max;
+      const fitMin = Math.max(bounds.min, Math.min(r0, r1));
+      const fitMax = Math.min(bounds.max, Math.max(r0, r1));
+      return { min: fitMin, max: Math.max(fitMin + 1e-6, fitMax) };
+    }
+
+    function syncFitRangeToViewport() {
+      document.getElementById('rangeMin').value = plotViewport.xMin;
+      document.getElementById('rangeMax').value = plotViewport.xMax;
+    }
+
+    function resetPlotViewport() {
+      const bounds = getDataBounds();
+      plotViewport.xMin = bounds.min;
+      plotViewport.xMax = bounds.max;
+      plotViewport.yZoom = 1;
+      syncFitRangeToViewport();
+    }
+
+    function clampViewport(min, max) {
+      const bounds = getDataBounds();
+      if (min > max) [min, max] = [max, min];
+      const fullSpan = Math.max(1e-6, bounds.max - bounds.min);
+      const minSpan = Math.max(fullSpan * 1e-5, 1e-6);
+      let span = Math.max(minSpan, Math.min(fullSpan, max - min));
+      if (min < bounds.min) min = bounds.min;
+      if (min + span > bounds.max) min = bounds.max - span;
+      plotViewport.xMin = min;
+      plotViewport.xMax = min + span;
+      syncFitRangeToViewport();
+    }
+
+    function getPlotGeometry() {
+      const rect = canvas.getBoundingClientRect();
+      const margin = { top: 20, right: 30, bottom: 35, left: 60 };
+      return {
+        rect,
+        margin,
+        plotWidth: Math.max(1, rect.width - margin.left - margin.right)
+      };
+    }
+
+    window.addEventListener('message', (event) => {
+      if (event.origin !== window.location.origin) return;
+      const message = event.data || {};
+      if (message.type !== 'cmat-halflife-spectrum-response') return;
+      const waiter = viewerRequestWaiters.get(message.requestId);
+      if (!waiter) return;
+      viewerRequestWaiters.delete(message.requestId);
+      if (message.success) {
+        waiter.resolve(message);
+      } else {
+        waiter.resolve({ success: false, error: message.error || 'WebViewer snapshot unavailable' });
+      }
+    });
+
+    function requestViewerSnapshot(axis) {
+      if (!window.opener || window.opener.closed) {
+        return Promise.resolve({ success: false, error: 'No WebViewer opener available' });
+      }
+      const requestId = `half-life-${Date.now()}-${++viewerRequestSequence}`;
+      return new Promise((resolve) => {
+        const timeout = setTimeout(() => {
+          viewerRequestWaiters.delete(requestId);
+          resolve({ success: false, error: 'Timed out waiting for WebViewer spectrum snapshot' });
+        }, 2000);
+        viewerRequestWaiters.set(requestId, {
+          resolve: (data) => {
+            clearTimeout(timeout);
+            resolve(data);
+          }
+        });
+        window.opener.postMessage({
+          type: 'cmat-halflife-request-snapshot',
+          axis: axis === 0 ? 0 : 1,
+          requestId
+        }, window.location.origin);
+      });
+    }
+
+    async function fetchViewerSnapshot(axis = requestedViewerAxis) {
+      const snapshot = await requestViewerSnapshot(axis);
+      if (!snapshot.success) return false;
+      processLoadedSpectrum(snapshot);
+      return true;
     }
 
     // File Management
-    async function refreshFileList() {
+    async function refreshFileList(skipAutoLoad = false) {
       try {
         const res = await fetch('/api/halflife/files');
         const json = await res.json();
@@ -734,8 +968,8 @@
             opt.textContent = `${f.name} (${(f.size_bytes/1024).toFixed(1)} KB)`;
             sel.appendChild(opt);
           });
-          // Auto load first .dat file if none selected
-          if (!currentFileName && json.files.length > 0) {
+          // Auto load first .dat file if none selected and no active spectrum is being used.
+          if (!skipAutoLoad && !suppressFileAutoLoad && !currentFileName && json.files.length > 0) {
             loadFile(json.files[0].name);
             sel.value = json.files[0].name;
           }
@@ -766,28 +1000,48 @@
       if (currentFileName) loadFile(currentFileName);
     }
 
-    async function fetchActiveSpectrum() {
+    async function fetchActiveSpectrum(axis = requestedViewerAxis, showError = true) {
+      const requestedAxis = axis === 0 ? 0 : 1;
+      const fallbackAxis = requestedAxis === 0 ? 1 : 0;
+
+      // Prefer the exact currently rendered bins from the WebViewer.
+      if (window.opener && !window.opener.closed) {
+        if (await fetchViewerSnapshot(requestedAxis)) return true;
+      }
+
       try {
-        const res = await fetch('/api/halflife/active_spectrum?axis=1');
+        const res = await fetch(`/api/halflife/active_spectrum?axis=${requestedAxis}`);
         const json = await res.json();
-        if (json.error) {
-          // Try axis 0
-          const res0 = await fetch('/api/halflife/active_spectrum?axis=0');
-          const json0 = await res0.json();
-          if (json0.error) {
-            alert("No active gated spectrum found in current webviewer session. Please load a matrix first.");
-            return;
-          }
-          processLoadedSpectrum(json0);
-          return;
+        if (!json.error) {
+          processLoadedSpectrum(json);
+          return true;
         }
-        processLoadedSpectrum(json);
+
+        // Preserve the existing behavior: if the requested axis is unavailable,
+        // try the other detector before reporting failure.
+        const fallbackRes = await fetch(`/api/halflife/active_spectrum?axis=${fallbackAxis}`);
+        const fallbackJson = await fallbackRes.json();
+        if (!fallbackJson.error) {
+          processLoadedSpectrum(fallbackJson);
+          return true;
+        }
+
+        if (showError) {
+          alert("No active gated spectrum found in current webviewer session. Please load a matrix first.");
+        }
+        return false;
       } catch (err) {
-        alert("Error fetching active spectrum: " + err);
+        if (showError) alert("Error fetching active spectrum: " + err);
+        return false;
       }
     }
 
     function processLoadedSpectrum(data) {
+      sourceData = data;
+      const mirrorToggle = document.getElementById('mirrorSpectrum');
+      if (mirrorToggle) mirrorToggle.checked = false;
+      const bgFix = document.getElementById('fix_bg');
+      if (bgFix) bgFix.checked = false;
       currentData = data;
       document.getElementById('fileMetaInfo').innerHTML = `
         <strong>File:</strong> ${data.filename} | <strong>Channels:</strong> ${data.x.length} | 
@@ -803,6 +1057,74 @@
       autoEstimateGuesses();
       activeFitResult = null;
       updateResultsUI(null);
+      resetPlotViewport();
+      updateOrientationLabel();
+      redrawPlot();
+    }
+
+    function mirrorSpectrumData(data) {
+      if (!data || !data.x || data.x.length < 2) return data;
+      const x = data.x.slice();
+      const y = data.y.slice();
+      const dy = data.dy.slice();
+      const xEnergy = Array.isArray(data.x_energy) ? data.x_energy.slice() : null;
+      const xMin = Math.min(...x);
+      const xMax = Math.max(...x);
+      const mirrored = {
+        ...data,
+        x: x.map(value => xMin + xMax - value).reverse(),
+        y: y.reverse(),
+        dy: dy.reverse(),
+        x_energy: xEnergy ? xEnergy.reverse() : null,
+        filename: data.filename || 'spectrum.dat',
+        header_lines: [
+          ...(data.header_lines || []),
+          '# Spectrum mirrored by Half-Life popup: x -> x_min + x_max - x'
+        ],
+        mirrored: true
+      };
+      return mirrored;
+    }
+
+    function updateOrientationLabel() {
+      const label = document.getElementById('spectrumOrientationLabel');
+      if (label) label.textContent = currentData?.mirrored ? 'mirrored' : 'normal';
+      const fileMeta = document.getElementById('fileMetaInfo');
+      if (fileMeta && currentData) {
+        fileMeta.innerHTML = `
+          <strong>File:</strong> ${currentData.filename} | <strong>Channels:</strong> ${currentData.x.length} |
+          <strong>Range:</strong> [${currentData.x[0].toFixed(1)} .. ${currentData.x[currentData.x.length - 1].toFixed(1)}] ${currentData.x_label} |
+          ${currentData.mirrored ? '<span style="color:var(--accent-purple);">Mirrored Orientation</span>' : 'Standard Orientation'}
+        `;
+      }
+    }
+
+    function toggleMirrorSpectrum() {
+      if (!sourceData) return;
+      const currentRange = [
+        parseFloat(document.getElementById('rangeMin').value),
+        parseFloat(document.getElementById('rangeMax').value)
+      ];
+      const wasMirrored = Boolean(currentData?.mirrored);
+      currentData = document.getElementById('mirrorSpectrum').checked
+        ? mirrorSpectrumData(sourceData)
+        : sourceData;
+      const bounds = getDataBounds();
+      let mappedRange = [bounds.min, bounds.max];
+      if (Number.isFinite(currentRange[0]) && Number.isFinite(currentRange[1])) {
+        mappedRange = (wasMirrored !== Boolean(currentData.mirrored))
+          ? [bounds.min + bounds.max - Math.max(currentRange[0], currentRange[1]), bounds.min + bounds.max - Math.min(currentRange[0], currentRange[1])]
+          : currentRange;
+      }
+      document.getElementById('rangeMin').value = mappedRange[0];
+      document.getElementById('rangeMax').value = mappedRange[1];
+      clampViewport(mappedRange[0], mappedRange[1]);
+      activeFitResult = null;
+      lastScanData = null;
+      updateResultsUI(null);
+      autoEstimateGuesses();
+      plotViewport.yZoom = 1;
+      updateOrientationLabel();
       redrawPlot();
     }
 
@@ -826,11 +1148,11 @@
       }
       if (indices.length < 4) indices = Array.from({length: x.length}, (_, i) => i);
 
-      // Baseline estimate
-      const nEdge = Math.max(2, Math.floor(indices.length / 10));
-      let edgeSum = 0;
-      for (let i = 0; i < nEdge; i++) edgeSum += y[indices[i]] + y[indices[indices.length - 1 - i]];
-      const bgEst = Math.max(0, edgeSum / (2 * nEdge));
+      // Initialize from the late-time tail. For right-decay spectra this is
+      // the region where the prompt/exponential component is weakest.
+      const tailCount = Math.max(3, Math.floor(indices.length * 0.15));
+      const tailValues = indices.slice(-tailCount).map(idx => y[idx]).sort((a, b) => a - b);
+      const bgEst = Math.max(0, tailValues[Math.floor(tailValues.length / 2)]);
 
       // Peak Max
       let maxIdx = indices[0];
@@ -888,22 +1210,206 @@
       document.getElementById('p_centroid').value = centroidEst.toFixed(2);
       document.getElementById('p_scale').value = scaleEst.toFixed(1);
       document.getElementById('p_bg').value = bgEst.toFixed(2);
+      Object.keys(parameterState).forEach(id => {
+        parameterState[id].center = parseFloat(document.getElementById(id).value);
+      });
+      Object.keys(parameterState).forEach(id => {
+        const input = document.getElementById(id);
+        input.value = formatParameterValue(id, clampParameterValue(id, getParameterValue(id)));
+      });
+      syncAllParameterControls();
 
       redrawPlot();
     }
 
     function onRangeInputChange() {
+      // Keep the display and the fitting interval synchronized when the user
+      // edits the fit bounds explicitly; canvas navigation never edits these.
+      if (currentData) {
+        const fit = getFitRange();
+        clampViewport(fit.min, fit.max);
+      }
       redrawPlot();
     }
 
-    function onParamInput() {
+    function onParamInput(id = null) {
+      if (id) {
+        const state = parameterState[id];
+        const input = document.getElementById(id);
+        let value = parseFloat(input.value);
+      if (id === 'p_t12' && Number.isFinite(value)) {
+          value = clampParameterValue(id, value);
+          input.value = formatParameterValue(id, value);
+        }
+        if (state && state.center === null && Number.isFinite(value)) state.center = value;
+        const fixed = document.getElementById(`fix_${id.replace('p_', 'fix_')}`)?.checked;
+        if (state && fixed && Number.isFinite(value)) state.center = value;
+        syncParameterControl(id);
+      }
+      redrawPlot();
+    }
+
+    function getFitSpan() {
+      const fit = getFitRange();
+      return Math.max(1, Math.abs(fit.max - fit.min));
+    }
+
+    function getParameterValue(id) {
+      const value = parseFloat(document.getElementById(id).value);
+      return Number.isFinite(value) ? value : 0;
+    }
+
+    function getParameterLimits(id) {
+      const state = parameterState[id];
+      const center = Number.isFinite(state?.center) ? state.center : 0;
+      const fit = getFitRange();
+      const span = getFitSpan();
+      if (id === 'p_t12') return { min: 0, max: 10 * span, kind: 'log-zero' };
+      if (id === 'p_fwhm') return { min: 0, max: Math.max(0.5 * span, 1e-6), kind: 'log-zero' };
+      if (id === 'p_centroid') return { min: fit.min - 0.1 * span, max: fit.max + 0.1 * span, kind: 'linear' };
+      if (id === 'p_scale') {
+        const positiveCenter = Math.max(1e-6, Math.abs(center));
+        return { min: positiveCenter / 100, max: positiveCenter * 100, kind: 'log-positive' };
+      }
+      const values = currentData?.y || [];
+      const peak = values.length ? Math.max(0, ...values) : Math.max(1, Math.abs(center));
+      const edgeCount = Math.max(2, Math.floor(values.length / 10));
+      const edge = values.length ? values.slice(0, edgeCount).concat(values.slice(-edgeCount)) : [0];
+      const edgeMedian = edge.slice().sort((a, b) => a - b)[Math.floor(edge.length / 2)] || 0;
+      const noise = Math.max(1, 1.4826 * (edge.reduce((sum, value) => sum + Math.abs(value - edgeMedian), 0) / edge.length));
+      return { min: 0, max: Math.max(5, 5 * Math.max(0, center), 5 * noise, 0.05 * peak), kind: 'log-zero' };
+    }
+
+    function clampParameterValue(id, value) {
+      const limits = getParameterLimits(id);
+      return Math.max(limits.min, Math.min(limits.max, value));
+    }
+
+    function parameterToSlider(id, value) {
+      const state = parameterState[id];
+      const limits = getParameterLimits(id);
+      const center = Number.isFinite(state.center) ? state.center : (limits.min + limits.max) / 2;
+      if (limits.kind === 'linear') {
+        return 1000 * (value - limits.min) / Math.max(1e-12, limits.max - limits.min);
+      }
+      if (limits.kind === 'log-positive') {
+        const min = Math.max(1e-12, limits.min);
+        return 1000 * Math.log(Math.max(min, value) / min) / Math.log(Math.max(1.000001, limits.max / min));
+      }
+      const effectiveCenter = Math.max(1e-12, center);
+      const effectiveMax = Math.max(limits.max, effectiveCenter * 1.000001);
+      if (value <= limits.min) return 0;
+      if (value <= effectiveCenter) {
+        return 500 * Math.log1p(value / effectiveCenter) / Math.LN2;
+      }
+      return 500 + 500 * Math.log(value / effectiveCenter) / Math.log(effectiveMax / effectiveCenter);
+    }
+
+    function sliderToParameter(id, position) {
+      const state = parameterState[id];
+      const limits = getParameterLimits(id);
+      const center = Number.isFinite(state.center) ? state.center : (limits.min + limits.max) / 2;
+      if (limits.kind === 'linear') return limits.min + (limits.max - limits.min) * position / 1000;
+      if (limits.kind === 'log-positive') {
+        const min = Math.max(1e-12, limits.min);
+        return min * Math.pow(Math.max(1.000001, limits.max / min), position / 1000);
+      }
+      if (position <= 0) return limits.min;
+      const effectiveCenter = Math.max(1e-12, Math.max(0, center));
+      const effectiveMax = Math.max(limits.max, effectiveCenter * 1.000001);
+      if (position <= 0) return limits.min;
+      if (position <= 500) {
+        return effectiveCenter * Math.expm1((position / 500) * Math.LN2);
+      }
+      return effectiveCenter * Math.exp(((position - 500) / 500) * Math.log(effectiveMax / effectiveCenter));
+    }
+
+    function formatParameterValue(id, value) {
+      const number = Math.abs(value) >= 1000 ? value.toFixed(1) : Math.abs(value) >= 1 ? value.toFixed(3) : value.toFixed(6);
+      return number.replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '') || '0';
+    }
+
+    function syncParameterControl(id) {
+      const state = parameterState[id];
+      const input = document.getElementById(id);
+      const slider = document.getElementById(`slider_${id}`);
+      const control = document.getElementById(`ctrl_${id}`);
+      const fix = document.getElementById(`fix_${id.replace('p_', 'fix_')}`);
+      if (!state || !input || !slider || !control) return;
+
+      const value = getParameterValue(id);
+      if (state.center === null || !Number.isFinite(state.center)) state.center = value;
+      const center = Math.abs(state.center) < 1e-9 ? (state.center < 0 ? -1 : 1) : state.center;
+      slider.value = Math.round(Math.max(0, Math.min(1000, parameterToSlider(id, value))));
+      const mark = control.querySelector('.param-center-mark');
+      if (mark) mark.style.left = `${Math.max(0, Math.min(100, parameterToSlider(id, state.center) / 10))}%`;
+      const locked = fix && fix.checked;
+      slider.disabled = locked;
+      control.classList.toggle('locked', locked);
+      const label = control.querySelector('.param-center-label');
+      if (label) label.textContent = `center: ${formatParameterValue(id, state.center)}${locked ? ' · fixed' : ''}`;
+      control.querySelectorAll('.param-step-btn').forEach(button => { button.disabled = locked; });
+    }
+
+    function syncAllParameterControls() {
+      Object.keys(parameterState).forEach(syncParameterControl);
+    }
+
+    function setParameterValue(id, value) {
+      const input = document.getElementById(id);
+      input.value = formatParameterValue(id, value);
+      syncParameterControl(id);
+      redrawPlot();
+    }
+
+    function onParamSlider(id) {
+      if (document.getElementById(`fix_${id.replace('p_', 'fix_')}`)?.checked) return;
+      const state = parameterState[id];
+      const sliderPosition = Number(document.getElementById(`slider_${id}`).value);
+      if (id === 'p_t12') {
+        setParameterValue(id, sliderToParameter(id, sliderPosition));
+        return;
+      }
+      setParameterValue(id, sliderToParameter(id, sliderPosition));
+    }
+
+    function stepParam(id, direction) {
+      if (document.getElementById(`fix_${id.replace('p_', 'fix_')}`)?.checked) return;
+      const value = getParameterValue(id);
+      const isCentroid = id === 'p_centroid';
+      const stepFraction = isCentroid ? 0.001 : 0.05;
+      const effectiveMagnitude = Math.abs(value) < 1e-9
+        ? Math.max(1e-9, Math.abs(parameterState[id].center || 1))
+        : Math.abs(value);
+      const sign = value < 0 ? -1 : 1;
+      const factor = value < 0
+        ? (direction > 0 ? 1 / (1 + stepFraction) : 1 + stepFraction)
+        : (direction > 0 ? 1 + stepFraction : 1 / (1 + stepFraction));
+      const stepped = Math.abs(value) < 1e-9
+        ? sign * effectiveMagnitude * stepFraction * direction
+        : value * factor;
+      setParameterValue(id, clampParameterValue(id, stepped));
+    }
+
+    function onParamKeydown(event, id) {
+      if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+      event.preventDefault();
+      stepParam(id, event.key === 'ArrowUp' ? 1 : -1);
+    }
+
+    function onParamFix(id) {
+      const fix = document.getElementById(`fix_${id.replace('p_', 'fix_')}`);
+      if (fix.checked) parameterState[id].center = getParameterValue(id);
+      syncParameterControl(id);
       redrawPlot();
     }
 
     function resetRangeFull() {
       if (!currentData) return;
-      document.getElementById('rangeMin').value = currentData.x[0];
-      document.getElementById('rangeMax').value = currentData.x[currentData.x.length - 1];
+      const bounds = getDataBounds();
+      document.getElementById('rangeMin').value = bounds.min;
+      document.getElementById('rangeMax').value = bounds.max;
+      resetPlotViewport();
       redrawPlot();
     }
 
@@ -999,7 +1505,8 @@
         fit_range: [
           parseFloat(document.getElementById('rangeMin').value),
           parseFloat(document.getElementById('rangeMax').value)
-        ]
+        ],
+        spectrum_mirrored: Boolean(currentData?.mirrored)
       };
 
       try {
@@ -1014,6 +1521,7 @@
           return;
         }
 
+        result.spectrum_mirrored = Boolean(currentData?.mirrored);
         activeFitResult = result;
         // Update input boxes with optimized parameters
         document.getElementById('p_t12').value = result.t12.toFixed(3);
@@ -1021,6 +1529,7 @@
         document.getElementById('p_centroid').value = result.centroid.toFixed(2);
         document.getElementById('p_scale').value = result.scale.toFixed(1);
         document.getElementById('p_bg').value = result.bg.toFixed(2);
+        syncAllParameterControls();
 
         updateResultsUI(result);
         redrawPlot();
@@ -1095,15 +1604,18 @@
       const mainHeight = h - margin.top - margin.bottom - resHeight - resGap;
       const plotWidth = w - margin.left - margin.right;
 
-      const r0 = parseFloat(document.getElementById('rangeMin').value) || currentData.x[0];
-      const r1 = parseFloat(document.getElementById('rangeMax').value) || currentData.x[currentData.x.length - 1];
       const isLog = document.getElementById('plotLogScale').checked;
       const showComps = document.getElementById('plotShowComponents').checked;
-
-      // X Scale
-      const xMin = Math.min(r0, r1);
-      const xMax = Math.max(r0, r1);
+      const fitRange = getFitRange();
+      const dataBounds = getDataBounds();
+      const xMin = Math.max(dataBounds.min, plotViewport.xMin);
+      const xMax = Math.min(dataBounds.max, plotViewport.xMax);
       const xSpan = Math.max(1e-6, xMax - xMin);
+      const rangeLabel = document.getElementById('plotRangeLabel');
+      if (rangeLabel) {
+        const format = value => Math.abs(value) >= 1000 ? value.toFixed(0) : value.toFixed(2);
+        rangeLabel.textContent = `View: [${format(xMin)}, ${format(xMax)}] • Fit: [${format(fitRange.min)}, ${format(fitRange.max)}]`;
+      }
 
       function toScreenX(xVal) {
         return margin.left + ((xVal - xMin) / xSpan) * plotWidth;
@@ -1124,7 +1636,7 @@
           if (yData[i] > yMax) yMax = yData[i];
         }
       }
-      yMax *= (isLog ? 2.5 : 1.15);
+      yMax *= (isLog ? 2.5 : 1.15) / Math.max(0.005, Math.min(100, plotViewport.yZoom));
 
       function toScreenY(yVal) {
         if (isLog) {
@@ -1148,9 +1660,31 @@
       ctx.fillRect(margin.left, margin.top, plotWidth, mainHeight);
       ctx.fillRect(margin.left, margin.top + mainHeight + resGap, plotWidth, resHeight);
 
-      // Fit Range Shading
-      ctx.fillStyle = "rgba(0, 229, 255, 0.04)";
-      ctx.fillRect(margin.left, margin.top, plotWidth, mainHeight + resGap + resHeight);
+      // Highlight only the portion of the fit interval visible in the viewport.
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(margin.left, margin.top, plotWidth, mainHeight + resGap + resHeight);
+      ctx.clip();
+      const fitLeft = Math.max(xMin, fitRange.min);
+      const fitRight = Math.min(xMax, fitRange.max);
+      if (fitRight > fitLeft) {
+        ctx.fillStyle = "rgba(0, 229, 255, 0.06)";
+        ctx.fillRect(toScreenX(fitLeft), margin.top, toScreenX(fitRight) - toScreenX(fitLeft), mainHeight + resGap + resHeight);
+        ctx.strokeStyle = "rgba(0, 229, 255, 0.55)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 3]);
+        [fitRange.min, fitRange.max].forEach(boundary => {
+          if (boundary >= xMin && boundary <= xMax) {
+            const sx = toScreenX(boundary);
+            ctx.beginPath();
+            ctx.moveTo(sx, margin.top);
+            ctx.lineTo(sx, margin.top + mainHeight + resGap + resHeight);
+            ctx.stroke();
+          }
+        });
+        ctx.setLineDash([]);
+      }
+      ctx.restore();
 
       // Grid Lines
       ctx.strokeStyle = "rgba(43, 57, 79, 0.4)";
@@ -1316,56 +1850,150 @@
       ctx.font = "bold 9px sans-serif";
       ctx.fillText("Res (σ)", 0, 0);
       ctx.restore();
+
+      drawSelectionOverlay();
     }
 
-    // Tooltip Events
+    function plotXToScreen(xValue) {
+      const { margin, plotWidth } = getPlotGeometry();
+      const span = Math.max(1e-6, plotViewport.xMax - plotViewport.xMin);
+      return margin.left + ((xValue - plotViewport.xMin) / span) * plotWidth;
+    }
+
+    function screenToPlotX(screenX) {
+      const { margin, plotWidth } = getPlotGeometry();
+      const span = plotViewport.xMax - plotViewport.xMin;
+      return plotViewport.xMin + ((screenX - margin.left) / plotWidth) * span;
+    }
+
+    function isInsidePlot(clientX) {
+      const { rect, margin } = getPlotGeometry();
+      const x = clientX - rect.left;
+      return x >= margin.left && x <= rect.width - margin.right;
+    }
+
+    function drawSelectionOverlay() {
+      if (!isDragZooming) return;
+      const { margin, plotWidth, rect } = getPlotGeometry();
+      const start = Math.max(margin.left, Math.min(rect.width - margin.right, dragStartX));
+      const current = Math.max(margin.left, Math.min(rect.width - margin.right, dragCurrentX));
+      const left = Math.min(start, current);
+      const width = Math.abs(current - start);
+      const mainHeight = Math.max(1, rect.height - margin.top - margin.bottom - 47);
+      ctx.save();
+      ctx.fillStyle = 'rgba(0, 229, 255, 0.18)';
+      ctx.strokeStyle = '#00e5ff';
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 3]);
+      ctx.fillRect(left, margin.top, width, mainHeight);
+      ctx.strokeRect(left, margin.top, width, mainHeight);
+      ctx.restore();
+    }
+
+    // Tooltip and navigation events
     function initTooltipEvents() {
+      canvas.addEventListener('wheel', (e) => {
+        if (!currentData) return;
+        e.preventDefault();
+        const factor = e.deltaY < 0 ? 0.9 : 1 / 0.9;
+        if (e.shiftKey) {
+          const rect = canvas.getBoundingClientRect();
+          const cursorX = screenToPlotX(e.clientX - rect.left);
+          const oldSpan = plotViewport.xMax - plotViewport.xMin;
+          const newSpan = oldSpan * factor;
+          const ratio = (cursorX - plotViewport.xMin) / oldSpan;
+          clampViewport(cursorX - newSpan * ratio, cursorX + newSpan * (1 - ratio));
+        } else {
+          plotViewport.yZoom = Math.max(0.005, Math.min(100, plotViewport.yZoom * (e.deltaY < 0 ? 1.1 : 1 / 1.1)));
+        }
+        redrawPlot();
+      }, { passive: false });
+
+      canvas.addEventListener('mousedown', (e) => {
+        if (!currentData || !isInsidePlot(e.clientX)) return;
+        e.preventDefault();
+        const mouseX = e.clientX - canvas.getBoundingClientRect().left;
+        if (e.button === 1) {
+          isPanning = true;
+          panStartX = mouseX;
+          panStartViewportXMin = plotViewport.xMin;
+          panStartSpan = plotViewport.xMax - plotViewport.xMin;
+          canvas.style.cursor = 'grabbing';
+        } else if (e.button === 0) {
+          isDragZooming = true;
+          dragStartX = mouseX;
+          dragCurrentX = mouseX;
+        }
+      });
+
       canvas.addEventListener('mousemove', (e) => {
         if (!currentData) return;
         const rect = canvas.getBoundingClientRect();
         const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
-
-        const margin = { top: 20, right: 30, bottom: 35, left: 60 };
-        const plotWidth = rect.width - margin.left - margin.right;
-
-        if (mouseX < margin.left || mouseX > margin.left + plotWidth) {
+        if (isPanning) {
+          const { margin, plotWidth } = getPlotGeometry();
+          const shift = ((panStartX - mouseX) / plotWidth) * panStartSpan;
+          clampViewport(panStartViewportXMin + shift, panStartViewportXMin + shift + panStartSpan);
+          redrawPlot();
+          return;
+        }
+        if (isDragZooming) {
+          dragCurrentX = mouseX;
+          redrawPlot();
+        }
+        if (!isInsidePlot(e.clientX)) {
           tooltip.style.display = 'none';
           return;
         }
-
-        const r0 = parseFloat(document.getElementById('rangeMin').value) || currentData.x[0];
-        const r1 = parseFloat(document.getElementById('rangeMax').value) || currentData.x[currentData.x.length - 1];
-        const xMin = Math.min(r0, r1);
-        const xMax = Math.max(r0, r1);
-        const dataX = xMin + ((mouseX - margin.left) / plotWidth) * (xMax - xMin);
-
-        // Find closest point
+        const targetX = screenToPlotX(mouseX);
         let bestIdx = 0;
         let minDiff = 1e9;
         for (let i = 0; i < currentData.x.length; i++) {
-          const diff = Math.abs(currentData.x[i] - dataX);
-          if (diff < minDiff) {
-            minDiff = diff;
-            bestIdx = i;
-          }
+          const diff = Math.abs(currentData.x[i] - targetX);
+          if (diff < minDiff) { minDiff = diff; bestIdx = i; }
         }
-
         const ptX = currentData.x[bestIdx];
-        const ptY = currentData.y[bestIdx];
-        const ptDy = currentData.dy[bestIdx];
-
         tooltip.style.display = 'block';
         tooltip.style.left = `${e.clientX + 14}px`;
         tooltip.style.top = `${e.clientY - 20}px`;
         tooltip.innerHTML = `
           <strong>${currentData.x_label}:</strong> ${ptX.toFixed(2)}<br>
-          <strong>Counts:</strong> ${ptY.toFixed(1)} ± ${ptDy.toFixed(1)}
+          <strong>Counts:</strong> ${currentData.y[bestIdx].toFixed(1)} ± ${currentData.dy[bestIdx].toFixed(1)}
         `;
+      });
+
+      canvas.addEventListener('mouseup', (e) => {
+        if (e.button === 1 && isPanning) {
+          isPanning = false;
+          canvas.style.cursor = 'crosshair';
+        }
+        if (e.button === 0 && isDragZooming) {
+          isDragZooming = false;
+          if (Math.abs(dragCurrentX - dragStartX) > 5) {
+            clampViewport(screenToPlotX(dragStartX), screenToPlotX(dragCurrentX));
+          }
+          redrawPlot();
+        }
       });
 
       canvas.addEventListener('mouseleave', () => {
         tooltip.style.display = 'none';
+        if (isDragZooming) { dragCurrentX = dragStartX; redrawPlot(); }
+      });
+
+      canvas.addEventListener('dblclick', (e) => {
+        if (!isInsidePlot(e.clientX)) return;
+        e.preventDefault();
+        resetPlotViewport();
+        redrawPlot();
+      });
+
+      // A middle-button pan can finish outside the canvas; release it globally.
+      window.addEventListener('mouseup', (e) => {
+        if (e.button === 1 && isPanning) {
+          isPanning = false;
+          canvas.style.cursor = 'crosshair';
+        }
       });
     }
 
@@ -1409,7 +2037,8 @@
         fit_range: [
           parseFloat(document.getElementById('rangeMin').value),
           parseFloat(document.getElementById('rangeMax').value)
-        ]
+        ],
+        spectrum_mirrored: Boolean(currentData?.mirrored)
       };
 
       try {
@@ -1512,6 +2141,8 @@
     function applyOptimalBg() {
       if (!lastScanData) return;
       document.getElementById('p_bg').value = lastScanData.best_bg.toFixed(2);
+      if (document.getElementById('fix_bg').checked) parameterState.p_bg.center = lastScanData.best_bg;
+      syncParameterControl('p_bg');
       closeBgScanModal();
       executeFit();
     }
@@ -1553,7 +2184,7 @@
         return;
       }
       const isLog = document.getElementById('plotLogScale').checked ? 1 : 0;
-      const url = `/api/halflife/export_pdf?file=${encodeURIComponent(currentData.filename)}&t12=${activeFitResult.t12}&fwhm=${activeFitResult.fwhm}&centroid=${activeFitResult.centroid}&scale=${activeFitResult.scale}&bg=${activeFitResult.bg}&r0=${activeFitResult.fit_range[0]}&r1=${activeFitResult.fit_range[1]}&log=${isLog}`;
+      const url = `/api/halflife/export_pdf?file=${encodeURIComponent(currentData.filename)}&t12=${activeFitResult.t12}&fwhm=${activeFitResult.fwhm}&centroid=${activeFitResult.centroid}&scale=${activeFitResult.scale}&bg=${activeFitResult.bg}&r0=${activeFitResult.fit_range[0]}&r1=${activeFitResult.fit_range[1]}&log=${isLog}&mirrored=${currentData.mirrored ? 1 : 0}`;
       window.open(url, '_blank');
     }
   </script>
