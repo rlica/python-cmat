@@ -30,8 +30,6 @@
 <em>Half-life fit of time-difference spectra</em>
 
 
-> **3D viewer development status:** Viewing of large symmetric 3D `.cmat` matrices is currently **preliminary and under active development**. The sparse on-demand engine, navigation, synchronized projections, fitting workflows, and performance characteristics should be considered experimental while further validation and optimization continue.
-
 ---
 
 ## Overview
@@ -42,15 +40,13 @@
 
 ### Key Capabilities:
 - **Full `.cmat` Reverse-Engineering**: Decompresses all IVF block compression algorithms (Modes 0–32 bit-packing, Mode 33 16-bit sparse, Mode 34 32-bit sparse, Mode 37 tagged tokens, Mode 41 shift maps) in pure Python + NumPy. Handles symmetric, asymmetric, arbitrary block step sizes, and 3D multi-plane volumes.
-- **Sparse On-Demand 3D Engine**: Ultra-scalable direct file streaming engine with compact block indexing (`.cmat3d_cache/<file>.idx`) for massive 3D symmetric matrices (e.g. $8192 \times 8192 \times 8192$ channels, $>2\text{ TB}$ uncompressed) enabling instant $<0.5\text{ s}$ startup and $<10\text{ ms}$ on-demand gated slicing without disk or RAM exhaustion.
-- **Exact Diagonal Unfolding (2D & 3D)**: Dual-level intra-block tetrahedral symmetrization for 3D matrices and diagonal multiplicity unfolding for 2D symmetric matrices, eliminating dark diagonal troughs/triangles and achieving exact mathematical equality with 1D stored projections ($\Delta = 0$).
-- **Gamba 3D Coincidence Slicing**: When fitting 2D coincidence peaks on orthogonal planes in 3D matrices ($\gamma$-$\gamma$-$\text{Rings}$ or $\gamma$-$\gamma$-$\Delta t$), automatically decomposes and projects the 3rd axis coincidence spectrum using Gamba 4-component ($P|P, P|BG, BG|P, BG|BG$) discrete background subtraction for net lifetime and ring analysis.
+- **Sparse On-Demand 3D Engine (under development)**: Ultra-scalable direct file streaming engine with compact block indexing (`.cmat3d_cache/<file>.idx`) for massive 3D symmetric matrices (e.g. $8192 \times 8192 \times 8192$ channels) enabling instant $<0.5\text{ s}$ startup and $<10\text{ ms}$ on-demand gated slicing without disk or RAM exhaustion.
 - **Interactive 2D & 3D Web Viewers**: Blazing fast HTML5 canvas visualizers with pixel-matched decimation, memory-mapped and sparse on-demand 3D caching, subregion pre-slicing (48× acceleration), and multi-threaded request handling.
 - **Simultaneous 1D Projections**: Real-time stepped staircase histograms across all axes (Det 1, Det 2, and Rings / $\Delta t$) with synchronized crosshair tracking and calibrated energy readouts.
 - **1D & 2D Peak Fitting**: Fits Gaussian, RadWare / SAMPO exponential tail, and Hypermet EMG profiles with complete parameter covariance. Decomposes 2D coincidence peaks with Gamba & Morhác 4-component background analysis.
 - **Automatic 2D Coincidence Peak Search**: 4-stage hybrid 2D peak search engine (`P` in 2D) combining 1D CWT projection seeding, local Gamba 4-component decomposition, false Compton scattering ridge & cross-talk filtering, and 2D non-maximum suppression (NMS) with collision-free zoom-adaptive label rendering.
 - **Fit Results File Logging**: Seamlessly appends 1D and 2D fit results to clean, fixed-width text logs (`fit_results_<timestamp>.txt`) with right-aligned formatting, accommodating 10+ digit counts and error values. Toggleable via UI button, CLI startup flag (`--fit-log`), or macro command (`fit_log`).
-- **Nuclear Half-Life & Lifetime Fitting (`halflife.py`)**: Analytical lifetime fitting engine convolving a Gaussian prompt response (IRF) with a nonnegative exponential decay and constant background. The Half-Life pop-up can pull the exact current 1D webviewer view directly from either Det 1/X or Det 2/Y, refresh it on demand, mirror reversed spectra, and expose adaptive log/linear parameter controls.
+- **Half-Life Fitting (`halflife.py`)**: Analytical lifetime fitting engine convolving a Gaussian prompt response (IRF) with a nonnegative exponential decay and constant background. The Half-Life pop-up can pull the exact current 1D webviewer view directly from either Det 1/X or Det 2/Y, refresh it on demand, mirror reversed spectra, and expose adaptive log/linear parameter controls.
 - **ENSDF Automated Isotope Identification**: 100% offline, local SQLite-indexed nuclear structure search engine (`ensdf_search.py`) querying all 300+ ENSDF mass chains. Identifies 1D photopeaks and 2D coincidence cascades using physical transition topologies (direct prompt cascades, sequential intermediate transitions, high-excitation damping) and global mass-clustering with parsimonious minimum isotope set-cover. Accessible via web pop-up with interactive server file browser (`📂 Browse...`) or command-line.
 - **Coincidence & Banana Gating**: Multi-gate peak ($W$) and background ($X$) slicing with automatic channel normalization, plus 2D polygonal Banana graphical ROIs (`Shift+G` Peak / `Shift+B` Bg) for 2D area determination and 3D coincidence projection cuts.
 - **Multi-Matrix Differential Analysis**: Instant cycling (`[` / `]`) across multiple matrices while locking zoom, gates, and auto-refitted peak parameters.
