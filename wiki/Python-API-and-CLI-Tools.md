@@ -360,3 +360,9 @@ from halflife import save_fit_file
 save_fit_file("output.fit", "spectrum.dat", fitter.spec, res)
 fitter.export_plot("output.pdf", title="138La Nuclear Lifetime Fit")
 ```
+
+### Web Pop-Up Workflow
+
+From the 2D webviewer, use the `⏱️ Half-Life Fit` button in the header of the Det 1/X or Det 2/Y 1D projection. The popup receives that histogram’s exact currently visible range and current gated counts. The `📥 Pull from WebViewer` button refreshes the snapshot after changing the matrix, 2D viewport, gates, or projection. If the time spectrum is reversed, enable `⇄ Mirror Spectrum` before fitting; the model then fits the mirrored, ascending right-decay representation and reports a nonnegative half-life.
+
+The plot’s X-axis zoom, pan, drag zoom, and reset update the fit bounds automatically. The parameter controls use practical data-adaptive domains: `t₁/₂` and FWHM use zero-aware logarithmic ranges, centroid uses a linear range around the visible fit window, scale uses a positive logarithmic range, and background is free by default with a late-time-tail initial estimate. `L`/`l` toggles linear/log display scale.

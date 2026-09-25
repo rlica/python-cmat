@@ -6776,6 +6776,18 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             bg = float(query.get("bg", [0.0])[0])
             r0 = float(query.get("r0", [0.0])[0])
             r1 = float(query.get("r1", [0.0])[0])
+            t12_err = float(query.get("t12_err", [0.0])[0])
+            fwhm_err = float(query.get("fwhm_err", [0.0])[0])
+            centroid_err = float(query.get("centroid_err", [0.0])[0])
+            scale_err = float(query.get("scale_err", [0.0])[0])
+            bg_err = float(query.get("bg_err", [0.0])[0])
+            freepars_raw = query.get("freepars", ["[true,true,true,true,true]"])[0]
+            try:
+                freepars = [bool(value) for value in json.loads(freepars_raw)]
+            except (TypeError, ValueError, json.JSONDecodeError):
+                freepars = [True, True, True, True, True]
+            if len(freepars) < 5:
+                freepars.extend([False] * (5 - len(freepars)))
             is_log = int(query.get("log", [0])[0]) == 1
             mirrored = int(query.get("mirrored", [0])[0]) == 1
 
@@ -6804,11 +6816,58 @@ class CMATWebHandler(BaseHTTPRequestHandler):
                         x_label=fitter.spec.x_label
                     )
 
-                res = fitter.fit(
-                    t12=t12, fwhm=fwhm, centroid=centroid, scale=scale, bg=bg,
-                    freepars=[False, False, False, False, False],
-                    fit_range=(r0, r1) if (r1 > r0) else None
+                # The browser already performed the fit. Reconstruct the result
+                # for plotting only; never start a second optimization here.
+                from halflife import eval_halflife
+                x_full = np.asarray(fitter.spec.x, dtype=np.float64)
+                y_full = np.asarray(fitter.spec.y, dtype=np.float64)
+                dy_full = np.asarray(fitter.spec.dy, dtype=np.float64)
+                fit_range = (r0, r1) if (r1 > r0) else (
+                    float(np.min(x_full)), float(np.max(x_full))
                 )
+                fit_mask = (x_full >= fit_range[0]) & (x_full <= fit_range[1])
+                if not np.any(fit_mask):
+                    fit_mask = np.ones_like(x_full, dtype=bool)
+                y_model_full = eval_halflife(
+                    x_full, t12=t12, fwhm=fwhm, centroid=centroid,
+                    scale=scale, bg=bg
+                )
+                residuals_full = (y_full - y_model_full) / dy_full
+                ndp = int(np.sum(fit_mask))
+                nip = int(sum(freepars))
+                ndf = max(1, ndp - nip)
+                chisq_total = float(np.sum(residuals_full[fit_mask] ** 2))
+                result = {
+                    "success": True,
+                    "t12": t12,
+                    "t12_err": t12_err,
+                    "fwhm": fwhm,
+                    "fwhm_err": fwhm_err,
+                    "centroid": centroid,
+                    "centroid_err": centroid_err,
+                    "scale": scale,
+                    "scale_err": scale_err,
+                    "bg": bg,
+                    "bg_err": bg_err,
+                    "bg_fixed": not freepars[4],
+                    "freepars": freepars,
+                    "chisq_total": chisq_total,
+                    "chisq_ndf": chisq_total / ndf,
+                    "ndp": ndp,
+                    "nip": nip,
+                    "ndf": ndf,
+                    "fit_range": list(fit_range),
+                    "x_eval": x_full.tolist(),
+                    "y_data": y_full.tolist(),
+                    "dy_data": dy_full.tolist(),
+                    "y_fit": y_model_full.tolist(),
+                    "residuals": residuals_full.tolist(),
+                }
+                fitter.pars = [t12, fwhm, centroid, scale, bg]
+                fitter.errs = [t12_err, fwhm_err, centroid_err, scale_err, bg_err]
+                fitter.freepars = freepars
+                fitter.active_range = fit_range
+                fitter.last_fit_result = result
 
                 import tempfile
                 with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:

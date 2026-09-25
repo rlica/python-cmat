@@ -46,7 +46,7 @@
 - **1D & 2D Peak Fitting**: Fits Gaussian, RadWare / SAMPO exponential tail, and Hypermet EMG profiles with complete parameter covariance. Decomposes 2D coincidence peaks with Gamba & Morhác 4-component background analysis.
 - **Automatic 2D Coincidence Peak Search**: 4-stage hybrid 2D peak search engine (`P` in 2D) combining 1D CWT projection seeding, local Gamba 4-component decomposition, false Compton scattering ridge & cross-talk filtering, and 2D non-maximum suppression (NMS) with collision-free zoom-adaptive label rendering.
 - **Fit Results File Logging**: Seamlessly appends 1D and 2D fit results to clean, fixed-width text logs (`fit_results_<timestamp>.txt`) with right-aligned formatting, accommodating 10+ digit counts and error values. Toggleable via UI button, CLI startup flag (`--fit-log`), or macro command (`fit_log`).
-- **Nuclear Half-Life & Lifetime Fitting (`halflife.py`)**: Analytical nuclear lifetime fitting engine convolving Gaussian prompt instrumental response (IRF) with exponential radioactive decay and constant background offset. Supports interactive terminal REPL, scriptable CLI, interactive web pop-up viewer (`⏱️ Half-Life Fit`), and background $\chi^2$ profile exploration. **Fitting improvements are currently being expanded; additional changes are still upcoming.**
+- **Nuclear Half-Life & Lifetime Fitting (`halflife.py`)**: Analytical lifetime fitting engine convolving a Gaussian prompt response (IRF) with a nonnegative exponential decay and constant background. The Half-Life pop-up can pull the exact current 1D webviewer view directly from either Det 1/X or Det 2/Y, refresh it on demand, mirror reversed spectra, and expose adaptive log/linear parameter controls.
 - **ENSDF Automated Isotope Identification**: 100% offline, local SQLite-indexed nuclear structure search engine (`ensdf_search.py`) querying all 300+ ENSDF mass chains. Identifies 1D photopeaks and 2D coincidence cascades using physical transition topologies (direct prompt cascades, sequential intermediate transitions, high-excitation damping) and global mass-clustering with parsimonious minimum isotope set-cover. Accessible via web pop-up with interactive server file browser (`📂 Browse...`) or command-line.
 - **Coincidence & Banana Gating**: Multi-gate peak ($W$) and background ($X$) slicing with automatic channel normalization, plus 2D polygonal Banana graphical ROIs (`Shift+G` Peak / `Shift+B` Bg) for 2D area determination and 3D coincidence projection cuts.
 - **Multi-Matrix Differential Analysis**: Instant cycling (`[` / `]`) across multiple matrices while locking zoom, gates, and auto-refitted peak parameters.
@@ -215,9 +215,13 @@ net_spec, bg_spec = reader3d.get_gate_1d(target_axis=0, w_gates={2: [[11, 11]]})
 | **Peak Banana ROI** | `Shift + G` | Draw 2D peak polygon (W): manual area integration (2D) or 3D projection cut |
 | **Bg Banana ROI** | `Shift + B` | Draw 2D bg polygon (B): area-normalized subtraction in 2D and 3D |
 | **Plane Switch (3D)** | `Plane buttons` / Select | Switch orthogonal plane (`0-1`, `0-2`, `1-2`) |
-| **Cycle Scale** | `L` | Cycle scale of focused panel (2D: Log $\rightarrow$ Lin $\rightarrow$ Pwr; 1D: Lin $\leftrightarrow$ Log) |
+| **Cycle Scale** | `L` | Cycle scale of focused panel (2D: Log $\rightarrow$ Lin $\rightarrow$ Pwr; 1D: Lin $\leftrightarrow$ Log); `L`/`l` also toggles linear/log in the Half-Life popup |
 | **Colormap** | `C` | Cycle colormaps (Turbo, Viridis, Plasma, Inferno, Hot, Jet, Gray) |
 | **Cycle Matrix** | `[` / `]` | Switch active matrix while preserving zoom, gates, and fits |
+| **Half-Life Fit** | `Half-Life Fit` in a 1D header | Open the lifetime fitter for that exact Det 1/X or Det 2/Y histogram and its current visible view |
+| **Refresh Half-Life View** | `Pull from WebViewer` in the popup | Re-fetch the current webviewer spectrum and visible X range |
+| **Mirror Spectrum** | Checkbox in the popup | Reverse a left-decay spectrum to a positive/right-decay orientation |
+| **Half-Life Linear/Log** | `L` or `l` in the popup | Toggle the displayed spectrum Y scale |
 | **Print Vector PDF** | `Print PDF` button | Export publication-quality vector PDF of 2D matrix or 1D spectrum |
 | **Help Modal** | `?` | Open interactive keyboard shortcut reference |
 

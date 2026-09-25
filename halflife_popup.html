@@ -155,6 +155,77 @@
       cursor: pointer;
     }
 
+    .range-slider-wrap {
+      position: relative;
+      height: 24px;
+      margin-top: 8px;
+      padding: 0 2px;
+    }
+
+    .range-slider-wrap::before {
+      content: "";
+      position: absolute;
+      left: 2px;
+      right: 2px;
+      top: 10px;
+      height: 4px;
+      border-radius: 2px;
+      background: var(--border);
+      pointer-events: none;
+    }
+
+    .range-slider {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 24px;
+      margin: 0;
+      background: transparent;
+      pointer-events: none;
+      -webkit-appearance: none;
+      appearance: none;
+    }
+
+    .range-slider::-webkit-slider-runnable-track {
+      height: 4px;
+      background: transparent;
+    }
+
+    .range-slider::-moz-range-track {
+      height: 4px;
+      background: transparent;
+    }
+
+    .range-slider::-webkit-slider-thumb {
+      width: 15px;
+      height: 15px;
+      margin-top: -5.5px;
+      border: 2px solid var(--accent-cyan);
+      border-radius: 50%;
+      background: var(--card-bg);
+      cursor: grab;
+      pointer-events: auto;
+      -webkit-appearance: none;
+      appearance: none;
+      box-shadow: 0 0 4px rgba(0, 229, 255, 0.35);
+    }
+
+    .range-slider::-moz-range-thumb {
+      width: 13px;
+      height: 13px;
+      border: 2px solid var(--accent-cyan);
+      border-radius: 50%;
+      background: var(--card-bg);
+      cursor: grab;
+      pointer-events: auto;
+      box-shadow: 0 0 4px rgba(0, 229, 255, 0.35);
+    }
+
+    .range-slider:active::-webkit-slider-thumb,
+    .range-slider:active::-moz-range-thumb {
+      cursor: grabbing;
+    }
+
     .row-2col {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -497,12 +568,16 @@
         <div class="row-2col">
           <div class="form-group">
             <label class="form-label">X Min:</label>
-            <input type="number" id="rangeMin" step="any" onchange="onRangeInputChange()">
+            <input type="number" id="rangeMin" step="1" onchange="onRangeInputChange()">
           </div>
           <div class="form-group">
             <label class="form-label">X Max:</label>
-            <input type="number" id="rangeMax" step="any" onchange="onRangeInputChange()">
+            <input type="number" id="rangeMax" step="1" onchange="onRangeInputChange()">
           </div>
+        </div>
+        <div class="range-slider-wrap" title="Drag either handle to set the fitting range">
+          <input type="range" class="range-slider" id="rangeSliderMin" min="0" max="1" value="0" step="1" disabled aria-label="Fitting range minimum" oninput="onRangeSliderInput('min')">
+          <input type="range" class="range-slider" id="rangeSliderMax" min="0" max="1" value="1" step="1" disabled aria-label="Fitting range maximum" oninput="onRangeSliderInput('max')">
         </div>
       </div>
 
@@ -861,6 +936,94 @@
       };
     }
 
+    function getChannelStep() {
+      if (!currentData || currentData.x.length < 2) return 1;
+      for (let i = 1; i < currentData.x.length; i++) {
+        const step = Math.abs(currentData.x[i] - currentData.x[i - 1]);
+        if (Number.isFinite(step) && step > 1e-12) return step;
+      }
+      return 1;
+    }
+
+    function getNearestChannelIndex(value) {
+      if (!currentData || currentData.x.length === 0) return 0;
+      const x = currentData.x;
+      let bestIndex = 0;
+      let bestDistance = Math.abs(x[0] - value);
+      for (let i = 1; i < x.length; i++) {
+        const distance = Math.abs(x[i] - value);
+        if (distance < bestDistance) {
+          bestIndex = i;
+          bestDistance = distance;
+        }
+      }
+      return bestIndex;
+    }
+
+    function getRangeChannelIndices() {
+      if (!currentData || currentData.x.length === 0) return [0, 0];
+      const r0 = parseFloat(document.getElementById('rangeMin').value);
+      const r1 = parseFloat(document.getElementById('rangeMax').value);
+      const i0 = getNearestChannelIndex(Number.isFinite(r0) ? r0 : currentData.x[0]);
+      const i1 = getNearestChannelIndex(Number.isFinite(r1) ? r1 : currentData.x[currentData.x.length - 1]);
+      return [Math.min(i0, i1), Math.max(i0, i1)];
+    }
+
+    function getVisibleChannelIndexBounds() {
+      if (!currentData || currentData.x.length < 2) return [0, 1];
+      const lastIndex = currentData.x.length - 1;
+      const viewMin = Math.max(getDataBounds().min, Math.min(plotViewport.xMin, getDataBounds().max));
+      const viewMax = Math.min(getDataBounds().max, Math.max(plotViewport.xMax, getDataBounds().min));
+      let first = getNearestChannelIndex(viewMin);
+      let last = getNearestChannelIndex(viewMax);
+      if (first > last) [first, last] = [last, first];
+
+      // A very narrow zoom can round to a single channel. Keep a two-position
+      // slider domain so the two handles remain individually accessible.
+      if (first === last) {
+        if (last < lastIndex) last += 1;
+        else first = Math.max(0, last - 1);
+      }
+      return [first, last];
+    }
+
+    function formatRangeValue(value) {
+      if (!Number.isFinite(value)) return '';
+      if (/channel/i.test(currentData?.x_label || '')) return String(Math.round(value));
+      return String(Number(value.toPrecision(12)));
+    }
+
+    function setRangeInputValues(minValue, maxValue) {
+      const minInput = document.getElementById('rangeMin');
+      const maxInput = document.getElementById('rangeMax');
+      const step = getChannelStep();
+      minInput.step = String(Number(step.toPrecision(12)));
+      maxInput.step = String(Number(step.toPrecision(12)));
+      minInput.value = formatRangeValue(minValue);
+      maxInput.value = formatRangeValue(maxValue);
+    }
+
+    function syncRangeSliderControls() {
+      const minSlider = document.getElementById('rangeSliderMin');
+      const maxSlider = document.getElementById('rangeSliderMax');
+      if (!minSlider || !maxSlider) return;
+      const hasData = Boolean(currentData && currentData.x.length > 1);
+      const [visibleMin, visibleMax] = hasData ? getVisibleChannelIndexBounds() : [0, 1];
+      const [i0, i1] = getRangeChannelIndices();
+      const displayMin = hasData ? Math.max(visibleMin, Math.min(visibleMax, i0)) : visibleMin;
+      const displayMax = hasData ? Math.max(visibleMin, Math.min(visibleMax, i1)) : visibleMax;
+      minSlider.min = String(visibleMin);
+      maxSlider.min = String(visibleMin);
+      minSlider.max = String(visibleMax);
+      maxSlider.max = String(visibleMax);
+      minSlider.value = String(displayMin);
+      maxSlider.value = String(displayMax);
+      minSlider.disabled = !hasData;
+      maxSlider.disabled = !hasData;
+      minSlider.style.zIndex = hasData && displayMin === displayMax ? '3' : '2';
+      maxSlider.style.zIndex = hasData && displayMin === displayMax ? '2' : '1';
+    }
+
     function getFitRange() {
       if (!currentData || currentData.x.length === 0) return getDataBounds();
       const bounds = getDataBounds();
@@ -873,9 +1036,39 @@
       return { min: fitMin, max: Math.max(fitMin + 1e-6, fitMax) };
     }
 
-    function syncFitRangeToViewport() {
-      document.getElementById('rangeMin').value = plotViewport.xMin;
-      document.getElementById('rangeMax').value = plotViewport.xMax;
+    function onRangeSliderInput(handle) {
+      if (!currentData || currentData.x.length < 2) return;
+      const minSlider = document.getElementById('rangeSliderMin');
+      const maxSlider = document.getElementById('rangeSliderMax');
+      const [visibleMin, visibleMax] = getVisibleChannelIndexBounds();
+      const [fitMin, fitMax] = getRangeChannelIndices();
+      const selectedIndex = Number(handle === 'min' ? minSlider.value : maxSlider.value);
+      let minIndex = fitMin;
+      let maxIndex = fitMax;
+
+      if (handle === 'min') {
+        // If the upper bound is entirely left of the viewport, this handle has
+        // no meaningful position to move to without changing the fit interval.
+        if (fitMax < visibleMin) {
+          syncRangeSliderControls();
+          return;
+        }
+        minIndex = Math.max(visibleMin, Math.min(visibleMax, selectedIndex));
+        if (minIndex > fitMax) minIndex = fitMax;
+        minSlider.value = String(minIndex);
+      } else {
+        // Likewise, do not rewrite a lower bound that is entirely right of
+        // the viewport.
+        if (fitMin > visibleMax) {
+          syncRangeSliderControls();
+          return;
+        }
+        maxIndex = Math.max(visibleMin, Math.min(visibleMax, selectedIndex));
+        if (maxIndex < fitMin) maxIndex = fitMin;
+        maxSlider.value = String(maxIndex);
+      }
+      setRangeInputValues(currentData.x[minIndex], currentData.x[maxIndex]);
+      onRangeInputChange();
     }
 
     function resetPlotViewport() {
@@ -883,7 +1076,7 @@
       plotViewport.xMin = bounds.min;
       plotViewport.xMax = bounds.max;
       plotViewport.yZoom = 1;
-      syncFitRangeToViewport();
+      syncRangeSliderControls();
     }
 
     function clampViewport(min, max) {
@@ -896,7 +1089,7 @@
       if (min + span > bounds.max) min = bounds.max - span;
       plotViewport.xMin = min;
       plotViewport.xMax = min + span;
-      syncFitRangeToViewport();
+      syncRangeSliderControls();
     }
 
     function getPlotGeometry() {
@@ -1050,8 +1243,8 @@
       `;
 
       // Set Range Bounds
-      document.getElementById('rangeMin').value = data.x[0];
-      document.getElementById('rangeMax').value = data.x[data.x.length - 1];
+      setRangeInputValues(data.x[0], data.x[data.x.length - 1]);
+      syncRangeSliderControls();
 
       // Auto estimate
       autoEstimateGuesses();
@@ -1116,9 +1309,8 @@
           ? [bounds.min + bounds.max - Math.max(currentRange[0], currentRange[1]), bounds.min + bounds.max - Math.min(currentRange[0], currentRange[1])]
           : currentRange;
       }
-      document.getElementById('rangeMin').value = mappedRange[0];
-      document.getElementById('rangeMax').value = mappedRange[1];
-      clampViewport(mappedRange[0], mappedRange[1]);
+      setRangeInputValues(mappedRange[0], mappedRange[1]);
+      syncRangeSliderControls();
       activeFitResult = null;
       lastScanData = null;
       updateResultsUI(null);
@@ -1223,11 +1415,18 @@
     }
 
     function onRangeInputChange() {
-      // Keep the display and the fitting interval synchronized when the user
-      // edits the fit bounds explicitly; canvas navigation never edits these.
-      if (currentData) {
-        const fit = getFitRange();
-        clampViewport(fit.min, fit.max);
+      // Keep fitting bounds quantized to the loaded data channels and keep the
+      // number fields and dual-handle slider synchronized.
+      if (currentData && currentData.x.length > 1) {
+        const bounds = getDataBounds();
+        const rawMin = parseFloat(document.getElementById('rangeMin').value);
+        const rawMax = parseFloat(document.getElementById('rangeMax').value);
+        const minIndex = getNearestChannelIndex(Number.isFinite(rawMin) ? rawMin : bounds.min);
+        const maxIndex = getNearestChannelIndex(Number.isFinite(rawMax) ? rawMax : bounds.max);
+        const i0 = Math.min(minIndex, maxIndex);
+        const i1 = Math.max(minIndex, maxIndex);
+        setRangeInputValues(currentData.x[i0], currentData.x[i1]);
+        syncRangeSliderControls();
       }
       redrawPlot();
     }
@@ -1407,8 +1606,8 @@
     function resetRangeFull() {
       if (!currentData) return;
       const bounds = getDataBounds();
-      document.getElementById('rangeMin').value = bounds.min;
-      document.getElementById('rangeMax').value = bounds.max;
+      setRangeInputValues(bounds.min, bounds.max);
+      syncRangeSliderControls();
       resetPlotViewport();
       redrawPlot();
     }
@@ -1475,12 +1674,35 @@
       return yOut;
     }
 
+    function prepareZeroFwhmFit() {
+      const fwhmInput = document.getElementById('p_fwhm');
+      const fwhm = parseFloat(fwhmInput.value);
+      const fwhmFixed = document.getElementById('fix_fwhm').checked;
+      if (!fwhmFixed || !Number.isFinite(fwhm) || Math.abs(fwhm) >= 1e-9) return false;
+
+      // A fixed zero FWHM selects the pure-exponential model. Its centroid is
+      // not identifiable from the data, so anchor it to the requested fit
+      // minimum and fix it before submitting the fit.
+      const fit = getFitRange();
+      const centroidInput = document.getElementById('p_centroid');
+      const centroidFix = document.getElementById('fix_centroid');
+      centroidInput.value = formatParameterValue('p_centroid', fit.min);
+      centroidFix.checked = true;
+      parameterState.p_centroid.center = fit.min;
+      syncParameterControl('p_centroid');
+      return true;
+    }
+
     // Execute Fit
     async function executeFit() {
       if (!currentData) {
         alert("Please load a spectrum first.");
         return;
       }
+
+      const zeroFwhmFit = prepareZeroFwhmFit();
+      const fitRange = getFitRange();
+      if (zeroFwhmFit) redrawPlot();
 
       const btn = document.getElementById('btnFit');
       btn.innerText = "⏳ Fitting...";
@@ -1498,14 +1720,11 @@
         freepars: [
           !document.getElementById('fix_t12').checked,
           !document.getElementById('fix_fwhm').checked,
-          !document.getElementById('fix_centroid').checked,
+          zeroFwhmFit ? false : !document.getElementById('fix_centroid').checked,
           !document.getElementById('fix_scale').checked,
           !document.getElementById('fix_bg').checked
         ],
-        fit_range: [
-          parseFloat(document.getElementById('rangeMin').value),
-          parseFloat(document.getElementById('rangeMax').value)
-        ],
+        fit_range: [fitRange.min, fitRange.max],
         spectrum_mirrored: Boolean(currentData?.mirrored)
       };
 
@@ -1670,19 +1889,6 @@
       if (fitRight > fitLeft) {
         ctx.fillStyle = "rgba(0, 229, 255, 0.06)";
         ctx.fillRect(toScreenX(fitLeft), margin.top, toScreenX(fitRight) - toScreenX(fitLeft), mainHeight + resGap + resHeight);
-        ctx.strokeStyle = "rgba(0, 229, 255, 0.55)";
-        ctx.lineWidth = 1;
-        ctx.setLineDash([4, 3]);
-        [fitRange.min, fitRange.max].forEach(boundary => {
-          if (boundary >= xMin && boundary <= xMax) {
-            const sx = toScreenX(boundary);
-            ctx.beginPath();
-            ctx.moveTo(sx, margin.top);
-            ctx.lineTo(sx, margin.top + mainHeight + resGap + resHeight);
-            ctx.stroke();
-          }
-        });
-        ctx.setLineDash([]);
       }
       ctx.restore();
 
@@ -1720,6 +1926,33 @@
         ctx.fillText(xt.toFixed(0), sx, margin.top + mainHeight + resGap + resHeight + 14);
       }
       ctx.setLineDash([]);
+
+      // 3. Independent fitting-range boundaries. Draw these after the grid so
+      // they remain visible regardless of the current x-axis zoom/pan.
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(margin.left, margin.top, plotWidth, mainHeight + resGap + resHeight);
+      ctx.clip();
+      ctx.strokeStyle = "#00e5ff";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([6, 4]);
+      ctx.font = "bold 9px monospace";
+      ctx.fillStyle = "#00e5ff";
+      [fitRange.min, fitRange.max].forEach((boundary, index) => {
+        if (boundary < xMin || boundary > xMax) return;
+        const sx = toScreenX(boundary);
+        ctx.beginPath();
+        ctx.moveTo(sx, margin.top);
+        ctx.lineTo(sx, margin.top + mainHeight + resGap + resHeight);
+        ctx.stroke();
+
+        const label = index === 0 ? "FIT MIN" : "FIT MAX";
+        const labelOnLeft = sx > margin.left + plotWidth - 58;
+        ctx.textAlign = labelOnLeft ? "right" : "left";
+        ctx.fillText(label, sx + (labelOnLeft ? -5 : 5), margin.top + 12);
+      });
+      ctx.setLineDash([]);
+      ctx.restore();
 
       // 2. Residuals reference lines
       const resZeroY = toScreenResY(0);
@@ -1953,13 +2186,32 @@
           if (diff < minDiff) { minDiff = diff; bestIdx = i; }
         }
         const ptX = currentData.x[bestIdx];
-        tooltip.style.display = 'block';
-        tooltip.style.left = `${e.clientX + 14}px`;
-        tooltip.style.top = `${e.clientY - 20}px`;
         tooltip.innerHTML = `
           <strong>${currentData.x_label}:</strong> ${ptX.toFixed(2)}<br>
           <strong>Counts:</strong> ${currentData.y[bestIdx].toFixed(1)} ± ${currentData.dy[bestIdx].toFixed(1)}
         `;
+        tooltip.style.display = 'block';
+
+        // The tooltip is positioned inside .plot-wrapper, so use wrapper-relative
+        // coordinates rather than viewport coordinates from clientX/clientY.
+        const wrapperRect = canvas.parentElement.getBoundingClientRect();
+        const canvasOffsetX = rect.left - wrapperRect.left;
+        const canvasOffsetY = rect.top - wrapperRect.top;
+        const cursorX = canvasOffsetX + mouseX;
+        const cursorY = canvasOffsetY + (e.clientY - rect.top);
+        const gap = 14;
+        const tooltipWidth = tooltip.offsetWidth;
+        const tooltipHeight = tooltip.offsetHeight;
+        let tooltipX = cursorX + gap;
+        let tooltipY = cursorY + gap;
+        if (tooltipX + tooltipWidth > wrapperRect.width) {
+          tooltipX = cursorX - tooltipWidth - gap;
+        }
+        if (tooltipY + tooltipHeight > wrapperRect.height) {
+          tooltipY = cursorY - tooltipHeight - gap;
+        }
+        tooltip.style.left = `${Math.max(0, tooltipX)}px`;
+        tooltip.style.top = `${Math.max(0, tooltipY)}px`;
       });
 
       canvas.addEventListener('mouseup', (e) => {
@@ -2184,8 +2436,25 @@
         return;
       }
       const isLog = document.getElementById('plotLogScale').checked ? 1 : 0;
-      const url = `/api/halflife/export_pdf?file=${encodeURIComponent(currentData.filename)}&t12=${activeFitResult.t12}&fwhm=${activeFitResult.fwhm}&centroid=${activeFitResult.centroid}&scale=${activeFitResult.scale}&bg=${activeFitResult.bg}&r0=${activeFitResult.fit_range[0]}&r1=${activeFitResult.fit_range[1]}&log=${isLog}&mirrored=${currentData.mirrored ? 1 : 0}`;
-      window.open(url, '_blank');
+      const params = new URLSearchParams({
+        file: currentData.filename,
+        t12: String(activeFitResult.t12),
+        t12_err: String(activeFitResult.t12_err),
+        fwhm: String(activeFitResult.fwhm),
+        fwhm_err: String(activeFitResult.fwhm_err),
+        centroid: String(activeFitResult.centroid),
+        centroid_err: String(activeFitResult.centroid_err),
+        scale: String(activeFitResult.scale),
+        scale_err: String(activeFitResult.scale_err),
+        bg: String(activeFitResult.bg),
+        bg_err: String(activeFitResult.bg_err),
+        freepars: JSON.stringify(activeFitResult.freepars),
+        r0: String(activeFitResult.fit_range[0]),
+        r1: String(activeFitResult.fit_range[1]),
+        log: String(isLog),
+        mirrored: currentData.mirrored ? '1' : '0'
+      });
+      window.open(`/api/halflife/export_pdf?${params.toString()}`, '_blank');
     }
   </script>
 </body>

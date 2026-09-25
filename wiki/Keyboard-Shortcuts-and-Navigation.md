@@ -90,3 +90,19 @@ The `cmat_webviewer` GUI is designed for high-efficiency nuclear spectroscopy wi
 | **Save Configuration** | `Save Config` (Sidebar) | Save active UI parameters, calibrations, and colormaps to `python-cmat-config.txt` in working directory. |
 | **Keyboard Shortcuts Help** | `?` | Display interactive keyboard shortcut and help reference overlay. |
 | **Quit Viewer** | `Q` or `q` | Close browser window and terminate the terminal server process. |
+
+### Half-Life Pop-Up Controls
+
+| Action | Shortcut / Button | Description |
+|---|---|---|
+| **Open lifetime fit for Det 1/X** | `⏱️ Half-Life Fit` in the Det 1 header | Open the popup for the currently visible X histogram. |
+| **Open lifetime fit for Det 2/Y** | `⏱️ Half-Life Fit` in the Det 2 header | Open the popup for the currently visible Y histogram. |
+| **Refresh web spectrum** | `📥 Pull from WebViewer` | Re-fetch the current histogram bins, gates, calibration, and visible X range. |
+| **Zoom fit spectrum X** | `Shift + Mouse Wheel` or `Click & Drag` | Change the visible X range; fit bounds follow automatically. |
+| **Zoom fit spectrum Y** | `Mouse Wheel` | Change the displayed counts scale. |
+| **Pan fit spectrum** | Middle-button drag | Pan the visible X range without changing the zoom level. |
+| **Reset fit spectrum view** | `Double Click` | Restore the full spectrum view. |
+| **Toggle linear/log display** | `L` or `l` | Toggle the Half-Life popup plot between linear and logarithmic Y scales. |
+| **Mirror reversed spectrum** | `⇄ Mirror Spectrum` | Convert a left-decay spectrum to a positive/right-decay working orientation. |
+| **Step parameter value** | `▲` / `▼` or focused `ArrowUp` / `ArrowDown` | Change the selected parameter; centroid steps by 0.1%, other parameters by 5%. |
+| **Center/fix parameter** | Fix checkbox | Fix the parameter and make its current value the new slider center; unfixing restores adjustment around that center. |

@@ -170,3 +170,18 @@ Click **`🔬 Isotope Identification`** in the header to launch the standalone n
 
 
 
+
+## Half-Life Fitting from a 1D Spectrum
+
+Each 1D projection header has its own **`⏱️ Half-Life Fit`** button. The button is explicitly linked to its histogram, so it does not depend on which panel the pointer happens to be over:
+
+- **Det 1 / X**: opens the lifetime popup with the current X histogram.
+- **Det 2 / Y**: opens the lifetime popup with the current Y histogram.
+
+The popup requests a same-origin snapshot of the exact currently displayed 1D bins. In **Synced with 2D Window Zoom** mode, only the visible X/Y range is transferred; in **Full 0..4095 Range** mode, the complete current projection is transferred. Gated/coincidence-cut counts and calibration metadata are preserved.
+
+Use **`📥 Pull from WebViewer`** whenever the matrix, visible region, gates, or projection has changed. It requests a fresh snapshot rather than reusing the spectrum loaded when the popup was first opened.
+
+The Half-Life plot provides mouse-wheel Y zoom, `Shift` + wheel X zoom, drag-to-zoom, middle-button pan, and double-click reset. Fit bounds stay synchronized to the visible X range. Enable **`⇄ Mirror Spectrum`** for reversed time spectra before fitting. Press **`L`/`l`** to toggle the popup display between linear and logarithmic Y scales.
+
+The lifetime fit is nonnegative (`t₁/₂ ≥ 0`). Background is free by default and initialized from the late-time tail of the current fit range; it can be fixed manually or explored with the background scan.
