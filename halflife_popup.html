@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>python-cmat - Nuclear Lifetime & Half-Life Fitting</title>
+  <title>Half-life fitting</title>
   <style>
     :root {
       --bg-dark: #090d13;
@@ -54,6 +54,15 @@
       font-size: 0.76rem;
       color: var(--text-muted);
       margin-top: 2px;
+    }
+
+    .half-life-logo {
+      width: 36px;
+      height: 36px;
+      flex: 0 0 36px;
+      object-fit: contain;
+      border-radius: 50%;
+      background: #fff;
     }
 
     .badge {
@@ -507,7 +516,7 @@
   <!-- HEADER -->
   <header>
     <div class="title-group">
-      <h1>⏱️ Nuclear Lifetime & Half-Life Fitting</h1>
+      <h1><img class="half-life-logo" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 204 204'%3E%3Crect width='204' height='204' fill='white'/%3E%3Ccircle cx='102' cy='102' r='86' fill='none' stroke='black' stroke-width='15'/%3E%3Ctext x='102' y='151' text-anchor='middle' font-family='Arial, Helvetica, sans-serif' font-size='126' font-weight='700' fill='black'%3E%CE%BB%3C/text%3E%3C/svg%3E" alt="Half-Life logo">Half-life fitting</h1>
       <p>Analytical Convoluted Gaussian-Exponential Decay Spectroscopy Engine (halflife.py)</p>
     </div>
     <div style="display: flex; gap: 8px; align-items: center;">

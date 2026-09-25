@@ -348,8 +348,36 @@
     overflow: hidden;
   }
   .panel-1d canvas { width: 100%; height: 100%; flex: 1 1 0px; min-height: 0; background: #111; border-radius: 4px; cursor: crosshair; display: block; }
-  .panel-1d-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-  .panel-1d-title { font-size: 0.78rem; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .panel-1d-header { display: flex; justify-content: space-between; align-items: stretch; gap: 6px; margin-bottom: 3px; min-width: 0; }
+  .panel-1d-title-group { display: flex; align-items: center; gap: 6px; min-width: 0; flex: 1 1 auto; }
+  .panel-1d-title { font-size: 0.78rem; font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .panel-1d-compact-actions { display: flex; align-items: stretch; gap: 4px; flex: 0 0 auto; }
+  .panel-1d-compact-actions button,
+  .panel-1d-actions button {
+    height: 36px;
+    min-width: 0;
+    padding: 3px 7px;
+    font-size: 0.68rem;
+    line-height: 1.1;
+    white-space: normal;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    margin-top: 0;
+    border-radius: 4px;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .panel-1d-compact-actions button { width: 84px; }
+  .panel-1d-actions { display: flex; align-items: stretch; gap: 6px; flex: 1.45 1 auto; min-width: 0; }
+  .panel-1d-actions button { width: auto; flex: 1 1 0; }
+  .panel-1d-actions button:hover,
+  .panel-1d-compact-actions button:hover { background: #37474f; border-color: currentColor; }
+  .panel-1d-actions .action-export { color: #80deea; border: 1px solid #00acc1; background: #006064; }
+  .panel-1d-actions .action-half-life { color: #6ee7b7; border: 1px solid #059669; background: #064e3b; }
+  .panel-1d-actions .btn-pdf { color: #ffffff; border: 1px solid #4caf50; background: #1b5e20; }
+  .panel-1d-actions .btn-pdf:hover { background: #2e7d32; border-color: #81c784; }
+  .panel-1d-actions .fit-btn-close { color: #bbb; border: 1px solid #555; background: transparent; }
 
   .fit-results-card {
     background: #191c20;
@@ -809,12 +837,7 @@
         <option value="full">Full 0..4095 Range</option>
       </select>
 
-      <label style="margin-top: 6px;">1D Histogram Gridlines</label>
-      <select id="grid1DSelect">
-        <option value="both" selected>Major &amp; Minor Gridlines</option>
-        <option value="major">Major Gridlines Only</option>
-        <option value="none">Disabled (No Gridlines)</option>
-      </select>
+      <div style="margin-top: 6px; color: #69f0ae; font-size: 0.78rem;">1D Histogram Gridlines: Major &amp; Minor (Always On)</div>
     </div>
 
     <!-- 4. 1D Coincidence Gating -->
@@ -947,44 +970,38 @@
     <div class="panel-1d-container">
       <div class="panel-1d" id="panel1DX">
         <div class="panel-1d-header">
-          <div style="display: flex; align-items: center; gap: 8px; overflow: hidden;">
+          <div class="panel-1d-title-group">
             <span class="panel-1d-title" id="specTitleX" style="color: #00e5ff;">Det 1 (X Projection, Sliced Y)</span>
-            <button id="btnScaleToggleX" class="scale-toggle-btn" title="Det 1 Vertical Scale: Linear (Click or press 'L' to toggle)">LIN</button>
-            <button id="btnGridToggleX" class="grid-toggle-btn active" title="1D Gridlines: Major &amp; Minor (Click to cycle Both / Major / Off)">GRID: ALL</button>
-            <button id="btnClearGateX" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem;" title="Clear Gate [Z / Esc]">Clear Gate [Z]</button>
-            <button id="btnClearRegionX" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem; background: #6a1b9a; border-color: #ab47bc; color: #f3e5f5;" title="Clear Fit Region [R / =]" onclick="clearFitRegion(0)">Region [R] ✕</button>
-            <button id="btnClearBgX" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem; background: #4a148c; border-color: #8e24aa; color: #f3e5f5;" title="Clear 1D Background Windows [B]" onclick="clearFitBgRegions(0)">BG [B] ✕</button>
+            <div class="panel-1d-compact-actions">
+              <button id="btnClearGateX" class="fit-btn-close" style="display: none;" title="Clear Gate [Z / Esc]">Clear Gate [Z]</button>
+              <button id="btnClearRegionX" class="fit-btn-close" style="display: none;" title="Clear Fit Region [R / =]" onclick="clearFitRegion(0)">Region [R] ✕</button>
+              <button id="btnClearBgX" class="fit-btn-close" style="display: none;" title="Clear 1D Background Windows [B]" onclick="clearFitBgRegions(0)">BG [B] ✕</button>
+            </div>
           </div>
-          <div style="display: flex; gap: 6px;">
-            <button id="btnIntegrateX" class="secondary" style="width: auto; padding: 2px 7px; font-size: 0.72rem; color: #00e5ff; border-color: #00b0ff;" title="Integrate Peak in Region [I]">Integrate [I]</button>
-            <button id="btnFindPeaksX" class="secondary" style="width: auto; padding: 2px 7px; font-size: 0.72rem; color: #ffd54f; border-color: #ffb300;" title="Automatic Peak Search [P]">Find Peaks [P]</button>
-            <button id="btnFitAllPeaksX" class="secondary" style="width: auto; padding: 2px 7px; font-size: 0.72rem; color: #00e676; border-color: #00c853;" title="Fit All Displayed Peaks (Peak-Aware Background) [H]">Fit All [H]</button>
-            <button id="btnClearPeaksX" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem;" title="Clear Found Peaks &amp; Fits [=]">Clear Peaks</button>
+          <div class="panel-1d-actions">
+            <button id="btnClearPeaksX" class="fit-btn-close" style="display: none;" title="Clear Found Peaks &amp; Fits [=]">Clear Peaks</button>
             <button id="btnPrintPDF1DX" class="btn-pdf" title="Print Publication 1D Spectrum PDF (Det 1)">Print PDF</button>
-            <button id="btnExport1DX" style="width: auto; padding: 2px 7px; font-size: 0.72rem;">Export .dat</button>
-            <button id="btnHalfLife1DX" class="secondary" onclick="openHalfLifePopup(0)" style="width: auto; padding: 2px 7px; font-size: 0.72rem; color: #6ee7b7; border-color: #059669;" title="Open Half-Life Fit for Det 1 / X histogram">⏱️ Half-Life Fit</button>
+            <button id="btnExport1DX" class="action-export">Export .dat</button>
+            <button id="btnHalfLife1DX" class="secondary action-half-life" onclick="openHalfLifePopup(0)" title="Open Half-Life Fit for Det 1 / X histogram">⏱️ Half-Life Fit</button>
           </div>
         </div>
         <canvas id="canvas1dX"></canvas>
       </div>
       <div class="panel-1d" id="panel1DY">
         <div class="panel-1d-header">
-          <div style="display: flex; align-items: center; gap: 8px; overflow: hidden;">
+          <div class="panel-1d-title-group">
             <span class="panel-1d-title" id="specTitleY" style="color: #ff9800;">Det 2 (Y Projection, Sliced X)</span>
-            <button id="btnScaleToggleY" class="scale-toggle-btn" title="Det 2 Vertical Scale: Linear (Click or press 'L' to toggle)">LIN</button>
-            <button id="btnGridToggleY" class="grid-toggle-btn active" title="1D Gridlines: Major &amp; Minor (Click to cycle Both / Major / Off)">GRID: ALL</button>
-            <button id="btnClearGateY" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem;" title="Clear Gate [Z / Esc]">Clear Gate [Z]</button>
-            <button id="btnClearRegionY" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem; background: #6a1b9a; border-color: #ab47bc; color: #f3e5f5;" title="Clear Fit Region [R / =]" onclick="clearFitRegion(1)">Region [R] ✕</button>
-            <button id="btnClearBgY" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem; background: #4a148c; border-color: #8e24aa; color: #f3e5f5;" title="Clear 1D Background Windows [B]" onclick="clearFitBgRegions(1)">BG [B] ✕</button>
+            <div class="panel-1d-compact-actions">
+              <button id="btnClearGateY" class="fit-btn-close" style="display: none;" title="Clear Gate [Z / Esc]">Clear Gate [Z]</button>
+              <button id="btnClearRegionY" class="fit-btn-close" style="display: none;" title="Clear Fit Region [R / =]" onclick="clearFitRegion(1)">Region [R] ✕</button>
+              <button id="btnClearBgY" class="fit-btn-close" style="display: none;" title="Clear 1D Background Windows [B]" onclick="clearFitBgRegions(1)">BG [B] ✕</button>
+            </div>
           </div>
-          <div style="display: flex; gap: 6px;">
-            <button id="btnIntegrateY" class="secondary" style="width: auto; padding: 2px 7px; font-size: 0.72rem; color: #00e5ff; border-color: #00b0ff;" title="Integrate Peak in Region [I]">Integrate [I]</button>
-            <button id="btnFindPeaksY" class="secondary" style="width: auto; padding: 2px 7px; font-size: 0.72rem; color: #ffd54f; border-color: #ffb300;" title="Automatic Peak Search [P]">Find Peaks [P]</button>
-            <button id="btnFitAllPeaksY" class="secondary" style="width: auto; padding: 2px 7px; font-size: 0.72rem; color: #00e676; border-color: #00c853;" title="Fit All Displayed Peaks (Peak-Aware Background) [H]">Fit All [H]</button>
-            <button id="btnClearPeaksY" class="fit-btn-close" style="display: none; width: auto; padding: 2px 7px; font-size: 0.70rem;" title="Clear Found Peaks &amp; Fits [=]">Clear Peaks</button>
+          <div class="panel-1d-actions">
+            <button id="btnClearPeaksY" class="fit-btn-close" style="display: none;" title="Clear Found Peaks &amp; Fits [=]">Clear Peaks</button>
             <button id="btnPrintPDF1DY" class="btn-pdf" title="Print Publication 1D Spectrum PDF (Det 2)">Print PDF</button>
-            <button id="btnExport1DY" style="width: auto; padding: 2px 7px; font-size: 0.72rem;">Export .dat</button>
-            <button id="btnHalfLife1DY" class="secondary" onclick="openHalfLifePopup(1)" style="width: auto; padding: 2px 7px; font-size: 0.72rem; color: #6ee7b7; border-color: #059669;" title="Open Half-Life Fit for Det 2 / Y histogram">⏱️ Half-Life Fit</button>
+            <button id="btnExport1DY" class="action-export">Export .dat</button>
+            <button id="btnHalfLife1DY" class="secondary action-half-life" onclick="openHalfLifePopup(1)" title="Open Half-Life Fit for Det 2 / Y histogram">⏱️ Half-Life Fit</button>
           </div>
         </div>
         <canvas id="canvas1dY"></canvas>
@@ -1273,8 +1290,8 @@
   // 1D Vertical Scales: { 0: 'linear', 1: 'linear' }
   let projScale1D = { 0: 'linear', 1: 'linear' };
 
-  // 1D Histogram Gridlines Mode: 'both' (Major & Minor), 'major', 'none'
-  let grid1DMode = localStorage.getItem('cmat_grid_1d') || 'both';
+  // 1D histogram gridlines are always enabled with major and minor divisions.
+  const grid1DMode = 'both';
 
   // Current Focused / Hovered Panel for contextual shortcuts ('2d', '1d-0', '1d-1')
   let currentHoveredPanel = '2d';
@@ -2206,15 +2223,9 @@
       }
     }
 
-    if (cfg.grid_1d) {
-      grid1DMode = cfg.grid_1d;
-    }
-
     setupEvents();
     fetchFitLogStatus();
     updateScaleBadge2D();
-    updateScaleBadges1D();
-    updateGridBadges1D();
     await fetchTileAndRender();
     await fetch1DProjection();
   }
@@ -3166,12 +3177,6 @@
   async function searchPeaks1D(axis) {
     if (isSearchingPeaks) return;
     isSearchingPeaks = true;
-    const btnX = document.getElementById('btnFindPeaksX');
-    const btnY = document.getElementById('btnFindPeaksY');
-    const activeBtn = (axis === 0) ? btnX : btnY;
-    const origText = activeBtn ? activeBtn.innerText : 'Find Peaks [P]';
-    if (activeBtn) activeBtn.innerText = 'Searching...';
-
     const rangeMode = document.getElementById('peakSearchRangeSelect') ? document.getElementById('peakSearchRangeSelect').value : 'visible';
     const method = document.getElementById('peakSearchMethodSelect') ? document.getElementById('peakSearchMethodSelect').value : 'cwt';
     const minSnr = document.getElementById('peakSearchSnrSlider') ? document.getElementById('peakSearchSnrSlider').value : '9.0';
@@ -3210,7 +3215,6 @@
       console.error("Peak search request error:", err);
     } finally {
       isSearchingPeaks = false;
-      if (activeBtn) activeBtn.innerText = origText;
     }
   }
 
@@ -4168,10 +4172,6 @@
 
     document.getElementById('hudCoords').innerText = `Fitting ${visiblePeaks.length} peaks on ${detName} (Peak-Aware Continuum Average)...`;
 
-    const btn = (axis === 0) ? document.getElementById('btnFitAllPeaksX') : document.getElementById('btnFitAllPeaksY');
-    const origText = btn ? btn.innerText : '';
-    if (btn) btn.innerText = 'Fitting...';
-
     let url = `/api/fit_all_peaks_1d?axis=${axis}&ch_min=${chMin}&ch_max=${chMax}&peaks=${encodeURIComponent(peakChannels)}&fit_type=${fitType}&fwhm_est=${fwhmEst}&min_snr=${minSnr}&x0=${x0}&x1=${x1}&y0=${y0}&y1=${y1}`;
     if (fitBgRegions1D[axis] && fitBgRegions1D[axis].length > 0) {
       url += `&bg_regions=${encodeURIComponent(JSON.stringify(fitBgRegions1D[axis]))}`;
@@ -4218,7 +4218,6 @@
       document.getElementById('hudCoords').innerText = 'Multi-peak fit network error.';
     } finally {
       isFittingAllPeaks = false;
-      if (btn) btn.innerText = origText;
     }
   }
 
@@ -5267,8 +5266,6 @@
   }
 
   function renderBoth1DSpectra() {
-    updateScaleBadges1D();
-    updateGridBadges1D();
     render1DSpectrum(canvas1dX, ctx1dX, currentProjSpecX, 0, cursor1DChannelX);
     render1DSpectrum(canvas1dY, ctx1dY, currentProjSpecY, 1, cursor1DChannelY);
   }
@@ -5295,25 +5292,6 @@
     }
   }
 
-  function updateScaleBadges1D() {
-    const btnX = document.getElementById('btnScaleToggleX');
-    const btnY = document.getElementById('btnScaleToggleY');
-    if (btnX) {
-      const isLogX = (projScale1D[0] === 'log');
-      btnX.textContent = isLogX ? 'LOG' : 'LIN';
-      btnX.style.color = isLogX ? '#ffd600' : '#aaa';
-      btnX.style.borderColor = isLogX ? '#ffd600' : '#444';
-      btnX.title = `Det 1 Vertical Scale: ${isLogX ? 'Logarithmic' : 'Linear'} (Click or press 'L' to toggle)`;
-    }
-    if (btnY) {
-      const isLogY = (projScale1D[1] === 'log');
-      btnY.textContent = isLogY ? 'LOG' : 'LIN';
-      btnY.style.color = isLogY ? '#ffd600' : '#aaa';
-      btnY.style.borderColor = isLogY ? '#ffd600' : '#444';
-      btnY.title = `Det 2 Vertical Scale: ${isLogY ? 'Logarithmic' : 'Linear'} (Click or press 'L' to toggle)`;
-    }
-  }
-
   function cycle2DScale() {
     const modes = ['log', 'linear', 'sqrt'];
     const cur = scaleMode2D;
@@ -5327,40 +5305,7 @@
     const cur = projScale1D[axis] || 'linear';
     const next = (cur === 'log') ? 'linear' : 'log';
     projScale1D[axis] = next;
-    updateScaleBadges1D();
     renderBoth1DSpectra();
-  }
-
-  function updateGridBadges1D() {
-    const btnX = document.getElementById('btnGridToggleX');
-    const btnY = document.getElementById('btnGridToggleY');
-    const label = (grid1DMode === 'both') ? 'GRID: ALL' : (grid1DMode === 'major' ? 'GRID: MAJ' : 'GRID: OFF');
-    const title = (grid1DMode === 'both')
-      ? '1D Gridlines: Major & Minor (Click to cycle Major / Off / Both)'
-      : (grid1DMode === 'major' ? '1D Gridlines: Major Only (Click to cycle Off / Both)' : '1D Gridlines: Disabled (Click to Enable)');
-    const isActive = (grid1DMode !== 'none');
-    [btnX, btnY].forEach(btn => {
-      if (btn) {
-        btn.textContent = label;
-        btn.title = title;
-        if (isActive) btn.classList.add('active');
-        else btn.classList.remove('active');
-      }
-    });
-    const sel = document.getElementById('grid1DSelect');
-    if (sel && sel.value !== grid1DMode) sel.value = grid1DMode;
-  }
-
-  function set1DGridMode(mode) {
-    grid1DMode = mode;
-    localStorage.setItem('cmat_grid_1d', mode);
-    updateGridBadges1D();
-    renderBoth1DSpectra();
-  }
-
-  function cycle1DGridMode() {
-    const nextMode = (grid1DMode === 'both') ? 'major' : (grid1DMode === 'major' ? 'none' : 'both');
-    set1DGridMode(nextMode);
   }
 
   function updateMarkerStatus() {
@@ -5999,7 +5944,6 @@
       peak_search_snr: parseFloat(document.getElementById('peakSearchSnrSlider')?.value || '9.0'),
       proj_range: document.getElementById('projRangeSelect').value,
       proj_scale: (projScale1D[0] === 'log' || projScale1D[1] === 'log') ? 'log' : 'linear',
-      grid_1d: grid1DMode,
     };
 
     if (metadata) {
@@ -6196,17 +6140,6 @@
 
     const btnScaleToggle2D = document.getElementById('btnScaleToggle2D');
     if (btnScaleToggle2D) btnScaleToggle2D.addEventListener('click', () => { cycle2DScale(); unfocusControls(); });
-    const btnScaleToggleX = document.getElementById('btnScaleToggleX');
-    if (btnScaleToggleX) btnScaleToggleX.addEventListener('click', () => { cycle1DScale(0); unfocusControls(); });
-    const btnScaleToggleY = document.getElementById('btnScaleToggleY');
-    if (btnScaleToggleY) btnScaleToggleY.addEventListener('click', () => { cycle1DScale(1); unfocusControls(); });
-
-    const btnGridX = document.getElementById('btnGridToggleX');
-    if (btnGridX) btnGridX.addEventListener('click', () => { cycle1DGridMode(); unfocusControls(); });
-    const btnGridY = document.getElementById('btnGridToggleY');
-    if (btnGridY) btnGridY.addEventListener('click', () => { cycle1DGridMode(); unfocusControls(); });
-    const selGrid = document.getElementById('grid1DSelect');
-    if (selGrid) selGrid.addEventListener('change', (e) => { set1DGridMode(e.target.value); unfocusControls(); });
 
     const p2D = document.getElementById('panel2D');
     const p1DX = document.getElementById('panel1DX');
@@ -6312,11 +6245,6 @@
     const btnBananaBg2D = document.getElementById('btnBananaBg2D');
     if (btnBananaBg2D) btnBananaBg2D.addEventListener('click', () => toggleBananaMode('bg'));
 
-    const btnFndX = document.getElementById('btnFindPeaksX');
-    if (btnFndX) btnFndX.addEventListener('click', () => searchPeaks1D(0));
-    const btnFndY = document.getElementById('btnFindPeaksY');
-    if (btnFndY) btnFndY.addEventListener('click', () => searchPeaks1D(1));
-
     const btnClrPkX = document.getElementById('btnClearPeaksX');
     if (btnClrPkX) btnClrPkX.addEventListener('click', () => clearFoundPeaks(0));
     const btnClrPkY = document.getElementById('btnClearPeaksY');
@@ -6329,11 +6257,6 @@
     const btnSideClrPk = document.getElementById('btnSidebarClearPeaks');
     if (btnSideClrPk) btnSideClrPk.addEventListener('click', () => clearAllFits());
 
-    const btnFitAllX = document.getElementById('btnFitAllPeaksX');
-    if (btnFitAllX) btnFitAllX.addEventListener('click', () => fitAllPeaks1D(0));
-    const btnFitAllY = document.getElementById('btnFitAllPeaksY');
-    if (btnFitAllY) btnFitAllY.addEventListener('click', () => fitAllPeaks1D(1));
-
     const btnSideFitAll1 = document.getElementById('btnSidebarFitAllPeaksDet1');
     if (btnSideFitAll1) btnSideFitAll1.addEventListener('click', () => fitAllPeaks1D(0));
     const btnSideFitAll2 = document.getElementById('btnSidebarFitAllPeaksDet2');
@@ -6341,11 +6264,6 @@
 
     const btnCloseMulti = document.getElementById('btnCloseMultiFit1D');
     if (btnCloseMulti) btnCloseMulti.addEventListener('click', () => clearMultiFit1D(null));
-
-    const btnIntX = document.getElementById('btnIntegrateX');
-    if (btnIntX) btnIntX.addEventListener('click', () => handleIntegrateKeyPress(0));
-    const btnIntY = document.getElementById('btnIntegrateY');
-    if (btnIntY) btnIntY.addEventListener('click', () => handleIntegrateKeyPress(1));
 
     const btnCopyInt = document.getElementById('btnCopyIntegrate1D');
     if (btnCopyInt) btnCopyInt.addEventListener('click', () => copyIntegrationResults());
