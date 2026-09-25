@@ -854,7 +854,10 @@
     // Global State
     const popupParams = new URLSearchParams(window.location.search);
     const autoLoadFromWebViewer = popupParams.get('auto_load') === '1';
-    const requestedViewerAxis = popupParams.has('axis') && Number(popupParams.get('axis')) === 0 ? 0 : 1;
+    const requestedViewerAxis = (() => {
+      const axis = Number(popupParams.get('axis'));
+      return (axis === 0 || axis === 1 || axis === 2) ? axis : 1;
+    })();
     let suppressFileAutoLoad = autoLoadFromWebViewer;
     let viewerRequestSequence = 0;
     const viewerRequestWaiters = new Map();
@@ -1143,7 +1146,7 @@
         });
         window.opener.postMessage({
           type: 'cmat-halflife-request-snapshot',
-          axis: axis === 0 ? 0 : 1,
+          axis: (axis === 0 || axis === 1 || axis === 2) ? axis : 1,
           requestId
         }, window.location.origin);
       });
@@ -1203,8 +1206,8 @@
     }
 
     async function fetchActiveSpectrum(axis = requestedViewerAxis, showError = true) {
-      const requestedAxis = axis === 0 ? 0 : 1;
-      const fallbackAxis = requestedAxis === 0 ? 1 : 0;
+      const requestedAxis = (axis === 0 || axis === 1 || axis === 2) ? axis : 1;
+      const fallbackAxis = requestedAxis === 2 ? 0 : (requestedAxis === 0 ? 1 : 0);
 
       // Prefer the exact currently rendered bins from the WebViewer.
       if (window.opener && !window.opener.closed) {

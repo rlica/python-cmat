@@ -355,21 +355,70 @@
     position: relative;
   }
   .panel-1d-header {
-    height: 26px;
-    min-height: 26px;
     display: flex;
     justify-content: space-between;
-    align-items: center;
-    margin-bottom: 4px;
+    align-items: stretch;
+    gap: 6px;
+    margin-bottom: 3px;
+    min-width: 0;
     flex-shrink: 0;
     font-size: 0.75rem;
+  }
+  .panel-1d-title-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-width: 0;
+    flex: 1 1 auto;
   }
   .panel-1d-title {
     font-weight: 700;
     display: flex;
     align-items: center;
     gap: 6px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
   }
+  .panel-1d-compact-actions {
+    display: flex;
+    align-items: stretch;
+    gap: 4px;
+    flex: 0 0 auto;
+  }
+  .panel-1d-actions {
+    display: flex;
+    align-items: stretch;
+    gap: 6px;
+    flex: 1.45 1 auto;
+    min-width: 0;
+  }
+  .panel-1d-compact-actions button,
+  .panel-1d-actions button {
+    height: 36px;
+    min-width: 0;
+    padding: 3px 7px;
+    font-size: 0.68rem;
+    line-height: 1.1;
+    white-space: normal;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    margin-top: 0;
+    border-radius: 4px;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .panel-1d-compact-actions button { width: 84px; }
+  .panel-1d-actions button { width: auto; flex: 1 1 0; }
+  .panel-1d-actions button:hover,
+  .panel-1d-compact-actions button:hover { background: #37474f; border-color: currentColor; }
+  .panel-1d-actions .action-pdf { color: #ffffff; border: 1px solid #4caf50; background: #1b5e20; }
+  .panel-1d-actions .action-export { color: #80deea; border: 1px solid #00acc1; background: #006064; }
+  .panel-1d-actions .action-half-life { color: #6ee7b7; border: 1px solid #059669; background: #064e3b; }
+  .panel-1d-actions .action-pdf:hover { background: #2e7d32; border-color: #81c784; }
+  .panel-1d-actions .fit-btn-close { color: #bbb; border: 1px solid #555; background: transparent; }
   .panel-1d canvas {
     width: 100%;
     height: 100%;
@@ -665,7 +714,6 @@
     <select id="matrixSelect" class="matrix-select" onchange="onSelectMatrix(this.value)" title="Active 3D Matrix ([ / ] to cycle)"></select>
     <button id="btnOpenFs" class="matrix-open-btn" onclick="openServerBrowser()">📂 Open</button>
     <button id="btnHeaderOpenIsotopeID" class="matrix-open-btn" onclick="openIsotopeSearchPopup()" title="Automatic Isotope Identification [ENSDF] (Opens Pop-up Window)" style="background: #312e81; border-color: #4338ca; color: #a5b4fc; font-weight: 600;">🔬 Isotope ID</button>
-    <button id="btnHeaderOpenHalfLife" class="matrix-open-btn" onclick="openHalfLifePopup()" title="Nuclear Lifetime & Half-Life Fitting [halflife.py] (Opens Pop-up Window)" style="background: #064e3b; border-color: #059669; color: #6ee7b7; font-weight: 600;">⏱️ Half-Life Fit</button>
   </div>
 
   <!-- Dynamic HUD -->
@@ -791,9 +839,6 @@
           <button id="btnOpenIsotopeID" class="primary" onclick="openIsotopeSearchPopup()" style="padding: 5px 6px; font-size: 0.74rem; background: linear-gradient(135deg, #0284c7, #6366f1); border: none; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); cursor: pointer;" title="Open Automatic Nuclear Isotope Identification Pop-up Window (ENSDF database)">
             <span>🔬</span> Isotope ID
           </button>
-          <button id="btnOpenHalfLifeID" class="primary" onclick="openHalfLifePopup()" style="padding: 5px 6px; font-size: 0.74rem; background: linear-gradient(135deg, #059669, #0d9488); border: none; font-weight: 600; display: flex; align-items: center; justify-content: center; gap: 4px; box-shadow: 0 2px 6px rgba(0,0,0,0.3); cursor: pointer;" title="Open Nuclear Lifetime & Half-Life Fitting Pop-up Window (halflife.py)">
-            <span>⏱️</span> Half-Life Fit
-          </button>
         </div>
       </div>
     </div>
@@ -889,19 +934,17 @@
       <!-- Axis 0 (Axis 1 / X) -->
       <div class="panel-1d" id="panel1D_0">
         <div class="panel-1d-header">
-          <div style="display:flex; align-items:center; gap:6px;">
+          <div class="panel-1d-title-group">
             <span class="panel-1d-title" id="panel1DTitle0" style="color:#00e5ff;">Axis 1 (X)</span>
-            <button id="btnScaleToggle0" class="scale-toggle-btn" onclick="toggle1DScale(0)">LIN</button>
-            <button id="btnGridToggle0" class="grid-toggle-btn active" onclick="cycle1DGridMode()">GRID</button>
-            <button id="btnClearGate0" class="fit-btn-close" style="display:none; padding:1px 6px;" onclick="clearGate(0)">Gate ✕</button>
+            <div class="panel-1d-compact-actions">
+              <button id="btnClearGate0" class="fit-btn-close" style="display:none;" onclick="clearGate(0)">Gate ✕</button>
+            </div>
           </div>
-          <div style="display:flex; gap:4px;">
-            <button class="secondary" onclick="handleIntegrateKeyPress(0)">Integrate [I]</button>
-            <button class="secondary" style="color:#ffd54f; border-color:#ffb300;" onclick="searchPeaks1D(0)">Peaks [P]</button>
-            <button class="secondary" style="color:#00e676; border-color:#00c853;" onclick="fitAllPeaks1D(0)">Fit All [H]</button>
+          <div class="panel-1d-actions">
             <button id="btnClearPeaks0" class="fit-btn-close" style="display:none;" onclick="clearFoundPeaks(0)">Clear</button>
-            <button class="btn-pdf" onclick="exportPDF1D(0)">PDF</button>
-            <button onclick="exportDat(0)">.dat</button>
+            <button class="btn-pdf action-pdf" onclick="exportPDF1D(0)">PDF</button>
+            <button class="action-export" onclick="exportDat(0)">.dat</button>
+            <button class="secondary action-half-life" onclick="openHalfLifePopup(0)" title="Open Half-Life Fit for Axis 1 / X histogram">⏱️ Half-Life Fit</button>
           </div>
         </div>
         <canvas id="canvas1d_0"></canvas>
@@ -910,19 +953,17 @@
       <!-- Axis 1 (Axis 2 / Y) -->
       <div class="panel-1d" id="panel1D_1">
         <div class="panel-1d-header">
-          <div style="display:flex; align-items:center; gap:6px;">
+          <div class="panel-1d-title-group">
             <span class="panel-1d-title" id="panel1DTitle1" style="color:#ff9800;">Axis 2 (Y)</span>
-            <button id="btnScaleToggle1" class="scale-toggle-btn" onclick="toggle1DScale(1)">LIN</button>
-            <button id="btnGridToggle1" class="grid-toggle-btn active" onclick="cycle1DGridMode()">GRID</button>
-            <button id="btnClearGate1" class="fit-btn-close" style="display:none; padding:1px 6px;" onclick="clearGate(1)">Gate ✕</button>
+            <div class="panel-1d-compact-actions">
+              <button id="btnClearGate1" class="fit-btn-close" style="display:none;" onclick="clearGate(1)">Gate ✕</button>
+            </div>
           </div>
-          <div style="display:flex; gap:4px;">
-            <button class="secondary" onclick="handleIntegrateKeyPress(1)">Integrate [I]</button>
-            <button class="secondary" style="color:#ffd54f; border-color:#ffb300;" onclick="searchPeaks1D(1)">Peaks [P]</button>
-            <button class="secondary" style="color:#00e676; border-color:#00c853;" onclick="fitAllPeaks1D(1)">Fit All [H]</button>
+          <div class="panel-1d-actions">
             <button id="btnClearPeaks1" class="fit-btn-close" style="display:none;" onclick="clearFoundPeaks(1)">Clear</button>
-            <button class="btn-pdf" onclick="exportPDF1D(1)">PDF</button>
-            <button onclick="exportDat(1)">.dat</button>
+            <button class="btn-pdf action-pdf" onclick="exportPDF1D(1)">PDF</button>
+            <button class="action-export" onclick="exportDat(1)">.dat</button>
+            <button class="secondary action-half-life" onclick="openHalfLifePopup(1)" title="Open Half-Life Fit for Axis 2 / Y histogram">⏱️ Half-Life Fit</button>
           </div>
         </div>
         <canvas id="canvas1d_1"></canvas>
@@ -931,19 +972,17 @@
       <!-- Axis 2 (Axis 3 / Z) -->
       <div class="panel-1d" id="panel1D_2">
         <div class="panel-1d-header">
-          <div style="display:flex; align-items:center; gap:6px;">
+          <div class="panel-1d-title-group">
             <span class="panel-1d-title" id="panel1DTitle2" style="color:#00e676;">Axis 3 (Z)</span>
-            <button id="btnScaleToggle2" class="scale-toggle-btn" onclick="toggle1DScale(2)">LIN</button>
-            <button id="btnGridToggle2" class="grid-toggle-btn active" onclick="cycle1DGridMode()">GRID</button>
-            <button id="btnClearGate2" class="fit-btn-close" style="display:none; padding:1px 6px;" onclick="clearGate(2)">Gate ✕</button>
+            <div class="panel-1d-compact-actions">
+              <button id="btnClearGate2" class="fit-btn-close" style="display:none;" onclick="clearGate(2)">Gate ✕</button>
+            </div>
           </div>
-          <div style="display:flex; gap:4px;">
-            <button class="secondary" onclick="handleIntegrateKeyPress(2)">Integrate [I]</button>
-            <button class="secondary" style="color:#ffd54f; border-color:#ffb300;" onclick="searchPeaks1D(2)">Peaks [P]</button>
-            <button class="secondary" style="color:#00e676; border-color:#00c853;" onclick="fitAllPeaks1D(2)">Fit All [H]</button>
+          <div class="panel-1d-actions">
             <button id="btnClearPeaks2" class="fit-btn-close" style="display:none;" onclick="clearFoundPeaks(2)">Clear</button>
-            <button class="btn-pdf" onclick="exportPDF1D(2)">PDF</button>
-            <button onclick="exportDat(2)">.dat</button>
+            <button class="btn-pdf action-pdf" onclick="exportPDF1D(2)">PDF</button>
+            <button class="action-export" onclick="exportDat(2)">.dat</button>
+            <button class="secondary action-half-life" onclick="openHalfLifePopup(2)" title="Open Half-Life Fit for Axis 3 / Z histogram">⏱️ Half-Life Fit</button>
           </div>
         </div>
         <canvas id="canvas1d_2"></canvas>
@@ -1179,7 +1218,8 @@
   };
   let zoom1DY = { 0: 1.0, 1: 1.0, 2: 1.0 };
   let projScale1D = { 0: 'linear', 1: 'linear', 2: 'linear' };
-  let grid1DMode = 'both'; // 'both', 'major', 'none'
+  // 1D histogram gridlines are always enabled.
+  const grid1DMode = 'both';
   let scrollSensitivity = 0.04;
 
   // 2D Display & Density Heatmap State
@@ -3856,20 +3896,7 @@
 
   function cycle1DScale(axis) {
     projScale1D[axis] = (projScale1D[axis] === 'linear') ? 'log' : 'linear';
-    const btn = document.getElementById(`btnScaleToggle${axis}`);
-    if (btn) btn.innerText = projScale1D[axis].toUpperCase();
     render1DSpectrum(axis);
-  }
-
-  function cycle1DGridMode() {
-    const modes = ['both', 'major', 'none'];
-    let idx = modes.indexOf(grid1DMode);
-    grid1DMode = modes[(idx + 1) % modes.length];
-    for (let ax = 0; ax < 3; ax++) {
-      const btn = document.getElementById(`btnGridToggle${ax}`);
-      if (btn) btn.innerText = grid1DMode.toUpperCase();
-    }
-    renderAll1DSpectra();
   }
 
   function toggleSidebar() {
@@ -4123,10 +4150,7 @@
   window.toggleBananaGateMode = toggleBananaGateMode;
   window.toggleBananaMode = toggleBananaMode;
   window.clearBananaGate = clearBananaGate;
-  window.toggle1DScale = toggle1DScale;
-  window.cycle1DScale = cycle1DScale;
   window.cycle2DScale = cycle2DScale;
-  window.cycle1DGridMode = cycle1DGridMode;
   window.clearGate = clearGate;
   window.clear1DGates = clear1DGates;
   window.clearGambaGate = clearGambaGate;
@@ -4350,12 +4374,78 @@
     window.open('/isotope_search', 'CMAT_Isotope_Search', `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes`);
   }
 
-  function openHalfLifePopup() {
+  function getCurrent1DSnapshot(axis) {
+    const selectedAxis = (axis === 0 || axis === 1 || axis === 2) ? axis : 0;
+    const spec = spec1D[selectedAxis];
+    if (!spec || spec.length === 0) {
+      return { success: false, error: `No current 1D histogram available on Axis ${selectedAxis + 1}` };
+    }
+
+    const visible = getVisible1DRange(selectedAxis);
+    const chStart = Math.max(0, Math.floor(visible.start));
+    const chEnd = Math.min(spec.length - 1, Math.ceil(visible.end));
+    const x = [];
+    const y = [];
+    const dy = [];
+    for (let ch = chStart; ch <= chEnd; ch++) {
+      const value = Number(spec[ch]) || 0;
+      x.push(ch);
+      y.push(value);
+      dy.push(Math.sqrt(Math.max(1, Math.abs(value))));
+    }
+
+    const matrix = metadata && metadata.filename ? metadata.filename : 'matrix3d';
+    const hasGate = gates1D[selectedAxis] && (
+      gates1D[selectedAxis].w.length > 0 || gates1D[selectedAxis].b.length > 0
+    );
+    const axisNames = ['X', 'Y', 'Z'];
+    const xEnergy = isAxisCalibrated(selectedAxis)
+      ? x.map(ch => chToEnergy(selectedAxis, ch))
+      : null;
+
+    return {
+      success: true,
+      filename: `${matrix}_Axis${selectedAxis + 1}_${axisNames[selectedAxis]}${hasGate ? '_gated_view' : ''}.dat`,
+      x,
+      y,
+      dy,
+      x_energy: xEnergy,
+      header_lines: [
+        `# Current 3D WebViewer 1D View - Axis ${selectedAxis + 1} (${axisNames[selectedAxis]})`,
+        `# Visible channels: ${chStart}..${chEnd}`,
+        ...(hasGate ? ['# 1D gate active on this axis'] : [])
+      ],
+      is_gated: hasGate,
+      bg_scale_factor: 0,
+      x_label: 'Channel',
+      view_x0: chStart,
+      view_x1: chEnd
+    };
+  }
+
+  // The popup requests the exact currently rendered 1D bins from this 3D viewer.
+  window.addEventListener('message', (event) => {
+    if (event.origin !== window.location.origin || !event.source) return;
+    const message = event.data || {};
+    if (message.type !== 'cmat-halflife-request-snapshot') return;
+
+    const axis = (message.axis === 0 || message.axis === 1 || message.axis === 2) ? message.axis : 0;
+    const snapshot = getCurrent1DSnapshot(axis);
+    event.source.postMessage({
+      type: 'cmat-halflife-spectrum-response',
+      requestId: message.requestId,
+      ...snapshot
+    }, event.origin);
+  });
+
+  function openHalfLifePopup(axis = 0) {
     const w = 1200;
     const h = 860;
     const left = Math.max(40, Math.floor((window.screen.width - w) / 2));
     const top = Math.max(40, Math.floor((window.screen.height - h) / 2));
-    window.open('/halflife_popup.html', 'CMAT_HalfLife_Fitter', `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes`);
+    const selectedAxis = (axis === 0 || axis === 1 || axis === 2) ? axis : 0;
+    const url = `/halflife_popup.html?axis=${selectedAxis}&auto_load=1`;
+    window.open(url, 'CMAT_HalfLife_Fitter', `width=${w},height=${h},left=${left},top=${top},resizable=yes,scrollbars=yes`);
   }
 
   async function saveConfig() {
@@ -4409,12 +4499,6 @@
 
     // Badges & Scales
     document.getElementById('btnScaleToggle2D')?.addEventListener('click', cycle2DScale);
-    document.getElementById('btnScaleToggle0')?.addEventListener('click', () => cycle1DScale(0));
-    document.getElementById('btnScaleToggle1')?.addEventListener('click', () => cycle1DScale(1));
-    document.getElementById('btnScaleToggle2')?.addEventListener('click', () => cycle1DScale(2));
-    document.getElementById('btnGridToggle0')?.addEventListener('click', cycle1DGridMode);
-    document.getElementById('btnGridToggle1')?.addEventListener('click', cycle1DGridMode);
-    document.getElementById('btnGridToggle2')?.addEventListener('click', cycle1DGridMode);
 
     // Peak Clear Buttons
     document.getElementById('btnClearPeaks0')?.addEventListener('click', () => clearFoundPeaks(0));
@@ -4918,9 +5002,6 @@
         } else {
           cycle2DScale();
         }
-      }
-      else if (e.key === '3') {
-        cycle1DGridMode();
       }
       else if (e.key === 'Tab') {
         const planes = ['0-1', '0-2', '1-2'];
