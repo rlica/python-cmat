@@ -7,28 +7,28 @@
 
 **Python reader, decompressor, ASCII converter, and interactive Web visualizer for [GASPware](https://github.com/csteke/GASPware) 2D and 3D matrices in the `.cmat` format.**
 
-<p align="center">
-  <img width="960" alt="2D Coincidence Matrix Web Viewer" src="https://github.com/user-attachments/assets/200b73c4-79d1-4c6c-bdd2-b32ac973e0b0" />
-  <br>
-  <em>Interactive 2D &gamma;-&gamma; coincidence matrix web viewer with real-time projections, coincidence slicing, 1D and 2D peak fitting.</em>
-</p>
-
 <table align="center" width="100%">
   <tr>
+    <td align="center" width="50%" valign="top">
+      <img width="100%" alt="2D Coincidence Matrix Web Viewer" src="https://github.com/user-attachments/assets/200b73c4-79d1-4c6c-bdd2-b32ac973e0b0" /><br>
+      <em>Interactive 2D &gamma;-&gamma; coincidence matrix web viewer with real-time projections, coincidence slicing, 1D and 2D peak fitting.</em>
+    </td>
     <td align="center" width="50%" valign="top">
       <img width="100%" alt="3D Matrix Cube Web Viewer" src="https://github.com/user-attachments/assets/23010f23-08bf-42e5-ac0e-db569ad31141" /><br>
       <em>3D Matrix Cube Web Viewer</em>
     </td>
+  </tr>
+  <tr>
     <td align="center" width="50%" valign="top">
       <img width="100%" alt="ENSDF Automated Isotope Identification Pop-up" src="https://github.com/user-attachments/assets/84062ec2-d50d-46ba-bc50-59aaf73473c4" /><br>
       <em>ENSDF Automated Isotope Identification</em>
     </td>
+    <td align="center" width="50%" valign="top">
+      <img width="100%" alt="Half-life fit of time-difference spectra" src="https://github.com/user-attachments/assets/aee03f6c-cc22-4c40-8667-d841b8e5e8fc" /><br>
+      <em>Half-life fit of time-difference spectra</em>
+    </td>
   </tr>
 </table>
-
-<img width="1189" height="798" alt="Screenshot 2026-09-25 at 13 16 52" src="https://github.com/user-attachments/assets/aee03f6c-cc22-4c40-8667-d841b8e5e8fc" /><br>
-<em>Half-life fit of time-difference spectra</em>
-
 
 ---
 
