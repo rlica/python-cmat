@@ -26,6 +26,10 @@
   </tr>
 </table>
 
+<img width="1189" height="798" alt="Screenshot 2026-09-25 at 13 16 52" src="https://github.com/user-attachments/assets/aee03f6c-cc22-4c40-8667-d841b8e5e8fc" /><br>
+<em>Half-life fit of time-difference spectra</em>
+
+
 > **3D viewer development status:** Viewing of large symmetric 3D `.cmat` matrices is currently **preliminary and under active development**. The sparse on-demand engine, navigation, synchronized projections, fitting workflows, and performance characteristics should be considered experimental while further validation and optimization continue.
 
 ---
