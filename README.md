@@ -11,17 +11,17 @@
   <tr>
     <td align="center" width="50%" valign="top">
       <img width="100%" alt="2D Coincidence Matrix Web Viewer" src="https://github.com/user-attachments/assets/200b73c4-79d1-4c6c-bdd2-b32ac973e0b0" /><br>
-      <em>Interactive 2D &gamma;-&gamma; coincidence matrix web viewer with real-time projections, coincidence slicing, 1D and 2D peak fitting.</em>
+      <em>Interactive 2D matrix web viewer</em>
     </td>
     <td align="center" width="50%" valign="top">
       <img width="100%" alt="3D Matrix Cube Web Viewer" src="https://github.com/user-attachments/assets/23010f23-08bf-42e5-ac0e-db569ad31141" /><br>
-      <em>3D Matrix Cube Web Viewer</em>
+      <em>Interactive 3D matrix web viewer</em>
     </td>
   </tr>
   <tr>
     <td align="center" width="50%" valign="top">
       <img width="100%" alt="ENSDF Automated Isotope Identification Pop-up" src="https://github.com/user-attachments/assets/84062ec2-d50d-46ba-bc50-59aaf73473c4" /><br>
-      <em>ENSDF Automated Isotope Identification</em>
+      <em>Gamma-ray search for isotope identification through ENSDF database</em>
     </td>
     <td align="center" width="50%" valign="top">
       <img width="100%" alt="Half-life fit of time-difference spectra" src="https://github.com/user-attachments/assets/aee03f6c-cc22-4c40-8667-d841b8e5e8fc" /><br>
