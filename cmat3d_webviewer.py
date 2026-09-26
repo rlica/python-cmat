@@ -1529,6 +1529,10 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
             r1 = float(query.get("r1", [0.0])[0])
             is_log = int(query.get("log", [0])[0]) == 1
             mirrored = int(query.get("mirrored", [0])[0]) == 1
+            # Axis window from the viewer's current zoom; None keeps auto-scaling.
+            from halflife import parse_limit_pair
+            xlim_pair = parse_limit_pair(query.get("xlim", [None])[0])
+            ylim_pair = parse_limit_pair(query.get("ylim", [None])[0])
 
             fitter = HalfLifeFitter()
             filepath = Path(fn)
@@ -1565,7 +1569,7 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
                 with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
                     tmp_pdf_path = Path(tmp.name)
 
-                fitter.export_plot(tmp_pdf_path, log_scale=is_log)
+                fitter.export_plot(tmp_pdf_path, log_scale=is_log, xlim=xlim_pair, ylim=ylim_pair)
                 pdf_bytes = tmp_pdf_path.read_bytes()
                 try:
                     tmp_pdf_path.unlink()

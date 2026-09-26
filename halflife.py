@@ -59,6 +59,25 @@ def erfpol_new(x: Union[float, np.ndarray]) -> Union[float, np.ndarray]:
     return poly
 
 
+def parse_limit_pair(raw: Optional[str]) -> Optional[Tuple[float, float]]:
+    """Parse an axis-limit pair sent by the web viewer.
+
+    Accepts a JSON array such as "[400, 900]" as produced by
+    ``JSON.stringify`` in the browser. Returns None when the value is absent or
+    malformed, so the caller falls back to auto-scaling.
+    """
+    if not raw:
+        return None
+    try:
+        values = json.loads(raw)
+        lo, hi = float(values[0]), float(values[1])
+    except (TypeError, ValueError, IndexError, KeyError, json.JSONDecodeError):
+        return None
+    if not (math.isfinite(lo) and math.isfinite(hi)) or hi <= lo:
+        return None
+    return lo, hi
+
+
 def eval_halflife(
     x: np.ndarray,
     t12: float,
@@ -822,14 +841,35 @@ class HalfLifeFitter:
         self,
         out_path: Union[str, Path],
         title: str = "",
-        log_scale: bool = False
+        log_scale: bool = False,
+        xlim: Optional[Tuple[float, float]] = None,
+        ylim: Optional[Tuple[float, float]] = None
     ) -> None:
-        """Export publication-quality vector PDF or PNG plot of spectrum and fit."""
+        """Export publication-quality vector PDF or PNG plot of spectrum and fit.
+
+        xlim/ylim, when given as (min, max), force the displayed axis window so the
+        export can mirror an interactive viewer's zoom. When omitted the axes are
+        auto-scaled from the fit region, which is the historical behaviour.
+        """
         if not HAS_MATPLOTLIB:
             raise RuntimeError("matplotlib is required for plotting export.")
 
         if self.spec is None or self.last_fit_result is None:
             raise ValueError("No fit results available to plot.")
+
+        def _valid_pair(value) -> Optional[Tuple[float, float]]:
+            if value is None:
+                return None
+            try:
+                lo, hi = float(value[0]), float(value[1])
+            except (TypeError, ValueError, IndexError):
+                return None
+            if not (np.isfinite(lo) and np.isfinite(hi)) or hi <= lo:
+                return None
+            return lo, hi
+
+        xlim_pair = _valid_pair(xlim)
+        ylim_pair = _valid_pair(ylim)
 
         out_path = Path(out_path)
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -845,6 +885,14 @@ class HalfLifeFitter:
         mask_plot = (x >= r0 - 0.05 * (r1 - r0)) & (x <= r1 + 0.05 * (r1 - r0))
         if not np.any(mask_plot):
             mask_plot = np.ones_like(x, dtype=bool)
+
+        # When an explicit x window is requested, widen the drawn data mask to it so
+        # points outside the fit range are still shown at the requested zoom. The fit
+        # curve itself remains restricted to the fit region.
+        if xlim_pair is not None:
+            mask_plot = (x >= xlim_pair[0]) & (x <= xlim_pair[1])
+            if not np.any(mask_plot):
+                mask_plot = np.ones_like(x, dtype=bool)
 
         fig, (ax_main, ax_res) = plt.subplots(
             2, 1,
@@ -868,23 +916,6 @@ class HalfLifeFitter:
         # Background Line
         ax_main.axhline(res["bg"], color="#2563eb", linestyle="--", linewidth=1.2, label=f"Background ({res['bg']:.1f})")
 
-        # Fit parameters info box
-        info_text = (
-            f"$t_{{1/2}} = {res['t12']:.3f} \\pm {res['t12_err']:.3f}$\n"
-            f"FWHM $= {res['fwhm']:.3f} \\pm {res['fwhm_err']:.3f}$\n"
-            f"Centroid $= {res['centroid']:.2f} \\pm {res['centroid_err']:.2f}$\n"
-            f"Scale $= {res['scale']:.1f} \\pm {res['scale_err']:.1f}$\n"
-            f"$\\chi^2/\\mathrm{{NDF}} = {res['chisq_ndf']:.3f}$"
-        )
-        ax_main.text(
-            0.97, 0.95, info_text,
-            transform=ax_main.transAxes,
-            fontsize=9,
-            verticalalignment="top",
-            horizontalalignment="right",
-            bbox=dict(boxstyle="round,pad=0.5", facecolor="#ffffff", edgecolor="#cbd5e1", alpha=0.92)
-        )
-
         if log_scale:
             ax_main.set_yscale("log")
 
@@ -892,7 +923,14 @@ class HalfLifeFitter:
         plot_title = title or f"Half-Life Fit: {self.spec.filename} ($t_{{1/2}} = {res['t12']:.3f}$)"
         ax_main.set_title(plot_title, fontsize=11, fontweight="bold", pad=10)
         ax_main.grid(True, linestyle=":", alpha=0.5)
-        ax_main.legend(loc="upper left", frameon=True, fontsize=8)
+        ax_main.legend(loc="upper right", frameon=True, fontsize=8)
+
+        # Apply the requested view window last, so nothing re-autoscales over it.
+        if xlim_pair is not None:
+            ax_main.set_xlim(*xlim_pair)
+            ax_res.set_xlim(*xlim_pair)
+        if ylim_pair is not None:
+            ax_main.set_ylim(*ylim_pair)
 
         # Residuals Plot
         ax_res.axhline(0, color="#64748b", linestyle="-", linewidth=0.8)
@@ -908,6 +946,58 @@ class HalfLifeFitter:
         ax_res.grid(True, linestyle=":", alpha=0.5)
 
         fig.tight_layout()
+
+        # Fit parameters info box, stacked directly beneath the legend in the
+        # top-right corner. Positioned from the legend's measured extent (after
+        # tight_layout) rather than a hardcoded offset, so the two never overlap
+        # even if the legend grows or shrinks. Scale is deliberately omitted: it is
+        # an overall normalisation, not a fitted decay parameter, and the figure
+        # needs no amplitude calibration.
+        info_text = (
+            f"$t_{{1/2}} = {res['t12']:.3f} \\pm {res['t12_err']:.3f}$\n"
+            f"FWHM $= {res['fwhm']:.3f} \\pm {res['fwhm_err']:.3f}$\n"
+            f"Centroid $= {res['centroid']:.2f} \\pm {res['centroid_err']:.2f}$\n"
+            f"$\\chi^2/\\mathrm{{NDF}} = {res['chisq_ndf']:.3f}$"
+        )
+        legend = ax_main.get_legend()
+        if legend is not None:
+            fig.canvas.draw()
+            legend_bbox = legend.get_window_extent(fig.canvas.get_renderer())
+            # Bottom-right corner of the legend, in main-axes coordinates.
+            anchor_x, anchor_y = ax_main.transAxes.inverted().transform(
+                (legend_bbox.x1, legend_bbox.y0)
+            )
+        else:
+            legend_bbox = None
+            anchor_x, anchor_y = 0.985, 0.95
+
+        info = ax_main.text(
+            anchor_x, anchor_y, info_text,
+            transform=ax_main.transAxes,
+            fontsize=9,
+            verticalalignment="top",
+            horizontalalignment="right",
+            bbox=dict(boxstyle="round,pad=0.5", facecolor="#ffffff", edgecolor="#cbd5e1", alpha=0.92)
+        )
+
+        # Text.get_window_extent() ignores the rounded-box padding, so aligning on it
+        # leaves the drawn box slightly overlapping the legend. Measure the patch
+        # itself and shift the text so the outer edges line up exactly.
+        if legend_bbox is not None:
+            fig.canvas.draw()
+            patch = info.get_bbox_patch()
+            if patch is not None:
+                patch_bbox = patch.get_window_extent(fig.canvas.get_renderer())
+                inv = ax_main.transAxes.inverted()
+                origin = inv.transform((0, 0))
+                # Right edges flush with the legend; leave a small vertical gap.
+                gap_px = 4.0
+                desired_top = legend_bbox.y0 - gap_px
+                dx = inv.transform((patch_bbox.x1 - legend_bbox.x1, 0))[0] - origin[0]
+                dy = inv.transform((0, patch_bbox.y1 - desired_top))[1] - origin[1]
+                pos_x, pos_y = info.get_position()
+                info.set_position((pos_x - dx, pos_y - dy))
+
         fig.savefig(out_path, dpi=300, bbox_inches="tight")
         plt.close(fig)
 

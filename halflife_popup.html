@@ -878,6 +878,10 @@
     // Independent display viewport. The X Min/X Max controls below remain the
     // fitting interval and are deliberately not changed by canvas navigation.
     const plotViewport = { xMin: 0, xMax: 1, yZoom: 1 };
+    // Last axis limits actually drawn on the main plot. Recorded on every redraw so
+    // the PDF export can reproduce exactly the same zoom, instead of re-deriving the
+    // y-max formula on the server (which would silently drift out of sync).
+    const plotLimits = { xMin: null, xMax: null, yMin: null, yMax: null };
     let isDragZooming = false;
     let dragStartX = 0;
     let dragCurrentX = 0;
@@ -1869,6 +1873,12 @@
       }
       yMax *= (isLog ? 2.5 : 1.15) / Math.max(0.005, Math.min(100, plotViewport.yZoom));
 
+      // Publish the exact limits used below, for the PDF export to mirror.
+      plotLimits.xMin = xMin;
+      plotLimits.xMax = xMax;
+      plotLimits.yMin = yMin;
+      plotLimits.yMax = yMax;
+
       function toScreenY(yVal) {
         if (isLog) {
           const safeY = Math.max(0.1, yVal);
@@ -2040,9 +2050,18 @@
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // Prompt Component (t12=0) if components enabled
-      if (showComps && Math.abs(t12) > 0.1) {
-        const promptY = evaluateModel(curveX, 0.0, fwhm, cent, scale * 0.4, bg);
+      // Prompt detector response (the Gaussian IRF, t12=0), shown at its true
+      // scale. evaluateModel's pure-Gaussian branch is unit-area normalized, so
+      // passing the unmodified `scale` gives the IRF exactly the same integrated
+      // area as the fitted model. The model is scale * (G ⊗ E) with both G and
+      // E unit-area, so the convolution conserves area and area(model) = scale:
+      // this curve therefore carries the same total counts as the red fit curve
+      // and is precisely the function that gets convolved with the exponential.
+      // Its peak is intentionally taller/narrower than the convoluted fit, since
+      // the exponential smears the same counts over a wider range.
+      const drawPrompt = showComps && Math.abs(t12) > 0.1;
+      if (drawPrompt) {
+        const promptY = evaluateModel(curveX, 0.0, fwhm, cent, scale, bg);
         ctx.strokeStyle = "#fbbf24";
         ctx.lineWidth = 1.2;
         ctx.setLineDash([3, 2]);
@@ -2096,7 +2115,88 @@
       ctx.fillText("Res (σ)", 0, 0);
       ctx.restore();
 
+      // 6. Legend (drawn last so it sits above the data and the curves).
+      // The prompt response is labelled with its area so the orange curve reads as
+      // the true detector response (same total counts as the fit) rather than an
+      // arbitrary indicator curve.
+      const legendEntries = [
+        { color: "#9ca3af", dash: [], lineWidth: 1, label: "Data", dot: true },
+        { color: "#ef4444", dash: [], lineWidth: 2, label: "Convoluted fit (G ⊗ E)" },
+      ];
+      if (drawPrompt) {
+        legendEntries.push({
+          color: "#fbbf24", dash: [3, 2], lineWidth: 1.2,
+          label: `Prompt response (area = ${formatLegendNumber(scale)})`,
+        });
+      }
+      legendEntries.push({ color: "#38bdf8", dash: [4, 3], lineWidth: 1.2, label: "Background" });
+      drawPlotLegend(legendEntries, { margin, plotWidth, mainHeight });
+
       drawSelectionOverlay();
+    }
+
+    // Compact number formatting for legend annotations.
+    function formatLegendNumber(value) {
+      if (!Number.isFinite(value)) return "n/a";
+      if (value === 0) return "0";
+      const abs = Math.abs(value);
+      if (abs >= 1e5 || abs < 1e-2) return value.toExponential(2);
+      return Number(value.toPrecision(4)).toString();
+    }
+
+    // Legend anchored in the top-right corner of the main plot. Geometry is passed
+    // in because margin/plotWidth/mainHeight are locals of redrawPlot.
+    function drawPlotLegend(entries, geom) {
+      if (!entries || !entries.length) return;
+      const { margin, plotWidth, mainHeight } = geom;
+      const padX = 7, padY = 6, lineW = 22, gap = 6, rowH = 14;
+
+      ctx.save();
+      ctx.font = "10px sans-serif";
+      ctx.textBaseline = "middle";
+      ctx.textAlign = "left";
+
+      let textW = 0;
+      for (const entry of entries) textW = Math.max(textW, ctx.measureText(entry.label).width);
+      const boxW = padX * 2 + lineW + gap + textW;
+      const boxH = padY * 2 + entries.length * rowH;
+
+      const boxX = margin.left + plotWidth - boxW - 8;
+      // Offset below the top edge so the box does not cover the "FIT MAX" boundary
+      // label, which redrawPlot draws on the baseline margin.top + 12.
+      const boxY = margin.top + 22;
+
+      ctx.fillStyle = "rgba(9, 14, 22, 0.82)";
+      ctx.strokeStyle = "rgba(43, 57, 79, 0.9)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.rect(boxX, boxY, boxW, boxH);
+      ctx.fill();
+      ctx.stroke();
+
+      entries.forEach((entry, i) => {
+        const cy = boxY + padY + rowH * i + rowH / 2;
+        const sx = boxX + padX;
+        if (entry.dot) {
+          ctx.fillStyle = entry.color;
+          ctx.beginPath();
+          ctx.arc(sx + lineW / 2, cy, 2, 0, Math.PI * 2);
+          ctx.fill();
+        } else {
+          ctx.strokeStyle = entry.color;
+          ctx.lineWidth = entry.lineWidth;
+          ctx.setLineDash(entry.dash);
+          ctx.beginPath();
+          ctx.moveTo(sx, cy);
+          ctx.lineTo(sx + lineW, cy);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        ctx.fillStyle = "#e6edf3";
+        ctx.fillText(entry.label, sx + lineW + gap, cy);
+      });
+
+      ctx.restore();
     }
 
     function plotXToScreen(xValue) {
@@ -2466,6 +2566,14 @@
         log: String(isLog),
         mirrored: currentData.mirrored ? '1' : '0'
       });
+      // Mirror the on-screen zoom so the PDF shows the same x/y window. Sent as the
+      // exact limits used by the last redraw; omitted if the plot has never drawn.
+      const hasLimits = [plotLimits.xMin, plotLimits.xMax, plotLimits.yMin, plotLimits.yMax]
+        .every(v => Number.isFinite(v));
+      if (hasLimits) {
+        params.set('xlim', JSON.stringify([plotLimits.xMin, plotLimits.xMax]));
+        params.set('ylim', JSON.stringify([plotLimits.yMin, plotLimits.yMax]));
+      }
       window.open(`/api/halflife/export_pdf?${params.toString()}`, '_blank');
     }
   </script>
