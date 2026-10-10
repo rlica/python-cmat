@@ -1450,6 +1450,11 @@
         : ' <span style="background:rgba(251,191,36,0.10); border:1px solid #92400e; border-radius:8px; padding:0 6px; font-size:0.62rem; color:#fbbf24;" title="Outside declared reaction channels (demoted)">off-channel</span>';
     }
 
+    function coulexBadge(cand) {
+      if (!cand || !cand.coulex_likely) return '';
+      return ` <span style="background:rgba(167,139,250,0.15); border:1px solid #7c3aed; border-radius:8px; padding:0 6px; font-size:0.62rem; color:#c4b5fd;" title="Coulomb excitation of beam-line material ${cand.coulex_likely} — expected in every run">⚡ coulex · ${cand.coulex_likely}</span>`;
+    }
+
     function toggleCandidatesRow(rowId) {
       const el = document.getElementById(rowId);
       if (el) {
@@ -1492,7 +1497,7 @@
                 <strong>${fit.energy1.toFixed(1)} × ${fit.energy2.toFixed(1)}</strong>
                 ${candToggle ? `<br>${candToggle}` : ''}
               </td>
-              <td class="nuclide-cell"><span class="rank-badge rank-top">#1</span>${best.nuclide}${channelBadge(best)}</td>
+              <td class="nuclide-cell"><span class="rank-badge rank-top">#1</span>${best.nuclide}${channelBadge(best)}${coulexBadge(best)}</td>
               <td>${best.parent_nuclide}<br><small style="color: var(--text-muted);">${best.parent_halflife}</small></td>
               <td><span class="${badgeClass}">${best.cascade_type}</span></td>
               <td>${best.gamma1_energy.toFixed(2)} &amp; ${best.gamma2_energy.toFixed(2)}</td>
@@ -1535,7 +1540,7 @@
                 subHtml += `
                   <tr style="${cIdx === 0 ? 'background: rgba(56, 189, 248, 0.05);' : ''}">
                     <td>${cBadge}</td>
-                    <td class="nuclide-cell" style="font-size: 0.76rem;">${c.nuclide}${channelBadge(c)}</td>
+                    <td class="nuclide-cell" style="font-size: 0.76rem;">${c.nuclide}${channelBadge(c)}${coulexBadge(c)}</td>
                     <td>${c.parent_nuclide} <small style="color:#64748b;">(${c.parent_halflife})</small></td>
                     <td><span class="${cClass}">${c.cascade_type}</span></td>
                     <td>${c.gamma1_energy.toFixed(1)} &amp; ${c.gamma2_energy.toFixed(1)} <small style="color:#64748b;">(${c.diff1>=0?'+':''}${c.diff1.toFixed(1)}, ${c.diff2>=0?'+':''}${c.diff2.toFixed(1)})</small></td>
@@ -1579,7 +1584,7 @@
             tr.innerHTML = `
               <td><strong>${fit.energy.toFixed(2)}</strong></td>
               <td>${fit.area ? fit.area.toFixed(1) : '-'}</td>
-              <td class="nuclide-cell">${best.nuclide}${channelBadge(best)}</td>
+              <td class="nuclide-cell">${best.nuclide}${channelBadge(best)}${coulexBadge(best)}</td>
               <td>${best.parent_nuclide}<br><small style="color: var(--text-muted);">${best.parent_halflife}</small></td>
               <td style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${best.dataset}">${best.dataset}</td>
               <td>${best.gamma_energy.toFixed(2)}</td>
@@ -1618,6 +1623,10 @@
         const rErrs = reaction.errors || [];
         if (rErrs.length) summaryMsg += ` | ⚠️ ${rErrs.length} channel line(s) ignored`;
       }
+      const coulexMats = [];
+      coincList.forEach(i => { const b = i.best_match; if (b && b.coulex_likely && !coulexMats.includes(b.coulex_likely)) coulexMats.push(b.coulex_likely); });
+      singlesList.forEach(i => { const b = i.best_match; if (b && b.coulex_likely && !coulexMats.includes(b.coulex_likely)) coulexMats.push(b.coulex_likely); });
+      if (coulexMats.length) summaryMsg += ` | ⚡ coulex: [ ${coulexMats.join(', ')} ]`;
       showStatus(summaryMsg);
     }
 

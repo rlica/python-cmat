@@ -144,6 +144,31 @@ Spec syntax (also used in the web pop-up "⚗️ Reaction Definition" card):
 - weights are relative cross-section proxies; daughters inherit the parent
   weight damped by 0.9 per decay generation
 
+### 7. Coulomb-Excitation Prior (automatic, in every identification)
+
+Coulomb excitation of beam-line materials happens in essentially every run —
+independent of the beam+target reaction. The identification therefore carries a
+built-in coulex prior: candidates that are naturally-abundant (≥ 0.5%) stable
+isotopes of the common auxiliary materials (181Ta stopper, 197Au backing,
+nat Ti/C/Fe/Mg, 27Al, 16O oxide layers, 19F/Teflon, plastics) are **exempt from
+the dominant-mass-clustering factor when they lie outside the ±8 mass-cluster
+window**, and instead carry a coulex prior weight (score × 1.3). Inside the
+cluster nothing changes, so line-dense stable isotopes cannot steal in-cluster
+matches, and the dominant mass keeps reflecting the reaction products.
+
+- In an **unconstrained** run this fixes the classic failure mode: the strong
+  181Ta stopper lines are attributed to 181Ta (badge ⚡ coulex · 181Ta) instead
+  of being pulled into a line-dense isotope near the dominant mass.
+- With **declared channels** (soft mode, non-strict), off-channel coulex-likely
+  candidates get a milder penalty (×0.4 instead of ×0.05) — no need to remember
+  to declare the Ta stopper. `--strict` is unaffected.
+- Coulex-attributed candidates are highlighted with a ⚡ badge in the pop-up
+  (and `⚡coulex(...)` markers in the CLI report); the pop-up summary lists them
+  under "⚡ coulex".
+
+Tunables: `COULEX_MASS_FACTOR`, `COULEX_PRIOR_FACTOR`,
+`COULEX_OFFCHANNEL_COULEX_FACTOR`, `COULEX_WINDOW`, `COULEX_MIN_ABUNDANCE`.
+
 ---
 
 ## Python API Usage

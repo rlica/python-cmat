@@ -187,6 +187,18 @@ def parse_nuid(nuid_str: str) -> Tuple[Optional[int], Optional[int], str, str]:
 # Score multiplier applied to candidates outside the declared reaction channels
 # (soft prior: off-channel isotopes are demoted, never hidden).
 OFF_CHANNEL_PENALTY = 0.05
+
+# Coulomb-excitation prior for identification scoring: stable isotopes of
+# common beam-line materials (stoppers, backings, collimators, oxide layers,
+# holders) are Coulomb-excited in essentially every run, independent of the
+# beam+target reaction. Outside the dominant mass cluster they are exempt from
+# the mass-clustering factor and carry a modest coulex prior weight instead.
+COULEX_MASS_FACTOR = 1.0        # replaces the Gaussian outside the cluster
+COULEX_PRIOR_FACTOR = 1.3       # coulex prior weight on the total score
+COULEX_OFFCHANNEL_COULEX_FACTOR = 0.4  # soft mode: off-channel coulex-likely
+                                # candidates get this instead of OFF_CHANNEL_PENALTY
+COULEX_WINDOW = 8.0             # only applies outside this mass-cluster radius
+COULEX_MIN_ABUNDANCE = 0.005    # exclude ultra-rare stable isotopes (e.g. 180Ta)
 # Weight damping applied per generation of decay-chain expansion
 DECAY_GENERATION_DAMPING = 0.9
 
@@ -584,8 +596,54 @@ def build_nuclide_prior(
 
 
 # ==============================================================================
-# Database Creation & Indexing Engine
+# Coulomb-Excitation Prior for Identification Scoring
 # ==============================================================================
+
+# Materials touched by the beam other than the main target: backings, screws,
+# collimators, chamber walls, beamdump, oxide layers. Always included as
+# candidate targets "to be confirmed" with a fixed modest prior.
+AUXILIARY_MATERIALS: List[Dict[str, Any]] = [
+    {"label": "181Ta", "isotopes": {(73, 181): 1.0}, "weight": 0.5, "role": "stopper/backing"},
+    {"label": "197Au", "isotopes": {(79, 197): 1.0}, "weight": 0.4, "role": "backing"},
+    {"label": "nat Ti", "isotopes": {(22, 46): 0.0825, (22, 47): 0.0744, (22, 48): 0.7372, (22, 49): 0.0541, (22, 50): 0.0518}, "weight": 0.4, "role": "collimator/backing"},
+    {"label": "nat C", "isotopes": {(6, 12): 0.9893, (6, 13): 0.0107}, "weight": 0.4, "role": "backing/stopper"},
+    {"label": "nat Fe", "isotopes": {(26, 54): 0.05845, (26, 56): 0.91754, (26, 57): 0.02119, (26, 58): 0.00282}, "weight": 0.35, "role": "chamber/screws"},
+    {"label": "27Al", "isotopes": {(13, 27): 1.0}, "weight": 0.4, "role": "backing/frames"},
+    {"label": "nat Mg", "isotopes": {(12, 24): 0.7899, (12, 25): 0.1, (12, 26): 0.1101}, "weight": 0.3, "role": "oxide/backing"},
+    {"label": "nat O (oxide)", "isotopes": {(8, 16): 0.99757, (8, 17): 0.00038, (8, 18): 0.00205}, "weight": 0.35, "role": "oxide layer / oxide target"},
+    {"label": "teflon (CF2)", "isotopes": {(6, 12): 0.9893, (6, 13): 0.0107, (9, 19): 1.0}, "weight": 0.3, "role": "teflon holder"},
+    {"label": "plastic (CH2)", "isotopes": {(1, 1): 0.999885, (1, 2): 0.000115, (6, 12): 0.9893}, "weight": 0.3, "role": "plastic holder"},
+]
+
+# (Z, A) -> auxiliary-material label for naturally-abundant stable isotopes of
+# common beam-line materials; used for the Coulomb-excitation prior.
+_COULEX_MATERIAL_LOOKUP: Dict[Tuple[int, int], str] = {}
+for _aux in AUXILIARY_MATERIALS:
+    for _za, _abund in _aux["isotopes"].items():
+        if _abund >= COULEX_MIN_ABUNDANCE:
+            _COULEX_MATERIAL_LOOKUP.setdefault(_za, _aux["label"])
+
+
+def coulex_material_for(z: int, a: int) -> Optional[str]:
+    """
+    Return the auxiliary-material label when (z, a) is a naturally-abundant
+    stable isotope of a common beam-line material (candidate for Coulomb
+    excitation), or None otherwise.
+    """
+    return _COULEX_MATERIAL_LOOKUP.get((int(z), int(a)))
+
+
+def _is_physical_decay_pair(pz: int, pa: int, dz: int, da: int) -> bool:
+    """
+    True for physically consistent parent -> daughter decay pairs:
+    beta-/EC/IT keep A (Z shifts by -1/0/+1), alpha gives (A+4, Z+2).
+    Rejects fission-fragment artifacts (e.g. 252Cf SF datasets attached to
+    light fission-fragment nuclides).
+    """
+    if pa == da and pz in (dz - 1, dz, dz + 1):
+        return True
+    return pa == da + 4 and pz == dz + 2
+
 
 def init_ensdf_database(conn: sqlite3.Connection):
     """Create optimized tables and indexes for ENSDF data."""
@@ -985,6 +1043,7 @@ class ENSDFSearchEngine:
                         print(f"⚠️ Warning: Auto-unpack of {gz.name} failed: {e}", file=sys.stderr)
                     break
 
+
     def is_available(self) -> bool:
         """Check if local database is built and ready."""
         self._ensure_db_decompressed()
@@ -1063,6 +1122,8 @@ class ENSDFSearchEngine:
                 for row in cur.fetchall():
                     key = (int(row["z"]), int(row["a"]))
                     if key == (z, a) or key in allowed:
+                        continue
+                    if not _is_physical_decay_pair(z, a, key[0], key[1]):
                         continue
                     dw = w * (DECAY_GENERATION_DAMPING ** gen)
                     if key not in expanded or dw > expanded[key]:
@@ -1537,6 +1598,17 @@ class ENSDFSearchEngine:
                 for c in f["candidates"]:
                     c["in_channel"] = (c.get("z"), c.get("a")) in nuclide_prior
 
+        # 1c. Tag candidates with Coulomb-excitation likelihood: stable isotopes
+        #     of common beam-line materials (stopper, backing, collimator, ...)
+        #     are Coulomb-excited in every run, independent of the reaction.
+        for f in fits_2d_raw + fits_1d_raw:
+            for c in f["candidates"]:
+                cz, ca = c.get("z"), c.get("a")
+                c["coulex_likely"] = (
+                    coulex_material_for(cz, ca)
+                    if (cz is not None and ca is not None) else None
+                )
+
         # 2. Identify Dominant Mass Distribution from Strongest 2D Coincidences
         mass_votes: Dict[int, float] = {}
         for f in fits_2d_raw:
@@ -1574,6 +1646,9 @@ class ENSDFSearchEngine:
             base_score = float(cand.get("score", 1.0))
             a = cand.get("a")
             nuid = cand.get("nuclide")
+            coulex_mat = cand.get("coulex_likely")
+            outside_cluster = (avg_mass is None or a is None
+                               or abs(a - avg_mass) > COULEX_WINDOW)
 
             if prior_active:
                 # Reaction-channel soft prior replaces the inferred mass-clustering
@@ -1581,17 +1656,23 @@ class ENSDFSearchEngine:
                 z_a = (cand.get("z"), cand.get("a"))
                 if z_a in nuclide_prior:
                     mass_factor = max(0.0001, nuclide_prior[z_a] / w_max)
+                elif coulex_mat and not strict:
+                    # Coulomb excitation of beam-line materials is expected in
+                    # every run: milder penalty than generic off-channel.
+                    mass_factor = COULEX_OFFCHANNEL_COULEX_FACTOR
                 else:
                     mass_factor = OFF_CHANNEL_PENALTY
+            elif coulex_mat and outside_cluster:
+                # Coulomb excitation of an auxiliary material far from the
+                # reaction-product cluster: exempt from the mass-clustering
+                # Gaussian (which would be ~0 here) — see COULEX_PRIOR_FACTOR.
+                mass_factor = COULEX_MASS_FACTOR
+            elif avg_mass is not None and a is not None:
+                da = abs(a - avg_mass)
+                # Gaussian decay with sigma = 6.0 mass units
+                mass_factor = max(0.0001, math.exp(- (da ** 2) / (2.0 * (6.0 ** 2))))
             else:
-                # Mass proximity penalty
-                if avg_mass is not None and a is not None:
-                    da = abs(a - avg_mass)
-                    # Gaussian decay with sigma = 6.0 mass units
-                    mass_factor = math.exp(- (da ** 2) / (2.0 * (6.0 ** 2)))
-                    mass_factor = max(0.0001, mass_factor)
-                else:
-                    mass_factor = 1.0
+                mass_factor = 1.0
 
             # Parsimony bonus: prefer explaining lines with isotopes already chosen in minimum set
             parsimony_factor = 1.0
@@ -1601,13 +1682,23 @@ class ENSDFSearchEngine:
                 parsimony_factor = 3.0
 
             direct_bonus = 1.4 if (is_2d and cand.get("is_direct_cascade")) else 1.0
-            return base_score * mass_factor * parsimony_factor * direct_bonus
+            score = base_score * mass_factor * parsimony_factor * direct_bonus
+            # Coulex prior weight applies only where the mass exemption applied
+            # (outside the cluster), so in-cluster reaction products keep their
+            # home turf against line-dense stable isotopes.
+            if coulex_mat and not prior_active and outside_cluster:
+                score *= COULEX_PRIOR_FACTOR
+            return score
 
         def candidate_accepted(cand: Dict[str, Any], fit_has_in_channel: bool) -> bool:
             """Seeding/set-cover acceptance: channel membership when a prior is
             active (mass-window otherwise); off-channel candidates may still be
-            adopted in soft mode when no in-channel candidate explains the fit."""
+            adopted in soft mode when no in-channel candidate explains the fit.
+            Coulomb-excitation-likely candidates (aux beam-line materials) are
+            exempt from the mass-window gate — they are expected in every run."""
             if not prior_active:
+                if cand.get("coulex_likely"):
+                    return True
                 if avg_mass is None or cand.get("a") is None:
                     return True
                 return abs(cand["a"] - avg_mass) <= 8
@@ -1697,7 +1788,7 @@ class ENSDFSearchEngine:
                 "best_match": filtered_cands[0] if filtered_cands else None,
             })
 
-        return {
+        report = {
             "file": parsed["filename"],
             "filepath": parsed["filepath"],
             "dominant_mass": round(avg_mass, 1) if avg_mass else None,
@@ -1706,6 +1797,7 @@ class ENSDFSearchEngine:
             "results_2d": id_2d,
             "reaction": reaction_info,
         }
+        return report
 
 
 # ==============================================================================
@@ -1799,9 +1891,10 @@ def print_file_identification_report(report: Dict[str, Any]):
 
             for c_idx, c in enumerate(candidates, 1):
                 badge = "★ TOP MATCH" if c_idx == 1 else f"  #{c_idx} Candidate"
+                coulex_tag = f" | ⚡coulex({c['coulex_likely']})" if c.get("coulex_likely") else ""
                 print(
                     f"      {badge:<14}: {c['nuclide']:<7} (Parent: {c['parent_nuclide']}, T1/2: {c['parent_halflife']}) | "
-                    f"Score: {c['score']:<5.1f} | {c['cascade_type']}"
+                    f"Score: {c['score']:<5.1f} | {c['cascade_type']}{coulex_tag}"
                 )
                 print(
                     f"                       Transitions: {c['gamma1_energy']:.2f} & {c['gamma2_energy']:.2f} keV "
@@ -1815,7 +1908,8 @@ def print_file_identification_report(report: Dict[str, Any]):
             best = item["best_match"]
             print(f"  [{idx}] 1D Peak {fit['energy']:.2f} keV (Area: {fit['area']:.1f}):")
             if best:
-                print(f"      --> Best Match: {best['nuclide']} ({best['parent_nuclide']}) | Score: {best['score']} | E_ensdf: {best['gamma_energy']:.2f} keV (diff: {best['energy_diff']:+.2f})")
+                coulex_tag = f" | ⚡coulex({best['coulex_likely']})" if best.get("coulex_likely") else ""
+                print(f"      --> Best Match: {best['nuclide']} ({best['parent_nuclide']}) | Score: {best['score']} | E_ensdf: {best['gamma_energy']:.2f} keV (diff: {best['energy_diff']:+.2f}){coulex_tag}")
                 print(f"          Dataset: {best['dataset']} | T1/2: {best['parent_halflife']}")
             else:
                 print("      --> No candidate isotope found under current constraints.")
