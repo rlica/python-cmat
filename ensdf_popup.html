@@ -730,6 +730,69 @@
       </div>
 
     </div>
+
+    <!-- Card 3: Reaction Definition (Issue #13) -->
+    <div class="card" id="cardReaction">
+      <div class="card-title">
+        <span>⚗️ Reaction Definition</span>
+        <span style="font-size: 0.68rem; color: var(--text-muted); font-weight: normal;">Soft prior — optional</span>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="inputReactionBeam">Beam</label>
+          <input type="text" id="inputReactionBeam" placeholder="e.g. 18O">
+        </div>
+        <div class="form-group">
+          <label for="inputReactionTargets">Target(s) / Stopper</label>
+          <input type="text" id="inputReactionTargets" placeholder="e.g. 100Mo, 181Ta">
+        </div>
+      </div>
+      <button type="button" class="btn-secondary" style="width: 100%; justify-content: center; margin-bottom: 8px;" onclick="suggestReactionChannels()">
+        ⚗ Suggest Evaporation Channels
+      </button>
+
+      <div class="form-group">
+        <label for="textareaReactionChannels">Channels — one per line: target(beam,ejectile)[residue] [w=x] or isotope [w=x]</label>
+        <textarea id="textareaReactionChannels" rows="4" spellcheck="false"
+          style="width: 100%; box-sizing: border-box; font-family: monospace; font-size: 0.72rem; background: #181818; color: #e2e8f0; border: 1px solid #334155; border-radius: 4px; padding: 5px;"
+          placeholder="# e.g. 100Mo(18O,16O)102Mo&#10;# 181Ta(18O,xn) w=0.5&#10;# or just: 102Mo"></textarea>
+      </div>
+      <div style="display: flex; gap: 6px; margin-bottom: 6px;">
+        <button type="button" class="btn-secondary" style="flex: 1;" onclick="applyReactionChannels()">✓ Validate Channels</button>
+        <button type="button" class="btn-secondary" style="flex: 1;" onclick="clearReaction()">✕ Clear</button>
+      </div>
+      <div id="reactionStatus" style="display: none; font-size: 0.7rem; margin: 4px 0; white-space: pre-wrap;"></div>
+      <div id="reactionIsotopeBadges" style="display: none; flex-wrap: wrap; gap: 4px; margin: 4px 0;"></div>
+
+      <div class="form-group" style="margin-top: 8px;">
+        <label for="inputChannelFile">…or load channels from a server file</label>
+        <div style="display: flex; gap: 6px;">
+          <input type="text" id="inputChannelFile" placeholder="/path/to/channels.txt" style="flex: 1;">
+          <button type="button" class="btn-secondary" onclick="loadChannelFile()" style="white-space: nowrap;">📂 Load</button>
+        </div>
+      </div>
+
+      <div style="border-top: 1px solid #1e293b; margin-top: 8px; padding-top: 8px;">
+        <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+          <label style="display: flex; align-items: center; gap: 5px; cursor: pointer; font-size: 0.72rem;">
+            <input type="checkbox" id="chkDecayInclude" onchange="toggleDecayControls()"> Include decay products
+          </label>
+          <select id="selectDecayDepth" style="display: none; background: #1e293b; color: #cbd5e1; border: 1px solid #334155; border-radius: 3px; font-size: 0.68rem; padding: 1px 3px;">
+            <option value="1">1 gen</option><option value="2" selected>2 gen</option><option value="3">3 gen</option>
+          </select>
+          <label id="wrapDecayOnly" style="display: none; align-items: center; gap: 5px; cursor: pointer; font-size: 0.72rem;">
+            <input type="checkbox" id="chkDecayOnly"> decay products only
+          </label>
+        </div>
+        <label style="display: flex; align-items: center; gap: 5px; cursor: pointer; font-size: 0.72rem; margin-top: 5px;">
+          <input type="checkbox" id="chkReactionStrict"> Strict: only channel isotopes
+        </label>
+        <small style="color: #64748b; font-size: 0.65rem; display: block; margin-top: 4px;">
+          Off-channel candidates are demoted (score × 0.05) but never hidden, unless Strict is set.
+        </small>
+      </div>
+    </div>
   </div>
 
   <div id="statusMessage" class="status-msg" style="display: none;"></div>
@@ -1151,7 +1214,141 @@
         p.set('max_t12', maxVal + u);
       }
 
+      // Reaction-channel soft prior (issue #13)
+      const reactionText = document.getElementById('textareaReactionChannels').value.trim();
+      if (reactionText) p.set('reaction', reactionText);
+      if (document.getElementById('chkDecayInclude').checked) {
+        p.set('decay_depth', document.getElementById('selectDecayDepth').value);
+        if (document.getElementById('chkDecayOnly').checked) p.set('decay_only', '1');
+      }
+      if (document.getElementById('chkReactionStrict').checked) p.set('reaction_strict', '1');
+
       return p;
+    }
+
+    function clearReaction() {
+      document.getElementById('textareaReactionChannels').value = '';
+      document.getElementById('reactionStatus').style.display = 'none';
+      document.getElementById('reactionIsotopeBadges').style.display = 'none';
+      document.getElementById('chkDecayInclude').checked = false;
+      document.getElementById('chkDecayOnly').checked = false;
+      document.getElementById('chkReactionStrict').checked = false;
+      toggleDecayControls();
+    }
+
+    function toggleDecayControls() {
+      const include = document.getElementById('chkDecayInclude').checked;
+      document.getElementById('selectDecayDepth').style.display = include ? 'inline-block' : 'none';
+      document.getElementById('wrapDecayOnly').style.display = include ? 'flex' : 'none';
+      if (!include) document.getElementById('chkDecayOnly').checked = false;
+    }
+
+    async function validateReactionSpec(spec) {
+      const statusEl = document.getElementById('reactionStatus');
+      const badgesEl = document.getElementById('reactionIsotopeBadges');
+      try {
+        const res = await fetch(`/api/ensdf/reaction?spec=${encodeURIComponent(spec)}`);
+        const data = await res.json();
+        if (!data.success) {
+          statusEl.style.display = 'block';
+          statusEl.style.color = '#f87171';
+          statusEl.textContent = data.error || 'Channel parsing failed.';
+          badgesEl.style.display = 'none';
+          return null;
+        }
+        const isotopes = data.isotopes || [];
+        const errors = data.errors || [];
+        statusEl.style.display = 'block';
+        if (errors.length) {
+          statusEl.style.color = '#fbbf24';
+          statusEl.textContent = `⚠️ ${errors.length} line(s) ignored:\n${errors.join('\n')}`;
+        } else {
+          statusEl.style.color = '#69f0ae';
+          statusEl.textContent = `✓ ${isotopes.length} channel isotope(s) resolved.`;
+        }
+        badgesEl.style.display = isotopes.length ? 'flex' : 'none';
+        badgesEl.innerHTML = isotopes.map(i =>
+          `<span style="background:#1e293b; border:1px solid #334155; border-radius:10px; padding:1px 8px; font-size:0.68rem; color:#7dd3fc;">${i.nuid}${i.weight !== 1 ? ` (w=${i.weight})` : ''}</span>`
+        ).join('');
+        return data;
+      } catch (err) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = '#f87171';
+        statusEl.textContent = `Error: ${err.message}`;
+        return null;
+      }
+    }
+
+    async function applyReactionChannels() {
+      const spec = document.getElementById('textareaReactionChannels').value.trim();
+      if (!spec) {
+        document.getElementById('reactionStatus').style.display = 'none';
+        document.getElementById('reactionIsotopeBadges').style.display = 'none';
+        return;
+      }
+      await validateReactionSpec(spec);
+    }
+
+    async function suggestReactionChannels() {
+      const beam = document.getElementById('inputReactionBeam').value.trim();
+      const targets = document.getElementById('inputReactionTargets').value.trim();
+      const statusEl = document.getElementById('reactionStatus');
+      if (!beam || !targets) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = '#f87171';
+        statusEl.textContent = 'Enter a beam and at least one target first.';
+        return;
+      }
+      try {
+        const res = await fetch(`/api/ensdf/reaction?beam=${encodeURIComponent(beam)}&targets=${encodeURIComponent(targets)}`);
+        const data = await res.json();
+        if (!data.success) {
+          statusEl.style.display = 'block';
+          statusEl.style.color = '#f87171';
+          statusEl.textContent = data.error || 'Channel suggestion failed.';
+          return;
+        }
+        const ta = document.getElementById('textareaReactionChannels');
+        const existing = ta.value.trim();
+        const newLines = (data.channels || []).map(c => c.label);
+        ta.value = existing ? existing + '\n' + newLines.join('\n') : newLines.join('\n');
+        const warn = (data.errors || []).length ? `\n⚠️ ${data.errors.join('\n⚠️ ')}` : '';
+        statusEl.style.display = 'block';
+        statusEl.style.color = '#69f0ae';
+        statusEl.textContent = `Added ${newLines.length} suggested channels — review and press "Validate Channels".${warn}`;
+      } catch (err) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = '#f87171';
+        statusEl.textContent = `Error: ${err.message}`;
+      }
+    }
+
+    async function loadChannelFile() {
+      const path = document.getElementById('inputChannelFile').value.trim();
+      const statusEl = document.getElementById('reactionStatus');
+      if (!path) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = '#f87171';
+        statusEl.textContent = 'Enter a channel file path first.';
+        return;
+      }
+      try {
+        const res = await fetch(`/api/ensdf/reaction?path=${encodeURIComponent(path)}`);
+        const data = await res.json();
+        if (!data.success) {
+          statusEl.style.display = 'block';
+          statusEl.style.color = '#f87171';
+          statusEl.textContent = data.error || 'Channel file could not be parsed.';
+          return;
+        }
+        document.getElementById('textareaReactionChannels').value =
+          (data.channels || []).map(c => c.label + (c.weight !== 1 ? ` w=${c.weight}` : '')).join('\n');
+        await validateReactionSpec(document.getElementById('textareaReactionChannels').value);
+      } catch (err) {
+        statusEl.style.display = 'block';
+        statusEl.style.color = '#f87171';
+        statusEl.textContent = `Error: ${err.message}`;
+      }
     }
 
     function applyPreset(preset) {
@@ -1246,6 +1443,13 @@
       return 'cascade-badge cascade-badge-scheme';
     }
 
+    function channelBadge(cand) {
+      if (!cand || cand.in_channel === undefined || cand.in_channel === null) return '';
+      return cand.in_channel
+        ? ' <span style="background:rgba(105,240,174,0.12); border:1px solid #2e7d32; border-radius:8px; padding:0 6px; font-size:0.62rem; color:#69f0ae;" title="Within declared reaction channels">⚗ in-channel</span>'
+        : ' <span style="background:rgba(251,191,36,0.10); border:1px solid #92400e; border-radius:8px; padding:0 6px; font-size:0.62rem; color:#fbbf24;" title="Outside declared reaction channels (demoted)">off-channel</span>';
+    }
+
     function toggleCandidatesRow(rowId) {
       const el = document.getElementById(rowId);
       if (el) {
@@ -1288,7 +1492,7 @@
                 <strong>${fit.energy1.toFixed(1)} × ${fit.energy2.toFixed(1)}</strong>
                 ${candToggle ? `<br>${candToggle}` : ''}
               </td>
-              <td class="nuclide-cell"><span class="rank-badge rank-top">#1</span>${best.nuclide}</td>
+              <td class="nuclide-cell"><span class="rank-badge rank-top">#1</span>${best.nuclide}${channelBadge(best)}</td>
               <td>${best.parent_nuclide}<br><small style="color: var(--text-muted);">${best.parent_halflife}</small></td>
               <td><span class="${badgeClass}">${best.cascade_type}</span></td>
               <td>${best.gamma1_energy.toFixed(2)} &amp; ${best.gamma2_energy.toFixed(2)}</td>
@@ -1331,7 +1535,7 @@
                 subHtml += `
                   <tr style="${cIdx === 0 ? 'background: rgba(56, 189, 248, 0.05);' : ''}">
                     <td>${cBadge}</td>
-                    <td class="nuclide-cell" style="font-size: 0.76rem;">${c.nuclide}</td>
+                    <td class="nuclide-cell" style="font-size: 0.76rem;">${c.nuclide}${channelBadge(c)}</td>
                     <td>${c.parent_nuclide} <small style="color:#64748b;">(${c.parent_halflife})</small></td>
                     <td><span class="${cClass}">${c.cascade_type}</span></td>
                     <td>${c.gamma1_energy.toFixed(1)} &amp; ${c.gamma2_energy.toFixed(1)} <small style="color:#64748b;">(${c.diff1>=0?'+':''}${c.diff1.toFixed(1)}, ${c.diff2>=0?'+':''}${c.diff2.toFixed(1)})</small></td>
@@ -1375,7 +1579,7 @@
             tr.innerHTML = `
               <td><strong>${fit.energy.toFixed(2)}</strong></td>
               <td>${fit.area ? fit.area.toFixed(1) : '-'}</td>
-              <td class="nuclide-cell">${best.nuclide}</td>
+              <td class="nuclide-cell">${best.nuclide}${channelBadge(best)}</td>
               <td>${best.parent_nuclide}<br><small style="color: var(--text-muted);">${best.parent_halflife}</small></td>
               <td style="max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${best.dataset}">${best.dataset}</td>
               <td>${best.gamma_energy.toFixed(2)}</td>
@@ -1402,6 +1606,17 @@
         const isoList = report.parsimonious_isotopes && report.parsimonious_isotopes.length > 0 ? 
           ` | 🎯 Minimal Isotope Set: [ ${report.parsimonious_isotopes.join(', ')} ]` : '';
         summaryMsg += ` | ⚖️ Dominant Mass: A ≈ ${report.dominant_mass}${isoList}`;
+      }
+      const reaction = data && data.reaction ? data.reaction : (report && report.reaction ? report.reaction : null);
+      if (reaction) {
+        const chStr = (reaction.channels || []).map(c => c.label).join(', ');
+        if (chStr) summaryMsg += ` | ⚗️ Channels: ${chStr}`;
+        if ((reaction.daughter_isotopes || []).length) {
+          summaryMsg += ` | 🧬 + decay (${reaction.decay_depth} gen)`;
+          if (reaction.decay_only) summaryMsg += ' — decay products only';
+        }
+        const rErrs = reaction.errors || [];
+        if (rErrs.length) summaryMsg += ` | ⚠️ ${rErrs.length} channel line(s) ignored`;
       }
       showStatus(summaryMsg);
     }

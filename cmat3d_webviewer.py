@@ -1558,8 +1558,16 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(json.dumps({"success": True, "files": files}).encode("utf-8"))
 
+        elif path.startswith("/api/ensdf/reaction"):
+            from ensdf_search import resolve_reaction_request
+            res = resolve_reaction_request(query)
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(res).encode("utf-8"))
+
         elif path.startswith("/api/ensdf/identify"):
-            from ensdf_search import ENSDFSearchEngine, parse_human_duration
+            from ensdf_search import ENSDFSearchEngine, parse_human_duration, build_nuclide_prior
             engine = ENSDFSearchEngine()
 
             file_param = query.get("file", [""])[0].strip()
@@ -1574,6 +1582,16 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
             tol_str = query.get("tol", ["1.5"])[0].strip()
             ds_type = query.get("ds_type", ["all"])[0].strip()
 
+            # Reaction-channel soft prior (issue #13)
+            reaction_spec = (query.get("reaction", [""])[0] or "").strip()
+            channels_file = (query.get("channels_file", [""])[0] or "").strip()
+            try:
+                decay_depth = max(0, min(4, int(query.get("decay_depth", ["0"])[0] or 0)))
+            except ValueError:
+                decay_depth = 0
+            decay_only = query.get("decay_only", ["0"])[0].strip().lower() in ("1", "true", "yes", "on")
+            reaction_strict = query.get("reaction_strict", ["0"])[0].strip().lower() in ("1", "true", "yes", "on")
+
             a_min = int(a_min_str) if (a_min_str.isdigit() or (a_min_str.startswith("-") and a_min_str[1:].isdigit())) else None
             a_max = int(a_max_str) if (a_max_str.isdigit() or (a_max_str.startswith("-") and a_max_str[1:].isdigit())) else None
             elements = [e.strip() for e in re.split(r"[\s,]+", elems_str) if e.strip()] if elems_str else None
@@ -1584,14 +1602,24 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
             except ValueError:
                 tol = 1.5
 
-            res_data = {"success": True}
+            try:
+                nuclide_prior, reaction_info = build_nuclide_prior(
+                    engine, spec=reaction_spec, channel_file=channels_file,
+                    decay_depth=decay_depth, decay_only=decay_only, max_t12_s=max_t12_s)
+            except (ValueError, FileNotFoundError) as e:
+                nuclide_prior, reaction_info = None, {"errors": [str(e)]}
+            allowed_set = set(nuclide_prior) if nuclide_prior else None
+
+            res_data = {"success": True, "reaction": reaction_info}
             try:
                 if file_param:
                     res_data["type"] = "file"
                     rep = engine.identify_fit_results_file(
                         file_param, tol=tol, a_min=a_min, a_max=a_max,
                         elements=elements, min_t12_s=min_t12_s, max_t12_s=max_t12_s,
-                        dataset_type=ds_type
+                        dataset_type=ds_type,
+                        nuclide_prior=nuclide_prior, strict=reaction_strict,
+                        reaction_info=reaction_info
                     )
                     res_data["report"] = rep
                     res_data["dominant_mass"] = rep.get("dominant_mass")
@@ -1607,7 +1635,8 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
                     candidates = engine.search_2d(
                         e1, e2, tol1=tol, tol2=tol, a_min=a_min, a_max=a_max,
                         elements=elements, min_t12_s=min_t12_s, max_t12_s=max_t12_s,
-                        dataset_type=ds_type
+                        dataset_type=ds_type,
+                        allowed_nuclides=allowed_set
                     )
                     res_data["candidates"] = candidates
                     res_data["results_2d"] = [{
@@ -1623,7 +1652,8 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
                     candidates = engine.search_1d(
                         eg, tol=tol, a_min=a_min, a_max=a_max,
                         elements=elements, min_t12_s=min_t12_s, max_t12_s=max_t12_s,
-                        dataset_type=ds_type
+                        dataset_type=ds_type,
+                        allowed_nuclides=allowed_set
                     )
                     res_data["candidates"] = candidates
                     res_data["results_1d"] = [{

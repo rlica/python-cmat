@@ -246,6 +246,15 @@ python3 ensdf_search.py -g 1480.3 --tol 1.5
 
 # Database status & statistics:
 python3 ensdf_search.py --status
+
+# Reaction-channel soft prior (declared beam/target/ejectile channels):
+python3 ensdf_search.py fit_results.txt --reaction "100Mo(18O,16O)102Mo; 181Ta(18O,xn); 181Ta"
+
+# With decay-chain daughters and a strict whitelist:
+python3 ensdf_search.py fit_results.txt --reaction "100Mo(18O,16O)102Mo" --decay-depth 2 --strict
+
+# Channels from a file (specs or a 'Z A [weight]' table), decay products only:
+python3 ensdf_search.py fit_results.txt --channels channels.txt --decay-only
 ```
 
 ### Python API Usage
@@ -261,6 +270,21 @@ report = engine.identify_fit_results_file(
     tol=1.5,
     top_candidates=5
 )
+
+# With a reaction-channel soft prior (issue #13): in-channel candidates are
+# scaled by weight/w_max, off-channel ones demoted (x0.05) but never hidden.
+from ensdf_search import build_nuclide_prior
+prior, reaction_info = build_nuclide_prior(
+    engine, spec="100Mo(18O,16O)102Mo; 181Ta", decay_depth=2)
+report = engine.identify_fit_results_file(
+    "fit_results_20260922_155405.txt",
+    tol=1.5,
+    nuclide_prior=prior,
+    strict=False,
+    reaction_info=reaction_info,
+)
+print("Channels:", [c["label"] for c in report["reaction"]["channels"]])
+print("Daughters:", report["reaction"]["daughter_isotopes"])
 
 print(f"Dominant Mass Center: A ≈ {report['dominant_mass']}")
 print(f"Minimal Isotope Set: {report['parsimonious_isotopes']}")

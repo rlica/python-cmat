@@ -181,6 +181,409 @@ def parse_nuid(nuid_str: str) -> Tuple[Optional[int], Optional[int], str, str]:
 
 
 # ==============================================================================
+# Reaction Channel Definition, Parsing & Soft-Prior Construction (Issue #13)
+# ==============================================================================
+
+# Score multiplier applied to candidates outside the declared reaction channels
+# (soft prior: off-channel isotopes are demoted, never hidden).
+OFF_CHANNEL_PENALTY = 0.05
+# Weight damping applied per generation of decay-chain expansion
+DECAY_GENERATION_DAMPING = 0.9
+
+# Light reaction particles: name -> (Z, A)
+LIGHT_PARTICLES = {
+    "n": (0, 1), "p": (1, 1), "d": (1, 2), "t": (1, 3),
+    "α": (2, 4), "a": (2, 4), "alpha": (2, 4), "he3": (2, 3), "3he": (2, 3),
+}
+
+# Ejectile suggestions for evaporation-channel auto-generation
+EVAPORATION_SUGGESTIONS = ["n", "2n", "3n", "4n", "p", "pn", "2p", "d", "t", "α", "αn", "α2n"]
+
+
+def parse_isotope(spec: str) -> Tuple[int, int, str]:
+    """
+    Parse an isotope label into (Z, A, nuid).
+
+    Accepted forms: '18O', '18 O', 'O-18', 'O18'. Returns nuid in the ENSDF
+    database format (e.g. '102Mo'). Raises ValueError on bad input.
+    """
+    s = str(spec).strip()
+    m = re.match(r"^(\d{1,3})\s*([A-Za-z]{1,2})$", s)
+    if m:
+        a, sym = int(m.group(1)), m.group(2)
+    else:
+        m = re.match(r"^([A-Za-z]{1,2})\s*-?\s*(\d{1,3})$", s)
+        if not m:
+            raise ValueError(f"Invalid isotope label: {spec!r} (expected e.g. '18O' or 'O-18')")
+        sym, a = m.group(1), int(m.group(2))
+    z = ELEMENT_Z_MAP.get(sym.strip().upper())
+    if z is None:
+        raise ValueError(f"Unknown element symbol in isotope: {spec!r}")
+    if a <= 0 or a < z:
+        raise ValueError(f"Unphysical isotope: {spec!r} (A={a}, Z={z})")
+    return z, a, f"{a}{sym.capitalize()}"
+
+
+def parse_ejectile(spec: str) -> List[Tuple[int, int]]:
+    """
+    Parse an ejectile expression into a list of (Z, A) particles.
+
+    Supports light particles with optional multiplicities and isotope ejectiles:
+    'n' -> [(0,1)], '2n' -> [(0,1)x2], 'p2n', 'α', 'alpha', '16O', '3He'.
+    """
+    s = str(spec).strip()
+    if not s:
+        raise ValueError("Empty ejectile expression")
+    out: List[Tuple[int, int]] = []
+    i = 0
+    while i < len(s):
+        rest = s[i:]
+        # Isotope ejectile (e.g. '16O', '3He'); digits must not form a light
+        # particle multiplicity (e.g. '2n' -> two neutrons, not nitrogen-2).
+        m = re.match(r"^(\d{1,3})\s*([A-Za-zα]{1,5})", rest)
+        if m:
+            num, sym = int(m.group(1)), m.group(2)
+            z_iso = ELEMENT_Z_MAP.get(sym.upper())
+            if z_iso is not None and num >= z_iso:
+                out.append((z_iso, num))
+                i += m.end()
+                continue
+        m = re.match(r"^(\d{0,2})\s*(alpha|α|he3|3he|[nptd])", rest, re.IGNORECASE)
+        if not m:
+            raise ValueError(f"Cannot parse ejectile expression at: {rest[:12]!r}")
+        count = int(m.group(1)) if m.group(1) else 1
+        if count < 1 or count > 9:
+            raise ValueError(f"Invalid particle multiplicity in ejectile: {spec!r}")
+        name = m.group(2).lower()
+        if name == "alpha":
+            name = "α"
+        zl, al = LIGHT_PARTICLES[name]
+        out.extend([(zl, al)] * count)
+        i += m.end()
+    if not out:
+        raise ValueError(f"Empty ejectile expression: {spec!r}")
+    return out
+
+
+def compute_compound(beam, target) -> Tuple[int, int, str]:
+    """Compute the compound nucleus (Z, A, nuid) from beam and target isotopes."""
+    zb, ab, _ = parse_isotope(beam)
+    zt, at, _ = parse_isotope(target)
+    zc, ac = zb + zt, ab + at
+    return zc, ac, f"{ac}{Z_ELEMENT_MAP[zc].capitalize()}"
+
+
+def suggest_evaporation_channels(beam: str, target: str) -> List[Dict[str, Any]]:
+    """
+    Suggest evaporation and transfer channels for a beam + target combination.
+
+    Returns a list of channel dicts with ready-to-use reaction-spec labels,
+    covering standard light-particle evaporation (n, 2n, p, α, ...) and
+    nucleon-transfer channels where the beam itself loses nucleons
+    (e.g. 100Mo(18O,16O)102Mo).
+    """
+    zb, ab, _ = parse_isotope(beam)
+    zt, at, _ = parse_isotope(target)
+    zc, ac, cnuid = compute_compound(beam, target)
+    channels: List[Dict[str, Any]] = []
+
+    def add(ejectile_expr: str):
+        try:
+            parts = parse_ejectile(ejectile_expr)
+        except ValueError:
+            return
+        ae = sum(p[1] for p in parts)
+        ze = sum(p[0] for p in parts)
+        aa, za = ac - ae, zc - ze
+        if za < 1 or aa < za or aa <= 0 or aa >= ac:
+            return
+        res_nuid = f"{aa}{Z_ELEMENT_MAP[za].capitalize()}"
+        channels.append({
+            "label": f"{target}({beam},{ejectile_expr}){res_nuid}",
+            "target": (zt, at), "beam": (zb, ab),
+            "ejectile": ejectile_expr, "residue": (za, aa),
+            "compound": cnuid, "weight": 1.0,
+        })
+
+    for ej in EVAPORATION_SUGGESTIONS:
+        add(ej)
+    # Nucleon-transfer channels: beam losing k neutrons (e.g. 18O -> 16O)
+    for k in (1, 2, 3):
+        if ab - k >= zb:
+            add(f"{ab - k}{Z_ELEMENT_MAP[zb].capitalize()}")
+    return channels
+
+
+_REACTION_SPEC_RE = re.compile(
+    r"^\s*(?P<target>\d{1,3}\s*[A-Za-z]{1,2})"
+    r"\(\s*(?P<beam>\d{1,3}\s*[A-Za-z]{1,2})\s*,\s*(?P<ejectile>[^)]+?)\s*\)"
+    r"\s*(?P<residue>\d{1,3}\s*[A-Za-z]{1,2})?\s*"
+    r"(?:w(?:eight)?\s*=\s*(?P<weight>\d*\.?\d+))?\s*$",
+    re.IGNORECASE,
+)
+_ISOTOPE_LINE_RE = re.compile(
+    r"^\s*(?P<iso>\d{1,3}\s*[A-Za-z]{1,2})\s*(?:w(?:eight)?\s*=\s*(?P<weight>\d*\.?\d+))?\s*$",
+    re.IGNORECASE,
+)
+
+
+def _parse_reaction_line(line: str):
+    """
+    Parse one reaction channel or standalone isotope line.
+
+    Returns a single channel dict, or a list of channel dicts when the
+    ejectile carries a wildcard multiplicity ('xn', 'xα', ...) that expands
+    into k = 1..4 particles. Returns None for blanks/comments.
+    Raises ValueError on malformed input.
+    """
+    s = line.strip()
+    if not s or s.startswith("#") or s.startswith("//"):
+        return None
+    m = _REACTION_SPEC_RE.match(s)
+    if m:
+        zt, at, _ = parse_isotope(m.group("target"))
+        zb, ab, _ = parse_isotope(m.group("beam"))
+        ejectile = m.group("ejectile").strip()
+        weight = float(m.group("weight")) if m.group("weight") else 1.0
+
+        # Wildcard multiplicity ejectile ('xn', 'xα', 'xnp'): expand k = 1..4.
+        mw = re.match(r"^[xX](.*)$", ejectile)
+        if mw and (not mw.group(1) or re.match(r"^\s*[nptdαa]", mw.group(1), re.IGNORECASE)):
+            rest_ej = mw.group(1).strip()
+            out = []
+            base_target = m.group("target").replace(" ", "")
+            base_beam = m.group("beam").replace(" ", "")
+            for k in (1, 2, 3, 4):
+                parts = parse_ejectile(f"{k}{rest_ej}" if rest_ej else f"{k}n")
+                ae = sum(p[1] for p in parts)
+                ze = sum(p[0] for p in parts)
+                za, aa = zb + zt - ze, ab + at - ae
+                if za < 1 or aa < za:
+                    continue
+                res_nuid = f"{aa}{Z_ELEMENT_MAP[za].capitalize()}"
+                if m.group("residue"):
+                    zr, ar, _ = parse_isotope(m.group("residue"))
+                    if (zr, ar) != (za, aa):
+                        continue
+                out.append({
+                    "label": f"{base_target}({base_beam},{ejectile.replace(' ', '')}){res_nuid}",
+                    "target": (zt, at), "beam": (zb, ab),
+                    "ejectile": ejectile,
+                    "residue": (za, aa), "residue_nuid": res_nuid,
+                    "weight": weight,
+                })
+            if not out:
+                raise ValueError(f"Wildcard ejectile '{ejectile}' yields no physical residue: {s}")
+            return out
+
+        parts = parse_ejectile(ejectile)
+        ae = sum(p[1] for p in parts)
+        ze = sum(p[0] for p in parts)
+        za, aa = zb + zt - ze, ab + at - ae
+        if m.group("residue"):
+            zr, ar, _ = parse_isotope(m.group("residue"))
+            if (zr, ar) != (za, aa):
+                raise ValueError(
+                    f"Channel violates A/Z conservation: {s} "
+                    f"(declared residue {m.group('residue').strip()}, conservation gives "
+                    f"{aa}{Z_ELEMENT_MAP[za].capitalize()})")
+        if za < 1 or aa < za:
+            raise ValueError(f"Unphysical residue in channel: {s}")
+        res_nuid = f"{aa}{Z_ELEMENT_MAP[za].capitalize()}"
+        return {
+            "label": f"{m.group('target').replace(' ', '')}({m.group('beam').replace(' ', '')},"
+                     f"{ejectile}){res_nuid}",
+            "target": (zt, at), "beam": (zb, ab),
+            "ejectile": ejectile,
+            "residue": (za, aa), "residue_nuid": res_nuid,
+            "weight": weight,
+        }
+    m = _ISOTOPE_LINE_RE.match(s)
+    if m:
+        z, a, nuid = parse_isotope(m.group("iso"))
+        weight = float(m.group("weight")) if m.group("weight") else 1.0
+        return {
+            "label": nuid, "target": None, "beam": None, "ejectile": None,
+            "residue": (z, a), "residue_nuid": nuid, "weight": weight,
+        }
+    raise ValueError(f"Unrecognized reaction channel: {s!r}")
+
+
+def parse_reaction_channels(text: str) -> Dict[str, Any]:
+    """
+    Parse reaction channel definitions (separated by ';' or newlines) into a
+    weighted isotope prior. Accepts 'target(beam,ejectile)residue' specs
+    (residue optional, verified/completed by A/Z conservation), standalone
+    isotope lines, and 'w=<float>' weights. '#' lines are comments.
+    """
+    channels = []
+    isotopes: Dict[Tuple[int, int], float] = {}
+    errors = []
+    for raw in re.split(r"[\n;]+", text):
+        try:
+            ch = _parse_reaction_line(raw)
+        except ValueError as e:
+            if raw.strip():
+                errors.append(str(e))
+            continue
+        if ch is None:
+            continue
+        # Wildcard ejectiles expand into a list of concrete channels
+        for entry in (ch if isinstance(ch, list) else [ch]):
+            channels.append(entry)
+            key = entry["residue"]
+            isotopes[key] = max(isotopes.get(key, 0.0), entry["weight"])
+    return {"channels": channels, "isotopes": isotopes, "errors": errors}
+
+
+def parse_channel_file(filepath: str) -> Dict[str, Any]:
+    """
+    Parse a reaction-channel file. Accepts one reaction-spec or standalone
+    isotope per line (same syntax as parse_reaction_channels), plus simple
+    three-column 'Z A [weight]' evaporation tables (e.g. PACE-style output).
+    """
+    p = Path(filepath).expanduser()
+    if not p.is_absolute():
+        p_candidate = (Path.cwd() / p).resolve()
+        p = p_candidate if p_candidate.exists() else p.resolve()
+    else:
+        p = p.resolve()
+    if not p.exists():
+        raise FileNotFoundError(f"Channel file not found: {filepath}")
+
+    text = p.read_text(encoding="utf-8", errors="replace")
+    # First pass: reaction-spec style parse
+    result = parse_reaction_channels(text)
+    if result["channels"]:
+        result["file"] = p.name
+        result["filepath"] = str(p)
+        return result
+
+    # Second pass: 'Z A [weight]' table (one isotope per line)
+    channels, isotopes, errors = [], {}, []
+    for line_idx, raw in enumerate(text.splitlines(), 1):
+        s = raw.strip()
+        if not s or s.startswith("#"):
+            continue
+        tokens = s.split()
+        if len(tokens) >= 2 and all(re.match(r"^\d+\.?\d*$", t) for t in tokens[:2]):
+            try:
+                z, a = int(tokens[0]), int(tokens[1])
+                if z < 0 or a <= 0 or a < z or z > 118:
+                    raise ValueError(f"Unphysical (Z, A) = ({z}, {a})")
+                weight = float(tokens[2]) if len(tokens) >= 3 else 1.0
+                nuid = f"{a}{Z_ELEMENT_MAP[z].capitalize()}"
+                channels.append({
+                    "label": nuid, "target": None, "beam": None, "ejectile": None,
+                    "residue": (z, a), "residue_nuid": nuid, "weight": weight,
+                })
+                isotopes[(z, a)] = max(isotopes.get((z, a), 0.0), weight)
+            except (ValueError, KeyError) as e:
+                errors.append(f"Line {line_idx}: {e}")
+        elif s:
+            errors.append(f"Line {line_idx}: unrecognized channel entry: {s!r}")
+    return {
+        "channels": channels, "isotopes": isotopes, "errors": errors,
+        "file": p.name, "filepath": str(p),
+    }
+
+
+def resolve_reaction_request(query: Dict[str, List[str]]) -> Dict[str, Any]:
+    """
+    Resolve the /api/ensdf/reaction query parameters into parsed channel data.
+    Accepts 'spec' (inline reaction spec), 'path' (channel file on the server),
+    or 'beam'+'targets' for evaporation-channel auto-suggestion.
+    """
+    spec = (query.get("spec", [""])[0] or "").strip()
+    path = (query.get("path", [""])[0] or "").strip()
+    beam = (query.get("beam", [""])[0] or "").strip()
+    targets = (query.get("targets", [""])[0] or "").strip()
+
+    if beam and targets:
+        suggestions = []
+        errors = []
+        for tgt in [t.strip() for t in re.split(r"[,\s]+", targets) if t.strip()]:
+            try:
+                suggestions.extend(suggest_evaporation_channels(beam, tgt))
+            except ValueError as e:
+                errors.append(f"{tgt}: {e}")
+        return {"success": True, "mode": "suggest", "channels": suggestions, "errors": errors}
+
+    try:
+        if path:
+            parsed = parse_channel_file(path)
+            mode = "file"
+        elif spec:
+            parsed = parse_reaction_channels(spec)
+            mode = "spec"
+        else:
+            return {"success": False, "error": "Provide 'spec', 'path', or 'beam'+'targets'."}
+    except (ValueError, FileNotFoundError) as e:
+        return {"success": False, "error": str(e)}
+
+    return {
+        "success": True, "mode": mode,
+        "channels": parsed["channels"],
+        "isotopes": [
+            {"z": z, "a": a, "nuid": f"{a}{Z_ELEMENT_MAP[z].capitalize()}", "weight": w}
+            for (z, a), w in sorted(parsed["isotopes"].items(), key=lambda kv: -kv[1])
+        ],
+        "errors": parsed["errors"],
+        "file": parsed.get("file"),
+    }
+
+
+def build_nuclide_prior(
+    engine: "ENSDFSearchEngine",
+    spec: Optional[str] = None,
+    channel_file: Optional[str] = None,
+    decay_depth: int = 0,
+    decay_only: bool = False,
+    max_t12_s: Optional[float] = None,
+) -> Tuple[Optional[Dict[Tuple[int, int], float]], Optional[Dict[str, Any]]]:
+    """
+    Build the reaction-channel soft prior for identification.
+
+    Returns (prior, info): prior maps (Z, A) -> weight (after optional decay
+    expansion); info carries the parsed channels and resolved isotope lists for
+    display. Returns (None, None) when no reaction is defined.
+    """
+    if channel_file:
+        parsed = parse_channel_file(channel_file)
+        source = {"mode": "file", "file": parsed.get("file")}
+    elif spec:
+        parsed = parse_reaction_channels(spec)
+        source = {"mode": "spec"}
+    else:
+        return None, None
+
+    produced = dict(parsed["isotopes"])
+    prior = dict(produced)
+    daughters: Dict[Tuple[int, int], float] = {}
+    if decay_depth and decay_depth > 0 and produced:
+        prior, daughters = engine.expand_decay_chains(
+            produced, depth=int(decay_depth), max_parent_t12_s=max_t12_s)
+    if decay_only:
+        prior = {k: v for k, v in prior.items() if k not in produced}
+
+    info = {
+        **source,
+        "channels": parsed["channels"],
+        "errors": parsed["errors"],
+        "produced_isotopes": sorted(
+            f"{a}{Z_ELEMENT_MAP[z].capitalize()}" for (z, a) in produced),
+        "daughter_isotopes": sorted(
+            f"{a}{Z_ELEMENT_MAP[z].capitalize()}" for (z, a) in daughters),
+        "decay_depth": int(decay_depth) if decay_depth else 0,
+        "decay_only": bool(decay_only),
+    }
+    if not prior:
+        return None, info
+    return prior, info
+
+
+
+# ==============================================================================
 # Database Creation & Indexing Engine
 # ==============================================================================
 
@@ -623,6 +1026,54 @@ class ENSDFSearchEngine:
             "gammas": n_gammas,
         }
 
+    def expand_decay_chains(
+        self,
+        allowed: Dict[Tuple[int, int], float],
+        depth: int = 2,
+        max_parent_t12_s: Optional[float] = None,
+    ) -> Tuple[Dict[Tuple[int, int], float], Dict[Tuple[int, int], float]]:
+        """
+        Expand a set of produced isotopes with their decay-chain daughters.
+
+        Follows decay datasets (ds_type='decay') from parent to daughter for up
+        to `depth` generations, damping the inherited weight per generation.
+        Returns (expanded, daughters): the full prior dict and only the added
+        daughter entries. Parent half-life filtering via max_parent_t12_s.
+        """
+        conn = self.get_connection()
+        cur = conn.cursor()
+        expanded = dict(allowed)
+        daughters: Dict[Tuple[int, int], float] = {}
+        frontier = dict(allowed)
+        for gen in range(1, max(1, int(depth)) + 1):
+            next_frontier: Dict[Tuple[int, int], float] = {}
+            for (z, a), w in frontier.items():
+                query = """
+                    SELECT DISTINCT n2.nuid AS nuid, n2.z AS z, n2.a AS a
+                    FROM datasets d
+                    JOIN nuclides n2 ON d.nuclide_id = n2.id
+                    WHERE d.parent_z = ? AND d.parent_a = ?
+                      AND d.ds_type = 'decay'
+                """
+                params: List[Any] = [z, a]
+                if max_parent_t12_s is not None:
+                    query += " AND d.parent_t12_s IS NOT NULL AND d.parent_t12_s <= ?"
+                    params.append(max_parent_t12_s)
+                cur.execute(query, params)
+                for row in cur.fetchall():
+                    key = (int(row["z"]), int(row["a"]))
+                    if key == (z, a) or key in allowed:
+                        continue
+                    dw = w * (DECAY_GENERATION_DAMPING ** gen)
+                    if key not in expanded or dw > expanded[key]:
+                        expanded[key] = dw
+                        daughters[key] = max(daughters.get(key, 0.0), dw)
+                        next_frontier[key] = dw
+            if not next_frontier:
+                break
+            frontier = next_frontier
+        return expanded, daughters
+
     def search_1d(
         self,
         energy: float,
@@ -634,6 +1085,7 @@ class ENSDFSearchEngine:
         max_t12_s: Optional[float] = None,
         dataset_type: Optional[str] = None,
         limit: int = 40,
+        allowed_nuclides: Optional[set] = None,
     ) -> List[Dict[str, Any]]:
         """
         Search for candidate transitions matching single energy E ± tol with nuclear constraints.
@@ -680,11 +1132,24 @@ class ENSDFSearchEngine:
             query += " AND d.ds_type = ?"
             params.append(dataset_type)
 
-        query += " ORDER BY ABS(g.energy - ?) ASC LIMIT ?"
-        params.extend([energy, limit])
-
-        cur.execute(query, params)
-        rows = cur.fetchall()
+        if allowed_nuclides:
+            # Hard whitelist: chunked (Z, A) pairs to stay under SQLite's
+            # host-parameter limit while covering arbitrary prior sizes.
+            pairs = sorted(allowed_nuclides)
+            rows = []
+            base_params = list(params)
+            for i in range(0, len(pairs), 250):
+                chunk = pairs[i:i + 250]
+                clause = " AND (" + " OR ".join("(n.z = ? AND n.a = ?)" for _ in chunk) + ")"
+                chunk_params = base_params + [v for pair in chunk for v in pair]
+                cur.execute(query + clause + " ORDER BY ABS(g.energy - ?) ASC LIMIT ?",
+                            chunk_params + [energy, limit])
+                rows.extend(cur.fetchall())
+            rows.sort(key=lambda r: abs(float(r["energy"]) - energy))
+            rows = rows[:limit]
+        else:
+            cur.execute(query + " ORDER BY ABS(g.energy - ?) ASC LIMIT ?", params + [energy, limit])
+            rows = cur.fetchall()
 
         results = []
         for r in rows:
@@ -732,6 +1197,7 @@ class ENSDFSearchEngine:
         dataset_type: Optional[str] = None,
         limit: int = 5,
         unique_nuclides: bool = True,
+        allowed_nuclides: Optional[set] = None,
     ) -> List[Dict[str, Any]]:
         """
         Search for 2D coincidence pair (E1, E2) within the same nuclide dataset.
@@ -798,6 +1264,14 @@ class ENSDFSearchEngine:
 
         cur.execute(ds_query, ds_params)
         valid_datasets = {r["ds_id"]: r for r in cur.fetchall()}
+
+        if allowed_nuclides:
+            # Hard whitelist on (Z, A) pairs — the dataset query has no LIMIT,
+            # so filtering here keeps the candidate pool exactly on-channel.
+            valid_datasets = {
+                ds_id: meta for ds_id, meta in valid_datasets.items()
+                if (meta["z"], meta["a"]) in allowed_nuclides
+            }
 
         candidates = []
         for ds_id, ds_meta in valid_datasets.items():
@@ -1001,14 +1475,25 @@ class ENSDFSearchEngine:
         top_candidates: int = 5,
         unique_nuclides: bool = True,
         enforce_mass_cluster: bool = True,
+        nuclide_prior: Optional[Dict[Tuple[int, int], float]] = None,
+        strict: bool = False,
+        reaction_info: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Process an entire fit results file and return globally consistent identifications
         for all 1D and 2D fits using parsimonious isotope set-cover and mass-clustering.
         2D coincidences guide 1D photopeak assignments to find the minimal number of
         distinct #1 isotope candidates with compact mass distribution.
+
+        When a reaction-channel `nuclide_prior` ({(Z, A): weight}) is given, the
+        inferred mass-clustering factor is replaced by a soft channel prior:
+        in-channel candidates are scaled by weight/w_max, off-channel ones by
+        OFF_CHANNEL_PENALTY (never hidden unless `strict` filters them at SQL level).
         """
         parsed = self.parse_fit_results_file(filepath)
+
+        prior_active = bool(nuclide_prior)
+        w_max = max(nuclide_prior.values()) if prior_active else None
 
         # 1. Broad Candidate Retrieval
         fits_2d_raw = []
@@ -1026,6 +1511,7 @@ class ENSDFSearchEngine:
                 dataset_type=dataset_type,
                 limit=40,
                 unique_nuclides=False,
+                allowed_nuclides=set(nuclide_prior) if (prior_active and strict) else None,
             )
             fits_2d_raw.append({"fit": fit, "candidates": cands})
 
@@ -1041,8 +1527,15 @@ class ENSDFSearchEngine:
                 max_t12_s=max_t12_s,
                 dataset_type=dataset_type,
                 limit=60,
+                allowed_nuclides=set(nuclide_prior) if (prior_active and strict) else None,
             )
             fits_1d_raw.append({"fit": fit, "candidates": cands})
+
+        # 1b. Tag candidates with reaction-channel membership
+        if prior_active:
+            for f in fits_2d_raw + fits_1d_raw:
+                for c in f["candidates"]:
+                    c["in_channel"] = (c.get("z"), c.get("a")) in nuclide_prior
 
         # 2. Identify Dominant Mass Distribution from Strongest 2D Coincidences
         mass_votes: Dict[int, float] = {}
@@ -1082,14 +1575,23 @@ class ENSDFSearchEngine:
             a = cand.get("a")
             nuid = cand.get("nuclide")
 
-            # Mass proximity penalty
-            if avg_mass is not None and a is not None:
-                da = abs(a - avg_mass)
-                # Gaussian decay with sigma = 6.0 mass units
-                mass_factor = math.exp(- (da ** 2) / (2.0 * (6.0 ** 2)))
-                mass_factor = max(0.0001, mass_factor)
+            if prior_active:
+                # Reaction-channel soft prior replaces the inferred mass-clustering
+                # factor: in-channel scaled by weight/w_max, off-channel demoted.
+                z_a = (cand.get("z"), cand.get("a"))
+                if z_a in nuclide_prior:
+                    mass_factor = max(0.0001, nuclide_prior[z_a] / w_max)
+                else:
+                    mass_factor = OFF_CHANNEL_PENALTY
             else:
-                mass_factor = 1.0
+                # Mass proximity penalty
+                if avg_mass is not None and a is not None:
+                    da = abs(a - avg_mass)
+                    # Gaussian decay with sigma = 6.0 mass units
+                    mass_factor = math.exp(- (da ** 2) / (2.0 * (6.0 ** 2)))
+                    mass_factor = max(0.0001, mass_factor)
+                else:
+                    mass_factor = 1.0
 
             # Parsimony bonus: prefer explaining lines with isotopes already chosen in minimum set
             parsimony_factor = 1.0
@@ -1101,9 +1603,31 @@ class ENSDFSearchEngine:
             direct_bonus = 1.4 if (is_2d and cand.get("is_direct_cascade")) else 1.0
             return base_score * mass_factor * parsimony_factor * direct_bonus
 
+        def candidate_accepted(cand: Dict[str, Any], fit_has_in_channel: bool) -> bool:
+            """Seeding/set-cover acceptance: channel membership when a prior is
+            active (mass-window otherwise); off-channel candidates may still be
+            adopted in soft mode when no in-channel candidate explains the fit."""
+            if not prior_active:
+                if avg_mass is None or cand.get("a") is None:
+                    return True
+                return abs(cand["a"] - avg_mass) <= 8
+            return bool(cand.get("in_channel")) or (not strict and not fit_has_in_channel)
+
+        # 3. Seed High-Confidence 2D Anchors
+        active_isotopes = set()
+        for f in fits_2d_raw:
+            has_in_channel = any(c.get("in_channel") for c in f["candidates"]) if prior_active else False
+            for c in f["candidates"]:
+                if c.get("is_direct_cascade"):
+                    if candidate_accepted(c, has_in_channel):
+                        active_isotopes.add(c["nuclide"])
+                        break
+
+        # 4. Iterative Minimum Isotope Set Selection (Parsimony Optimization)
         chosen_isotopes = set(active_isotopes)
         for _ in range(3):
             for f in fits_2d_raw + fits_1d_raw:
+                fit_has_in_channel = any(c.get("in_channel") for c in f["candidates"]) if prior_active else False
                 for c in f["candidates"]:
                     c["temp_score"] = score_candidate_with_context(
                         c, is_2d=("gamma2_energy" in c), selected_set=chosen_isotopes
@@ -1111,7 +1635,7 @@ class ENSDFSearchEngine:
                 f["candidates"].sort(key=lambda x: x["temp_score"], reverse=True)
                 if f["candidates"]:
                     top_cand = f["candidates"][0]
-                    if avg_mass is None or (top_cand["a"] is not None and abs(top_cand["a"] - avg_mass) <= 8):
+                    if candidate_accepted(top_cand, fit_has_in_channel):
                         chosen_isotopes.add(top_cand["nuclide"])
 
         # 5. Final Re-ranking & Formatting for 2D Coincidences
@@ -1180,6 +1704,7 @@ class ENSDFSearchEngine:
             "parsimonious_isotopes": sorted(list(chosen_isotopes)),
             "results_1d": id_1d,
             "results_2d": id_2d,
+            "reaction": reaction_info,
         }
 
 
@@ -1245,6 +1770,21 @@ def print_file_identification_report(report: Dict[str, Any]):
     if report.get("dominant_mass") is not None:
         isotopes_str = ", ".join(report.get("parsimonious_isotopes", []))
         print(f" Dominant Mass Center: A ≈ {report['dominant_mass']} | Minimal Isotope Set: [{isotopes_str}]")
+    reaction = report.get("reaction")
+    if reaction:
+        channels_str = ", ".join(c["label"] for c in reaction.get("channels", []) if c.get("label"))
+        if channels_str:
+            print(f" Reaction Channels: {channels_str}")
+        isotopes_list = reaction.get("produced_isotopes", [])
+        daughters = reaction.get("daughter_isotopes", [])
+        mode_str = " | decay products only" if reaction.get("decay_only") else ""
+        if daughters:
+            print(f" Channel Isotopes: [{', '.join(isotopes_list)}] + decay ({reaction.get('decay_depth')} gen): "
+                  f"[{', '.join(daughters)}]{mode_str}")
+        elif isotopes_list:
+            print(f" Channel Isotopes: [{', '.join(isotopes_list)}]{mode_str}")
+        for err in reaction.get("errors", []):
+            print(f" ⚠️ Channel warning: {err}")
     print(bar)
 
     if report["results_2d"]:
@@ -1381,6 +1921,36 @@ def main():
         action="store_true",
         help="Display database status, nuclide counts, and statistics",
     )
+    parser.add_argument(
+        "--reaction",
+        type=str,
+        default=None,
+        help="Reaction channel spec, e.g. '100Mo(18O,16O)102Mo; 181Ta(18O,xn)'. "
+             "Residues are completed by A/Z conservation; 'w=<float>' sets a channel weight.",
+    )
+    parser.add_argument(
+        "--channels",
+        type=str,
+        default=None,
+        help="Path to a reaction-channel file (one 'target(beam,ejectile)residue' or "
+             "isotope per line, or a 'Z A [weight]' evaporation table).",
+    )
+    parser.add_argument(
+        "--decay-depth",
+        type=int,
+        default=0,
+        help="Include up to N generations of decay-chain daughters of the channel isotopes",
+    )
+    parser.add_argument(
+        "--decay-only",
+        action="store_true",
+        help="Consider only decay-chain daughters (implantation data without prompt reaction lines)",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Hard whitelist: only candidates from the declared reaction channels are considered",
+    )
 
     args = parser.parse_args()
 
@@ -1417,6 +1987,19 @@ def main():
     min_t12_s = parse_human_duration(args.min_t12)
     max_t12_s = parse_human_duration(args.max_t12)
 
+    # Reaction-channel soft prior (issue #13)
+    nuclide_prior, reaction_info = build_nuclide_prior(
+        engine, spec=args.reaction, channel_file=args.channels,
+        decay_depth=args.decay_depth, decay_only=args.decay_only,
+        max_t12_s=max_t12_s,
+    )
+    if reaction_info and reaction_info.get("errors"):
+        for err in reaction_info["errors"]:
+            print(f"⚠️ Channel warning: {err}", file=sys.stderr)
+    if nuclide_prior is None and reaction_info and not reaction_info.get("produced_isotopes"):
+        print("[!] No valid reaction channels resolved; running unrestrained.", file=sys.stderr)
+        reaction_info = None
+
     # 3. 2D Coincidence Search
     if args.coinc is not None:
         e1, e2 = args.coinc
@@ -1426,6 +2009,7 @@ def main():
             min_t12_s=min_t12_s, max_t12_s=max_t12_s,
             limit=args.top,
             unique_nuclides=not args.all_datasets,
+            allowed_nuclides=set(nuclide_prior) if nuclide_prior else None,
         )
         print_2d_search_report(e1, e2, res)
         sys.exit(0)
@@ -1437,6 +2021,7 @@ def main():
             a_min=args.a_min, a_max=args.a_max, elements=args.element,
             min_t12_s=min_t12_s, max_t12_s=max_t12_s,
             limit=args.top,
+            allowed_nuclides=set(nuclide_prior) if nuclide_prior else None,
         )
         print_1d_search_report(args.gamma, res)
         sys.exit(0)
@@ -1449,6 +2034,9 @@ def main():
             min_t12_s=min_t12_s, max_t12_s=max_t12_s,
             top_candidates=args.top,
             unique_nuclides=not args.all_datasets,
+            nuclide_prior=nuclide_prior,
+            strict=args.strict,
+            reaction_info=reaction_info,
         )
         print_file_identification_report(rep)
         sys.exit(0)

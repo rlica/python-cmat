@@ -116,6 +116,34 @@ To build or update the local database from a raw ENSDF mass directory (e.g. `ens
 python3 ensdf_search.py --build-db /path/to/ensdf_directory/
 ```
 
+### 6. Reaction-Channel Priors (Soft Reaction Constraint)
+
+In fusion–evaporation and transfer experiments the candidate isotope space can be
+constrained by declaring the likely reaction channels. This replaces the inferred
+mass-clustering prior with a declared reaction prior: in-channel candidates are
+scaled by their channel weight, off-channel ones are demoted (score × 0.05) but
+never hidden (unless `--strict`).
+
+```bash
+# Example: 100Mo(18O,xn) with a 181Ta stopper — stopper cascades rank correctly
+python3 ensdf_search.py fit_results.txt --reaction "100Mo(18O,16O)102Mo; 181Ta(18O,xn); 181Ta"
+
+# Include decay-chain daughters (2 generations) and hard-whitelist mode
+python3 ensdf_search.py fit_results.txt --reaction "100Mo(18O,16O)102Mo" --decay-depth 2 --strict
+
+# Channels from a file (one channel/isotope per line, or a 'Z A [weight]' table)
+python3 ensdf_search.py fit_results.txt --channels channels.txt --decay-only
+```
+
+Spec syntax (also used in the web pop-up "⚗️ Reaction Definition" card):
+- `target(beam,ejectile)residue` — residue optional; verified/completed by A/Z
+  conservation (e.g. `100Mo(18O,16O)` → 102Mo)
+- `target(beam,xn)` — wildcard multiplicity, expands to n…4n
+- standalone isotopes (`181Ta`) for stopper/coulomb-excitation contributions
+- optional weight: `w=0.5`; `#` lines are comments
+- weights are relative cross-section proxies; daughters inherit the parent
+  weight damped by 0.9 per decay generation
+
 ---
 
 ## Python API Usage
