@@ -464,6 +464,59 @@ class MatrixSession3D:
             except Exception as exc:
                 live["error"] = str(exc)
 
+    def reload_matrix(self, index=None) -> dict:
+        """
+        Re-read a matrix file from disk and update its session entry in place.
+
+        The CMAT3DReader projection cache is keyed by file mtime and size, so a
+        changed file is re-read automatically. Live cubes are skipped (they own
+        their refresh cycle via refresh_root_cube). Gating state is cleared when
+        the shape changed. A failed re-read leaves the old snapshot intact.
+        """
+        with self.snapshot_lock:
+            if not self.matrices:
+                return {"index": None, "reloaded": False, "changed": False,
+                        "shape_changed": False, "error": "No matrices loaded"}
+            if index is None:
+                index = self.active_index
+            index = int(index)
+            if not 0 <= index < len(self.matrices):
+                return {"index": index, "reloaded": False, "changed": False,
+                        "shape_changed": False, "error": f"Invalid matrix index: {index}"}
+            m = self.matrices[index]
+            base = {"index": index, "name": m.get("name"), "filename": m.get("filename")}
+            if m.get("live"):
+                return dict(base, reloaded=False, changed=False, shape_changed=False,
+                            error=None, skipped="live")
+
+            try:
+                path = Path(m["path"])
+                if not path.exists():
+                    return dict(base, reloaded=False, changed=False, shape_changed=False,
+                                error=f"File not found: {path.name}")
+                reader = CMAT3DReader(path, use_cache=True, show_progress=False)
+                new_shape = [reader.res1, reader.res2, reader.res3]
+                new_counts = reader._total_counts or int(np.sum(reader.get_projection(0)))
+                new_max = reader._max_count or int(np.max(reader.proj_2d.get("0-1", 0)))
+                new_nonzero = reader._nonzero_voxels or 0
+                shape_changed = list(m["shape"]) != new_shape
+                changed = shape_changed or list(m["step"]) != list(reader.step) \
+                    or m["total_counts"] != new_counts or m["max_count"] != new_max
+                m.update(reader=reader, shape=new_shape,
+                         step=[reader.step1, reader.step2, reader.step3],
+                         total_counts=new_counts, max_count=new_max,
+                         nonzero_voxels=new_nonzero)
+                if shape_changed:
+                    self.gate_3rd = None
+                    self.gates_1d = {0: {"w": [], "b": []}, 1: {"w": [], "b": []}, 2: {"w": [], "b": []}}
+                    self.integration_1d = {0: None, 1: None, 2: None}
+                    self.fit_2d = None
+                return dict(base, reloaded=True, changed=changed,
+                            shape_changed=shape_changed, error=None)
+            except Exception as exc:
+                return dict(base, reloaded=False, changed=False, shape_changed=False,
+                            error=str(exc))
+
     def get_active_matrix(self) -> Optional[dict]:
         if self.matrices and 0 <= self.active_index < len(self.matrices):
             return self.matrices[self.active_index]
@@ -1391,6 +1444,28 @@ class CMAT3DWebHandler(BaseHTTPRequestHandler):
             self.send_header("Content-type", "application/json")
             self.end_headers()
             self.wfile.write(json.dumps(self.get_metadata_dict()).encode("utf-8"))
+
+        elif path.startswith("/api/reload_matrices"):
+            scope = query.get("scope", ["all"])[0].lower()
+            if scope == "active":
+                results = [session.reload_matrix(None)]
+            else:
+                results = [session.reload_matrix(i) for i in range(len(session.matrices))]
+            reloaded = [r for r in results if r.get("reloaded")]
+            changed = [r for r in reloaded if r.get("changed")]
+            errors = [r for r in results if r.get("error")]
+            if changed:
+                print(f"\n[*] Reloaded {len(reloaded)} 3D matrix file(s) from disk "
+                      f"({len(changed)} changed: {', '.join(r['filename'] for r in changed)})", flush=True)
+            elif errors:
+                print(f"\n[!] Reload errors: {'; '.join(r['error'] for r in errors)}", file=sys.stderr, flush=True)
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            info = self.get_metadata_dict()
+            info["success"] = True
+            info["results"] = results
+            self.wfile.write(json.dumps(info).encode("utf-8"))
 
         elif path.startswith("/api/open_file"):
             target = query.get("path", [""])[0]

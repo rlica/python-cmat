@@ -714,6 +714,13 @@
   <div class="matrix-select-wrap">
     <select id="matrixSelect" class="matrix-select" onchange="onSelectMatrix(this.value)" title="Active 3D Matrix ([ / ] to cycle)"></select>
     <button id="btnOpenFs" class="matrix-open-btn" onclick="openServerBrowser()">📂 Open</button>
+    <button id="btnHeaderReload" class="matrix-open-btn" onclick="reloadMatrices()" title="Reload matrices from disk (banana gates are re-applied)">⟳</button>
+    <label id="autoReloadWrap" title="Automatically reload all matrices from disk" style="display:flex; align-items:center; gap:4px; font-size:0.72rem; color:#94a3b8; cursor:pointer; user-select:none;">
+      <input type="checkbox" id="chkAutoReload" onchange="setAutoReload(this.checked)" style="cursor:pointer; margin:0;">Auto
+      <select id="autoReloadInterval" title="Auto-reload interval" onchange="setAutoReload(true)" onclick="event.stopPropagation()" style="display:none; background:#1e293b; color:#cbd5e1; border:1px solid #334155; border-radius:3px; font-size:0.68rem; padding:1px 2px; margin-left:2px;">
+        <option value="5">5s</option><option value="10" selected>10s</option><option value="30">30s</option><option value="60">60s</option>
+      </select>
+    </label>
     <button id="btnHeaderOpenIsotopeID" class="matrix-open-btn" onclick="openIsotopeSearchPopup()" title="Automatic Isotope Identification [ENSDF] (Opens Pop-up Window)" style="background: #312e81; border-color: #4338ca; color: #a5b4fc; font-weight: 600;">🔬 Isotope ID</button>
   </div>
 
@@ -1809,6 +1816,93 @@
     let nextIdx = (curIdx + delta) % metadata.matrices.length;
     if (nextIdx < 0) nextIdx += metadata.matrices.length;
     switchMatrix(nextIdx);
+  }
+
+  let isReloadingMatrices = false;
+  let autoReloadTimer = null;
+
+  async function reloadMatrices(options = {}) {
+    const { silent = false } = options;
+    if (isReloadingMatrices) return;
+    isReloadingMatrices = true;
+    if (!silent) showMatrixToast('Reloading matrices from disk...');
+
+    try {
+      const res = await fetch('/api/reload_matrices?scope=all');
+      const data = await res.json();
+      if (!data || !data.success) {
+        console.error("Reload error:", data?.error);
+        if (!silent) showMatrixToast(`Error reloading matrices: ${data?.error || 'Unknown error'}`, true);
+        return;
+      }
+
+      const results = data.results || [];
+      const activeIdx = metadata.matrix_index !== undefined ? metadata.matrix_index : (metadata.current_index || 0);
+      const activeRes = results.find(r => r.index === activeIdx) || null;
+      const activeChanged = Boolean(activeRes && activeRes.changed);
+      const anyChanged = results.some(r => r.changed);
+      const errors = results.filter(r => r.error).map(r => `${r.filename || 'Matrix'}: ${r.error}`);
+
+      const prevShape = metadata?.shape;
+      const hadBananas = (bananaPolygonPeak && bananaPolygonPeak.length > 0) || (bananaPolygonBg && bananaPolygonBg.length > 0) || bananaGateActive;
+      metadata = data;
+      const sameShape = Array.isArray(prevShape) && Array.isArray(data.shape) &&
+        prevShape.length === data.shape.length && prevShape.every((v, i) => v === data.shape[i]);
+
+      if (!sameShape) {
+        // Gates and bananas are invalid on a new voxel grid
+        clear1DGates(false);
+        clearBananaGate();
+        resetAllBananaStates();
+        clearAllFits();
+        showMatrixToast('Matrix dimensions changed after reload — gates/bananas were cleared');
+      } else {
+        if (hadBananas) {
+          // Re-apply banana gates so their results match the reloaded data.
+          bananaGateActive = false;
+          bananaGateResult = null;
+          await requestBananaGate();
+          saveBananaState();
+        }
+        if (activeChanged) clearAllFits();
+      }
+
+      updateUIWithMetadata();
+      await fetchProjections();
+      await fetchTileAndRender();
+
+      if (errors.length) {
+        showMatrixToast(`Reload failed for: ${errors.join('; ')}`, true);
+      } else if (sameShape && anyChanged) {
+        showMatrixToast(`Reloaded from disk${hadBananas && sameShape ? ' — banana gate re-applied' : ''}`);
+      } else if (!silent) {
+        showMatrixToast('Matrices reloaded — files unchanged');
+      }
+    } catch (e) {
+      console.error("reloadMatrices failed:", e);
+      if (!silent) showMatrixToast("Network error reloading matrices.", true);
+    } finally {
+      isReloadingMatrices = false;
+    }
+  }
+
+  function setAutoReload(enabled) {
+    if (autoReloadTimer) {
+      clearInterval(autoReloadTimer);
+      autoReloadTimer = null;
+    }
+    const sel = document.getElementById('autoReloadInterval');
+    if (sel) sel.style.display = enabled ? 'inline-block' : 'none';
+    if (!enabled) {
+      localStorage.removeItem('cmat3d_auto_reload');
+      return;
+    }
+    localStorage.setItem('cmat3d_auto_reload', '1');
+    const intervalSec = sel ? (parseInt(sel.value, 10) || 10) : 10;
+    autoReloadTimer = setInterval(() => {
+      if (document.hidden || isReloadingMatrices) return;
+      reloadMatrices({ silent: true });
+    }, intervalSec * 1000);
   }
 
   // --- 3rd Axis Gate & Zoom Cut Param ---
@@ -5421,6 +5515,13 @@
     fetchFitLogStatus();
     resizeCanvases();
     await fetchMetadata();
+    if (localStorage.getItem('cmat3d_auto_reload') === '1') {
+      const chk = document.getElementById('chkAutoReload');
+      if (chk) {
+        chk.checked = true;
+        setAutoReload(true);
+      }
+    }
     if (metadata?.live?.enabled) {
       const sel = document.getElementById('liveCubeInterval');
       const interval = String(metadata.live.interval);

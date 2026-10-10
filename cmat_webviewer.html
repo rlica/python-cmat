@@ -733,6 +733,13 @@
     </div>
     <button id="btnNextMatrix" class="matrix-nav-btn" title="Next Matrix [ ] ]">▶</button>
     <button id="btnHeaderOpenBrowser" class="matrix-nav-btn" title="Browse Server Matrices [Ctrl+O]" style="padding: 2px 7px; margin-left: 3px; font-size: 0.8rem; background: #1e293b; border-color: #334155;">📂</button>
+    <button id="btnHeaderReload" class="matrix-nav-btn" title="Reload matrices from disk (gates, fits and bananas are re-applied)" style="padding: 2px 7px; margin-left: 3px; font-size: 0.8rem; background: #1e293b; border-color: #334155;">⟳</button>
+    <label id="autoReloadWrap" title="Automatically reload all matrices from disk" style="display:flex; align-items:center; gap:4px; margin-left:5px; font-size:0.72rem; color:#94a3b8; cursor:pointer; user-select:none;">
+      <input type="checkbox" id="chkAutoReload" style="cursor:pointer; margin:0;">Auto
+      <select id="autoReloadInterval" title="Auto-reload interval" onchange="setAutoReload(true)" onclick="event.stopPropagation()" style="display:none; background:#1e293b; color:#cbd5e1; border:1px solid #334155; border-radius:3px; font-size:0.68rem; padding:1px 2px; margin-left:2px;">
+        <option value="5">5s</option><option value="10" selected>10s</option><option value="30">30s</option><option value="60">60s</option>
+      </select>
+    </label>
     <button id="btnHeaderOpenIsotopeID" class="matrix-nav-btn" title="Automatic Isotope Identification [ENSDF] (Opens Pop-up Window)" style="padding: 2px 8px; margin-left: 5px; font-size: 0.78rem; background: #312e81; border-color: #4338ca; color: #a5b4fc; font-weight: 500;">🔬 Isotope ID</button>
   </div>
 
@@ -1300,6 +1307,8 @@
   let lastFit2DParams = null;
   let lastMultiFitParams = { 0: null, 1: null };
   let isSwitchingMatrix = false;
+  let isReloadingMatrices = false;
+  let autoReloadTimer = null;
   let toastTimer = null;
 
   // Viewport in channel coordinates
@@ -1881,6 +1890,93 @@
     const curIdx = metadata.active_index !== undefined ? metadata.active_index : 0;
     const newIdx = (curIdx + direction + len) % len;
     switchMatrix(newIdx);
+  }
+
+  async function reloadMatrices(options = {}) {
+    const { silent = false } = options;
+    if (isReloadingMatrices || isSwitchingMatrix || liveUpdateBusy) return;
+    if (!metadata) return;
+
+    isReloadingMatrices = true;
+    if (!silent) showMatrixToast('Reloading matrices from disk...');
+
+    try {
+      const res = await fetch('/api/reload_matrices?scope=all');
+      const data = await res.json();
+      if (!data || data.error) {
+        console.error("Reload error:", data?.error);
+        if (!silent) showMatrixToast(`Error reloading matrices: ${data?.error || 'Unknown error'}`, true);
+        return;
+      }
+
+      const results = data.results || [];
+      const activeRes = results.find(r => r.index === metadata.active_index) || null;
+      const shapeChanged = Boolean(activeRes && activeRes.shape_changed);
+      const anyChanged = results.some(r => r.changed);
+      const errors = results.filter(r => r.error).map(r => `${r.filename || 'Matrix'}: ${r.error}`);
+
+      const hadBananas = (bananaPolygonPeak && bananaPolygonPeak.length > 0) || (bananaPolygonBg && bananaPolygonBg.length > 0) || bananaRoiActive;
+      metadata = data;
+      updateMatrixUI();
+
+      // Preserve 2D viewport (clamped to reloaded matrix dimensions)
+      view.x0 = Math.max(0, Math.min(metadata.shape[0] - 1, view.x0));
+      view.x1 = Math.max(view.x0 + 1, Math.min(metadata.shape[0], view.x1));
+      view.y0 = Math.max(0, Math.min(metadata.shape[1] - 1, view.y0));
+      view.y1 = Math.max(view.y0 + 1, Math.min(metadata.shape[1], view.y1));
+
+      // Re-fetch 2D tile and projection under same view
+      await fetchTileAndRender();
+      await fetch1DProjection();
+
+      if (!shapeChanged) {
+        // Re-apply 1D coincidence gates, persistent fits and banana ROIs on the new data
+        if (gate1DState.axis !== null && gate1DState.w_gates && gate1DState.w_gates.length > 0) {
+          await reapplyGates();
+        }
+        await reapplyAllPersistentFits();
+        if (hadBananas) await requestBananaRoi();
+      } else {
+        clearBananaROI();
+      }
+
+      render2D();
+      renderBoth1DSpectra();
+
+      if (errors.length) {
+        showMatrixToast(`Reload failed for: ${errors.join('; ')}`, true);
+      } else if (shapeChanged) {
+        showMatrixToast('Matrix dimensions changed after reload — conditions were cleared');
+      } else if (anyChanged) {
+        showMatrixToast(`Reloaded from disk${hadBananas ? ' — conditions re-applied' : ''}`);
+      } else if (!silent) {
+        showMatrixToast('Matrices reloaded — files unchanged');
+      }
+    } catch (err) {
+      console.error("Network error reloading matrices:", err);
+      if (!silent) showMatrixToast("Network error reloading matrices.", true);
+    } finally {
+      isReloadingMatrices = false;
+    }
+  }
+
+  function setAutoReload(enabled) {
+    if (autoReloadTimer) {
+      clearInterval(autoReloadTimer);
+      autoReloadTimer = null;
+    }
+    const sel = document.getElementById('autoReloadInterval');
+    if (sel) sel.style.display = enabled ? 'inline-block' : 'none';
+    if (!enabled) {
+      localStorage.removeItem('cmat_auto_reload');
+      return;
+    }
+    localStorage.setItem('cmat_auto_reload', '1');
+    const intervalSec = sel ? (parseInt(sel.value, 10) || 10) : 10;
+    autoReloadTimer = setInterval(() => {
+      if (document.hidden || isReloadingMatrices || isSwitchingMatrix || liveUpdateBusy) return;
+      reloadMatrices({ silent: true });
+    }, intervalSec * 1000);
   }
 
   // Server-Side File Browser State
@@ -6648,6 +6744,17 @@
 
     const btnHeaderOpen = document.getElementById('btnHeaderOpenBrowser');
     if (btnHeaderOpen) btnHeaderOpen.addEventListener('click', () => openServerBrowser());
+
+    const btnHeaderReload = document.getElementById('btnHeaderReload');
+    if (btnHeaderReload) btnHeaderReload.addEventListener('click', () => reloadMatrices());
+    const chkAutoReload = document.getElementById('chkAutoReload');
+    if (chkAutoReload) {
+      chkAutoReload.addEventListener('change', (e) => setAutoReload(e.target.checked));
+      if (localStorage.getItem('cmat_auto_reload') === '1') {
+        chkAutoReload.checked = true;
+        setAutoReload(true);
+      }
+    }
     const btnRootHistograms = document.getElementById('btnRootHistograms');
     document.getElementById('btnLiveConnect').addEventListener('click', async () => {
       const url = document.getElementById('liveSourceURL').value.trim();

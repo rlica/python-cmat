@@ -4570,6 +4570,67 @@ class CMATSession:
             live.update(connected=False, error=str(exc), last_checked=time.time())
             return False
 
+    def reload_matrix(self, index=None) -> dict:
+        """
+        Re-read a matrix file from disk and update its session entry in place.
+
+        File-backed entries are re-created with the same reader class used at
+        load time; live histograms are skipped (they own their refresh cycle).
+        Gates cached on the session are recomputed for same-shape reloads and
+        cleared when the shape changed. A failed re-read leaves the old
+        snapshot intact.
+        """
+        if not self.matrices:
+            return {"index": None, "reloaded": False, "changed": False,
+                    "shape_changed": False, "error": "No matrices loaded"}
+        if index is None:
+            index = self.active_index
+        index = int(index)
+        if not 0 <= index < len(self.matrices):
+            return {"index": index, "reloaded": False, "changed": False,
+                    "shape_changed": False, "error": f"Invalid matrix index: {index}"}
+        m = self.matrices[index]
+        base = {"index": index, "name": m.get("name"), "filename": m.get("filename")}
+        if m.get("live"):
+            return dict(base, reloaded=False, changed=False, shape_changed=False,
+                        error=None, skipped="live")
+
+        try:
+            path, object_name = split_matrix_spec(m["path"])
+            path = Path(path)
+            if not path.exists():
+                return dict(base, reloaded=False, changed=False, shape_changed=False,
+                            error=f"File not found: {path.name}")
+            reader = ROOTMatrixReader(path, object_name) if path.suffix.lower() == ".root" else CMATReader(path)
+            mat = reader.to_numpy()
+            proj_x = reader.get_projection(axis=0)
+            proj_y = reader.get_projection(axis=1)
+
+            shape_changed = list(m["shape"]) != [mat.shape[1], mat.shape[0]]
+            changed = mat.shape != m["matrix"].shape or not np.array_equal(mat, m["matrix"])
+            if isinstance(reader, ROOTMatrixReader):
+                m["cal"] = {axis: list(coeffs) for axis, coeffs in reader.cal.items()}
+            m.update(reader=reader, matrix=mat, proj_x=proj_x, proj_y=proj_y,
+                     proj=proj_x, shape=[mat.shape[1], mat.shape[0]],
+                     shape_yx=[mat.shape[0], mat.shape[1]],
+                     total_counts=int(np.sum(mat)), max_count=int(np.max(mat)),
+                     nonzero_bins=int(np.count_nonzero(mat)),
+                     is_symmetric=bool(reader.is_symmetric),
+                     is_1d=bool(isinstance(reader, ROOTMatrixReader) and reader.ndim == 1))
+
+            if shape_changed:
+                self.gates = {0: None, 1: None}
+            else:
+                # Recompute cached gate spectra so they match the new data.
+                for axis, gate in self.gates.items():
+                    if gate:
+                        self.gates[axis] = compute_1d_gate(mat, axis, gate.get("valid_w", []), gate.get("valid_b", []))
+            return dict(base, reloaded=True, changed=changed,
+                        shape_changed=shape_changed, error=None)
+        except Exception as exc:
+            return dict(base, reloaded=False, changed=False, shape_changed=False,
+                        error=str(exc))
+
     def get_active_matrix(self) -> dict:
         if self.matrices and 0 <= self.active_index < len(self.matrices):
             return self.matrices[self.active_index]
@@ -6219,6 +6280,32 @@ class CMATWebHandler(BaseHTTPRequestHandler):
             self.send_header("Content-type", "application/json")
             self.end_headers()
             info = self.get_metadata_dict()
+            self.wfile.write(json.dumps(info).encode("utf-8"))
+
+        elif self.path.startswith("/api/reload_matrices"):
+            from urllib.parse import urlparse, parse_qs
+            query = parse_qs(urlparse(self.path).query)
+            session = self.get_session()
+            scope = query.get("scope", ["all"])[0].lower()
+            if scope == "active":
+                results = [session.reload_matrix(None)]
+            else:
+                results = [session.reload_matrix(i) for i in range(len(session.matrices))]
+            CMATWebHandler.sync_class_attrs()
+            reloaded = [r for r in results if r.get("reloaded")]
+            changed = [r for r in reloaded if r.get("changed")]
+            errors = [r for r in results if r.get("error")]
+            if changed:
+                print(f"\n[*] Reloaded {len(reloaded)} matrix file(s) from disk "
+                      f"({len(changed)} changed: {', '.join(r['filename'] for r in changed)})", flush=True)
+            elif errors:
+                print(f"\n[!] Reload errors: {'; '.join(r['error'] for r in errors)}", file=sys.stderr, flush=True)
+            self.send_response(200)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            info = self.get_metadata_dict()
+            info["success"] = True
+            info["results"] = results
             self.wfile.write(json.dumps(info).encode("utf-8"))
 
         elif self.path.startswith("/api/fit_peak_2d"):
